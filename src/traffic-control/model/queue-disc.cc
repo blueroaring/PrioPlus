@@ -316,10 +316,10 @@ QueueDisc::GetTypeId()
 }
 
 QueueDisc::QueueDisc(QueueDiscSizePolicy policy)
-    : m_nPackets(0),
+    : m_running(false),
+      m_nPackets(0),
       m_nBytes(0),
       m_maxSize(QueueSize("1p")), // to avoid that setting the mode at construction time is ignored
-      m_running(false),
       m_peeked(false),
       m_sizePolicy(policy),
       m_prohibitChangeMode(false)

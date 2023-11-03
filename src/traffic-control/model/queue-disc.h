@@ -422,7 +422,13 @@ class QueueDisc : public Object
      * Dequeues multiple packets, until a quota is exceeded or sending a packet
      * to the device failed.
      */
-    void Run();
+      virtual void Run (void);
+
+    /**
+     * Modelled after the Linux function qdisc_run_end (include/net/sch_generic.h).
+     * Set the qdisc as not running.
+     */
+    void RunEnd (void);
 
     /// Internal queues store QueueDiscItem objects
     typedef Queue<QueueDiscItem> InternalQueue;
@@ -572,6 +578,16 @@ class QueueDisc : public Object
      */
     bool Mark(Ptr<QueueDiscItem> item, const char* reason);
 
+    /**
+     * Modelled after the Linux function qdisc_run_begin (include/net/sch_generic.h).
+     * \return false if the qdisc is already running; otherwise, set the qdisc as running and return
+     * true.
+     */
+    bool RunBegin();
+
+    SendCallback m_send;           //!< Callback used to send a packet to the receiving object
+    bool m_running;                //!< The queue disc is performing multiple dequeue operations
+
   private:
     /**
      * This function actually enqueues a packet into the queue disc.
@@ -627,19 +643,6 @@ class QueueDisc : public Object
      * \sa QueueDisc::CheckConfig
      */
     virtual void InitializeParams() = 0;
-
-    /**
-     * Modelled after the Linux function qdisc_run_begin (include/net/sch_generic.h).
-     * \return false if the qdisc is already running; otherwise, set the qdisc as running and return
-     * true.
-     */
-    bool RunBegin();
-
-    /**
-     * Modelled after the Linux function qdisc_run_end (include/net/sch_generic.h).
-     * Set the qdisc as not running.
-     */
-    void RunEnd();
 
     /**
      * Modelled after the Linux function qdisc_restart (net/sched/sch_generic.c)
@@ -699,8 +702,6 @@ class QueueDisc : public Object
     Stats m_stats;    //!< The collected statistics
     uint32_t m_quota; //!< Maximum number of packets dequeued in a qdisc run
     Ptr<NetDeviceQueueInterface> m_devQueueIface; //!< NetDevice queue interface
-    SendCallback m_send;           //!< Callback used to send a packet to the receiving object
-    bool m_running;                //!< The queue disc is performing multiple dequeue operations
     Ptr<QueueDiscItem> m_requeued; //!< The last packet that failed to be transmitted
     bool m_peeked;                 //!< A packet was dequeued because Peek was called
     std::string m_childQueueDiscDropMsg; //!< Reason why a packet was dropped by a child queue disc
