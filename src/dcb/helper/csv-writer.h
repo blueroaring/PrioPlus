@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -21,57 +20,55 @@
 #ifndef CSV_WRITER_H
 #define CSV_WRITER_H
 
-#include <string>
-#include <sstream>
 #include <fstream>
+#include <sstream>
+#include <string>
 #include <vector>
 
-namespace ns3 {
+namespace ns3
+{
 
 class CsvWriter
 {
-public:
+  public:
+    CsvWriter(const std::string& filepath, std::size_t columnNum, char delimiter = ',');
+    CsvWriter(std::ostream* const stream, std::size_t columnNum, char delimiter = ',');
+    void SetColumnCount(std::size_t columnNum);
+    [[maybe_unused]] std::size_t GetColumnCount() const;
+    [[maybe_unused]] char Delimiter() const;
 
-  CsvWriter (const std::string &filepath, std::size_t columnNum, char delimiter = ',');
-  CsvWriter (std::ostream* const stream, std::size_t columnNum, char delimiter=',');
-  void SetColumnCount (std::size_t columnNum);
-  [[maybe_unused]] std::size_t GetColumnCount () const;
-  [[maybe_unused]] char Delimiter () const;
-  
-  template<class T>
-  void WriteNextValue (T value);
+    template <class T>
+    void WriteNextValue(T value);
 
-private:
-  
-  std::ofstream m_fileStream;
-  std::ostream* const m_stream;
-  char m_delimiter;
-  std::size_t m_currentColumn;
-  std::size_t m_totalColumn;
-  
+  private:
+    std::ofstream m_fileStream;
+    std::ostream* const m_stream;
+    char m_delimiter;
+    std::size_t m_currentColumn;
+    std::size_t m_totalColumn;
+
 }; // class CsvWriter
 
 /****************************************************
  *      Template implementations.
  ***************************************************/
 
-template<class T>
+template <class T>
 void
-CsvWriter::WriteNextValue (T value)
+CsvWriter::WriteNextValue(T value)
 {
-  (*m_stream) << value;
-  m_currentColumn = (m_currentColumn + 1) % m_totalColumn;
-  if (m_currentColumn > 0)
-    { 
-      (*m_stream) << m_delimiter;
+    (*m_stream) << value;
+    m_currentColumn = (m_currentColumn + 1) % m_totalColumn;
+    if (m_currentColumn > 0)
+    {
+        (*m_stream) << m_delimiter;
     }
-  else
+    else
     { // finish one row
-      (*m_stream) << '\n';
+        (*m_stream) << '\n';
     }
 }
-  
-	
+
 } // namespace ns3
 
 #endif // CSV_WRITER_H

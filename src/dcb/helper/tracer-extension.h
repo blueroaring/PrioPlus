@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -21,49 +20,53 @@
 #ifndef TRACER_EXTENSION_H
 #define TRACER_EXTENSION_H
 
-#include <fstream>
 #include "ns3/dcb-net-device.h"
+#include "ns3/dcb-trace-application.h"
 #include "ns3/dcb-traffic-control.h"
 #include "ns3/rocev2-header.h"
 #include "ns3/rocev2-socket.h"
-#include "ns3/dcb-trace-application.h"
 
-namespace ns3 {
+#include <fstream>
 
-namespace tracer_extension {
+namespace ns3
+{
 
-  typedef void (*FlowTracedCallback) (uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, Time, Time);
+namespace tracer_extension
+{
 
-  enum Protocol {
+typedef void (*FlowTracedCallback)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, Time, Time);
+
+enum Protocol
+{
     None,
     RoCEv2,
-  };
+};
 
-  void ConfigOutputDirectory (std::string dirName);
-  void ConfigStopTime (Time stopTime);
+void ConfigOutputDirectory(std::string dirName);
+void ConfigStopTime(Time stopTime);
 
-  void ConfigTraceFCT (Protocol protocol, std::string fileName);
+void ConfigTraceFCT(Protocol protocol, std::string fileName);
 
-  void RegisterTraceFCT (Ptr<TraceApplication> app);
+void RegisterTraceFCT(Ptr<TraceApplication> app);
 
-  /**
-   * Capture packet at device and output the pcap file with prefix fileNamePrefix.
-   */
-  void EnableDevicePcap (Ptr<NetDevice> device, std::string fileNamePrefix);
-  /**
-   * Capture packets at all IPv4 interfaces of a switch and output the pcap file
-   * with prefix fileNamePrefix.
-   */
-  void EnableSwitchIpv4Pcap (Ptr<Node> sw, std::string fileNamePrefix);
+/**
+ * Capture packet at device and output the pcap file with prefix fileNamePrefix.
+ */
+void EnableDevicePcap(Ptr<NetDevice> device, std::string fileNamePrefix);
+/**
+ * Capture packets at all IPv4 interfaces of a switch and output the pcap file
+ * with prefix fileNamePrefix.
+ */
+void EnableSwitchIpv4Pcap(Ptr<Node> sw, std::string fileNamePrefix);
 
-  void EnableDeviceRateTrace (Ptr<NetDevice> device, std::string context, Time interval);
+void EnableDeviceRateTrace(Ptr<NetDevice> device, std::string context, Time interval);
 
-  void EnablePortQueueLengthTrace (Ptr<NetDevice> device, std::string context, Time interval);
+void EnablePortQueueLengthTrace(Ptr<NetDevice> device, std::string context, Time interval);
 
-  void EnableBufferoverflowTrace (Ptr<Node> sw, std::string context);
+void EnableBufferoverflowTrace(Ptr<Node> sw, std::string context);
 
-  void CleanTracers ();
-  
+void CleanTracers();
+
 } // namespace tracer_extension
 
 } // namespace ns3

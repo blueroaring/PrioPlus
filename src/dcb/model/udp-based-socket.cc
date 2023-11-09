@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -19,23 +18,26 @@
  */
 
 #include "udp-based-socket.h"
-#include "ns3/object-factory.h"
+
 #include "udp-based-l4-protocol.h"
+
 #include "ns3/ethernet-header.h"
 #include "ns3/inet-socket-address.h"
 #include "ns3/ipv4-packet-info-tag.h"
-#include "ns3/ipv4.h"
 #include "ns3/ipv4-routing-protocol.h"
-#include "ns3/node.h"
+#include "ns3/ipv4.h"
 #include "ns3/log.h"
-#include "ns3/simulator.h"
+#include "ns3/node.h"
 #include "ns3/object-base.h"
+#include "ns3/object-factory.h"
+#include "ns3/simulator.h"
 
-namespace ns3 {
+namespace ns3
+{
 
-NS_LOG_COMPONENT_DEFINE ("UdpBasedSocket");
+NS_LOG_COMPONENT_DEFINE("UdpBasedSocket");
 
-NS_OBJECT_ENSURE_REGISTERED (UdpBasedSocket);
+NS_OBJECT_ENSURE_REGISTERED(UdpBasedSocket);
 
 // The correct maximum UDP message size is 65507, as determined by the following formula:
 // 0xffff - (sizeof(IP Header) + sizeof(UDP Header)) = 65535-(20+8) = 65507
@@ -43,586 +45,593 @@ NS_OBJECT_ENSURE_REGISTERED (UdpBasedSocket);
 static const uint32_t MAX_IPV4_UDP_DATAGRAM_SIZE = 65507; //!< Maximum UDP datagram size
 
 TypeId
-UdpBasedSocket::GetTypeId ()
+UdpBasedSocket::GetTypeId()
 {
-  static TypeId tid = TypeId ("ns3::UdpBasedSocket")
-                          .SetParent<Socket> ()
-                          .SetGroupName ("Dcb")
-                          .AddConstructor<UdpBasedSocket> ()
-                          .AddTraceSource ("Drop", "Drop UDP packet due to receive buffer overflow",
-                                           MakeTraceSourceAccessor (&UdpBasedSocket::m_dropTrace),
-                                           "ns3::Packet::TracedCallback");
-  return tid;
+    static TypeId tid = TypeId("ns3::UdpBasedSocket")
+                            .SetParent<Socket>()
+                            .SetGroupName("Dcb")
+                            .AddConstructor<UdpBasedSocket>()
+                            .AddTraceSource("Drop",
+                                            "Drop UDP packet due to receive buffer overflow",
+                                            MakeTraceSourceAccessor(&UdpBasedSocket::m_dropTrace),
+                                            "ns3::Packet::TracedCallback");
+    return tid;
 }
 
-UdpBasedSocket::UdpBasedSocket ()
-    : m_node (0),
-      m_innerProto (0),
-      m_endPoint (0),
-      m_errno (),
-      m_shutdownSend (false),
-      m_shutdownRecv (false),
-      m_connected (false),
-      m_rxUsed (0),
-      m_rcvBufSize (8192) // TODO: do not use magic number
+UdpBasedSocket::UdpBasedSocket()
+    : m_node(0),
+      m_innerProto(0),
+      m_endPoint(0),
+      m_errno(),
+      m_shutdownSend(false),
+      m_shutdownRecv(false),
+      m_connected(false),
+      m_rxUsed(0),
+      m_rcvBufSize(8192) // TODO: do not use magic number
 {
-  NS_LOG_FUNCTION (this);
+    NS_LOG_FUNCTION(this);
 }
 
-UdpBasedSocket::~UdpBasedSocket ()
+UdpBasedSocket::~UdpBasedSocket()
 {
-  NS_LOG_FUNCTION (this);
-  m_node = 0;
+    NS_LOG_FUNCTION(this);
+    m_node = 0;
 }
 
 void
-UdpBasedSocket::SetInnerUdpProtocol (Ptr<UdpBasedL4Protocol> udp)
+UdpBasedSocket::SetInnerUdpProtocol(Ptr<UdpBasedL4Protocol> udp)
 {
-  NS_LOG_FUNCTION (this << udp);
-  m_innerProto = udp;
+    NS_LOG_FUNCTION(this << udp);
+    m_innerProto = udp;
 }
 
 enum Socket::SocketErrno
-UdpBasedSocket::GetErrno (void) const
+UdpBasedSocket::GetErrno(void) const
 {
-  NS_LOG_FUNCTION (this);
-  return m_errno;
+    NS_LOG_FUNCTION(this);
+    return m_errno;
 }
 
 enum Socket::SocketType
-UdpBasedSocket::GetSocketType (void) const
+UdpBasedSocket::GetSocketType(void) const
 {
-  return SocketType::NS3_SOCK_RAW;
+    return SocketType::NS3_SOCK_RAW;
 }
 
 void
-UdpBasedSocket::SetNode (Ptr<Node> node)
+UdpBasedSocket::SetNode(Ptr<Node> node)
 {
-  NS_LOG_FUNCTION (this << node);
-  m_node = node;
+    NS_LOG_FUNCTION(this << node);
+    m_node = node;
 }
 
 Ptr<Node>
-UdpBasedSocket::GetNode (void) const
+UdpBasedSocket::GetNode(void) const
 {
-  NS_LOG_FUNCTION (this);
-  return m_node;
+    NS_LOG_FUNCTION(this);
+    return m_node;
 }
 
 const uint32_t
-UdpBasedSocket::GetSerializedHeaderSize () const
+UdpBasedSocket::GetSerializedHeaderSize() const
 {
-  NS_LOG_FUNCTION (this);
-  return 14 + 20 + 8 +
-         m_innerProto->GetInnerProtocolHeaderSize (); // Ethernet + IP + UDP + Inner header
+    NS_LOG_FUNCTION(this);
+    return 14 + 20 + 8 +
+           m_innerProto->GetInnerProtocolHeaderSize(); // Ethernet + IP + UDP + Inner header
 }
 
 int
-UdpBasedSocket::Bind (const Address &address)
+UdpBasedSocket::Bind(const Address& address)
 {
-  NS_FATAL_ERROR ("Should not call this Bind (Address) on UdpBasedSocket");
-  return -1;
+    NS_FATAL_ERROR("Should not call this Bind (Address) on UdpBasedSocket");
+    return -1;
 }
 
 int
-UdpBasedSocket::Bind ()
+UdpBasedSocket::Bind()
 {
-  NS_LOG_FUNCTION (this);
-  NS_ASSERT_MSG (m_boundnetdevice,
-                 "UdpBasedSocket should be bound to a net device before calling Bind");
-  // m_endPoint->BindToNetDevice (m_boundnetdevice);
-  m_endPoint = m_innerProto->Allocate ();
+    NS_LOG_FUNCTION(this);
+    NS_ASSERT_MSG(m_boundnetdevice,
+                  "UdpBasedSocket should be bound to a net device before calling Bind");
+    // m_endPoint->BindToNetDevice (m_boundnetdevice);
+    m_endPoint = m_innerProto->Allocate();
 
-  m_endPoint->SetRxCallback (MakeCallback (&UdpBasedSocket::ForwardUp, Ptr<UdpBasedSocket> (this)));
-  // m_endPoint->SetDestroyCallback (
-  // MakeCallback (&UdpBasedSocket::Destroy, Ptr<UdpBasedSocket> (this)));
-  return 0;
+    m_endPoint->SetRxCallback(MakeCallback(&UdpBasedSocket::ForwardUp, Ptr<UdpBasedSocket>(this)));
+    // m_endPoint->SetDestroyCallback (
+    // MakeCallback (&UdpBasedSocket::Destroy, Ptr<UdpBasedSocket> (this)));
+    return 0;
 }
 
 int
-UdpBasedSocket::Bind6 ()
+UdpBasedSocket::Bind6()
 {
-  NS_LOG_FUNCTION (this);
-  NS_ASSERT_MSG (false, "Not implemented");
-  return 0;
+    NS_LOG_FUNCTION(this);
+    NS_ASSERT_MSG(false, "Not implemented");
+    return 0;
 }
 
 int
-UdpBasedSocket::Close (void)
+UdpBasedSocket::Close(void)
 {
-  NS_LOG_FUNCTION (this);
+    NS_LOG_FUNCTION(this);
 
-  if (m_shutdownRecv == true && m_shutdownSend == true)
+    if (m_shutdownRecv == true && m_shutdownSend == true)
     {
-      m_errno = Socket::ERROR_BADF;
-      return -1;
+        m_errno = Socket::ERROR_BADF;
+        return -1;
     }
-  m_shutdownRecv = true;
-  m_shutdownSend = true;
+    m_shutdownRecv = true;
+    m_shutdownSend = true;
 
-  // TODO: maybe more logic here
-  // m_endPoint->SetDestroyCallback (MakeNullCallback<void> ());
-  m_innerProto->DeAllocate (m_endPoint);
-  m_endPoint = 0;
-  return 0;
+    // TODO: maybe more logic here
+    // m_endPoint->SetDestroyCallback (MakeNullCallback<void> ());
+    m_innerProto->DeAllocate(m_endPoint);
+    m_endPoint = 0;
+    return 0;
 }
 
 int
-UdpBasedSocket::ShutdownSend (void)
+UdpBasedSocket::ShutdownSend(void)
 {
-  NS_LOG_FUNCTION (this);
-  m_shutdownSend = true;
-  return 0;
+    NS_LOG_FUNCTION(this);
+    m_shutdownSend = true;
+    return 0;
 }
 
 int
-UdpBasedSocket::ShutdownRecv (void)
+UdpBasedSocket::ShutdownRecv(void)
 {
-  NS_LOG_FUNCTION (this);
-  m_shutdownRecv = true;
-  if (m_endPoint)
+    NS_LOG_FUNCTION(this);
+    m_shutdownRecv = true;
+    if (m_endPoint)
     {
-      m_endPoint->SetRxEnabled (false);
+        m_endPoint->SetRxEnabled(false);
     }
-  return 0;
+    return 0;
 }
 
 int
-UdpBasedSocket::Connect (const Address &address)
+UdpBasedSocket::Connect(const Address& address)
 {
-  NS_LOG_FUNCTION (this << address);
+    NS_LOG_FUNCTION(this << address);
 
-  if (InetSocketAddress::IsMatchingType (address) == true)
+    if (InetSocketAddress::IsMatchingType(address) == true)
     {
-      InetSocketAddress transport = InetSocketAddress::ConvertFrom (address);
-      m_defaultAddress = Address (transport.GetIpv4 ());
-      SetIpTos (transport.GetTos ());
-      m_connected = true;
-      NotifyConnectionSucceeded ();
+        InetSocketAddress transport = InetSocketAddress::ConvertFrom(address);
+        m_defaultAddress = Address(transport.GetIpv4());
+        SetIpTos(transport.GetTos());
+        m_connected = true;
+        NotifyConnectionSucceeded();
     }
-  else
+    else
     {
-      NotifyConnectionFailed ();
-      return -1;
+        NotifyConnectionFailed();
+        return -1;
     }
-  return 0;
+    return 0;
 }
 
 int
-UdpBasedSocket::Listen (void)
+UdpBasedSocket::Listen(void)
 {
-  m_errno = Socket::ERROR_OPNOTSUPP;
-  return -1;
+    m_errno = Socket::ERROR_OPNOTSUPP;
+    return -1;
 }
 
 // maximum message size for UDP broadcast is limited by MTU
 // size of underlying link; we are not checking that now.
 // \todo Check MTU size of underlying link
 uint32_t
-UdpBasedSocket::GetTxAvailable (void) const
+UdpBasedSocket::GetTxAvailable(void) const
 {
-  NS_LOG_FUNCTION (this);
-  // No finite send buffer is modelled, but we must respect
-  // the maximum size of an IP datagram (65535 bytes - headers).
-  return MAX_IPV4_UDP_DATAGRAM_SIZE;
+    NS_LOG_FUNCTION(this);
+    // No finite send buffer is modelled, but we must respect
+    // the maximum size of an IP datagram (65535 bytes - headers).
+    return MAX_IPV4_UDP_DATAGRAM_SIZE;
 }
 
 int
-UdpBasedSocket::Send (Ptr<Packet> p, uint32_t flags)
+UdpBasedSocket::Send(Ptr<Packet> p, uint32_t flags)
 {
-  NS_LOG_FUNCTION (this << p << flags);
+    NS_LOG_FUNCTION(this << p << flags);
 
-  if (!m_connected)
+    if (!m_connected)
     {
-      m_errno = ERROR_NOTCONN;
-      return -1;
+        m_errno = ERROR_NOTCONN;
+        return -1;
     }
-  return DoSend (p);
+    return DoSend(p);
 }
 
 int
-UdpBasedSocket::DoSend (Ptr<Packet> p)
+UdpBasedSocket::DoSend(Ptr<Packet> p)
 {
-  NS_LOG_FUNCTION (this << p);
-  if ((m_endPoint == 0) && (Ipv4Address::IsMatchingType (m_defaultAddress) == true))
+    NS_LOG_FUNCTION(this << p);
+    if ((m_endPoint == 0) && (Ipv4Address::IsMatchingType(m_defaultAddress) == true))
     {
-      if (Bind () == -1)
+        if (Bind() == -1)
         {
-          NS_ASSERT (m_endPoint == 0);
-          return -1;
+            NS_ASSERT(m_endPoint == 0);
+            return -1;
         }
-      NS_ASSERT (m_endPoint != 0);
+        NS_ASSERT(m_endPoint != 0);
     }
-  if (m_shutdownSend)
+    if (m_shutdownSend)
     {
-      m_errno = ERROR_SHUTDOWN;
-      return -1;
+        m_errno = ERROR_SHUTDOWN;
+        return -1;
     }
-  if (Ipv4Address::IsMatchingType (m_defaultAddress))
+    if (Ipv4Address::IsMatchingType(m_defaultAddress))
     {
-      if (p->GetSize () > GetTxAvailable ())
+        if (p->GetSize() > GetTxAvailable())
         {
-          m_errno = ERROR_MSGSIZE;
-          return -1;
+            m_errno = ERROR_MSGSIZE;
+            return -1;
         }
-      uint8_t tos = GetIpTos ();
-      uint8_t priority = GetPriority ();
-      if (tos)
+        uint8_t tos = GetIpTos();
+        uint8_t priority = GetPriority();
+        if (tos)
         {
-          SocketIpTosTag ipTosTag;
-          ipTosTag.SetTos (tos);
-          // This packet may already have a SocketIpTosTag (see BUG 2440)
-          p->ReplacePacketTag (ipTosTag);
-          priority = IpTos2Priority (tos);
+            SocketIpTosTag ipTosTag;
+            ipTosTag.SetTos(tos);
+            // This packet may already have a SocketIpTosTag (see BUG 2440)
+            p->ReplacePacketTag(ipTosTag);
+            priority = IpTos2Priority(tos);
         }
 
-      if (priority)
+        if (priority)
         {
-          SocketPriorityTag priorityTag;
-          priorityTag.SetPriority (priority);
-          p->ReplacePacketTag (priorityTag);
+            SocketPriorityTag priorityTag;
+            priorityTag.SetPriority(priority);
+            p->ReplacePacketTag(priorityTag);
         }
-      Ptr<Ipv4> ipv4 = m_node->GetObject<Ipv4> ();
-      // Not supporting:
-      //   1. multicast
-      //   2. manually set TTL
-      //   3. specifying don't fragment
-      //   4. broadcast
-      if (ipv4->GetRoutingProtocol () != 0)
+        Ptr<Ipv4> ipv4 = m_node->GetObject<Ipv4>();
+        // Not supporting:
+        //   1. multicast
+        //   2. manually set TTL
+        //   3. specifying don't fragment
+        //   4. broadcast
+        if (ipv4->GetRoutingProtocol() != 0)
         {
-          Ipv4Address daddr = Ipv4Address::ConvertFrom (m_defaultAddress);
-          Ipv4Header header;
-          header.SetDestination (daddr);
-          header.SetProtocol (UdpL4Protocol::PROT_NUMBER);
-          Socket::SocketErrno errno_;
-          Ptr<Ipv4Route> route;
-          Ptr<NetDevice> oif = m_boundnetdevice; //specify non-zero if bound to a specific device
-          // TBD-- we could cache the route and just check its validity
-          route = ipv4->GetRoutingProtocol ()->RouteOutput (p, header, oif, errno_);
-          if (route != 0)
+            Ipv4Address daddr = Ipv4Address::ConvertFrom(m_defaultAddress);
+            Ipv4Header header;
+            header.SetDestination(daddr);
+            header.SetProtocol(UdpL4Protocol::PROT_NUMBER);
+            Socket::SocketErrno errno_;
+            Ptr<Ipv4Route> route;
+            Ptr<NetDevice> oif = m_boundnetdevice; // specify non-zero if bound to a specific device
+            // TBD-- we could cache the route and just check its validity
+            route = ipv4->GetRoutingProtocol()->RouteOutput(p, header, oif, errno_);
+            if (route != 0)
             {
-              NS_LOG_LOGIC ("Route exists");
+                NS_LOG_LOGIC("Route exists");
 
-              // Here we try to route subnet-directed broadcasts
-              uint32_t outputIfIndex = ipv4->GetInterfaceForDevice (route->GetOutputDevice ());
-              uint32_t ifNAddr = ipv4->GetNAddresses (outputIfIndex);
-              for (uint32_t addrI = 0; addrI < ifNAddr; ++addrI)
+                // Here we try to route subnet-directed broadcasts
+                uint32_t outputIfIndex = ipv4->GetInterfaceForDevice(route->GetOutputDevice());
+                uint32_t ifNAddr = ipv4->GetNAddresses(outputIfIndex);
+                for (uint32_t addrI = 0; addrI < ifNAddr; ++addrI)
                 {
-                  Ipv4InterfaceAddress ifAddr = ipv4->GetAddress (outputIfIndex, addrI);
-                  if (daddr == ifAddr.GetBroadcast ())
+                    Ipv4InterfaceAddress ifAddr = ipv4->GetAddress(outputIfIndex, addrI);
+                    if (daddr == ifAddr.GetBroadcast())
                     {
-                      m_errno = ERROR_OPNOTSUPP;
-                      return -1;
+                        m_errno = ERROR_OPNOTSUPP;
+                        return -1;
                     }
                 }
-              DoSendTo (p, daddr, route);
-              NotifyDataSent (p->GetSize ());
-              return p->GetSize ();
+                DoSendTo(p, daddr, route);
+                NotifyDataSent(p->GetSize());
+                return p->GetSize();
             }
-          else
+            else
             {
-              NS_LOG_LOGIC ("No route to destination");
-              NS_LOG_ERROR (errno_);
-              m_errno = errno_;
-              return -1;
+                NS_LOG_LOGIC("No route to destination");
+                NS_LOG_ERROR(errno_);
+                m_errno = errno_;
+                return -1;
             }
         }
-      else
+        else
         {
-          NS_LOG_ERROR ("ERROR_NOROUTETOHOST");
-          m_errno = ERROR_NOROUTETOHOST;
-          return -1;
+            NS_LOG_ERROR("ERROR_NOROUTETOHOST");
+            m_errno = ERROR_NOROUTETOHOST;
+            return -1;
         }
-      return 0;
+        return 0;
     }
 
-  m_errno = ERROR_AFNOSUPPORT;
-  return -1;
+    m_errno = ERROR_AFNOSUPPORT;
+    return -1;
 }
 
 void
-UdpBasedSocket::DoSendTo (Ptr<Packet> p, Ipv4Address daddr, Ptr<Ipv4Route> route)
+UdpBasedSocket::DoSendTo(Ptr<Packet> p, Ipv4Address daddr, Ptr<Ipv4Route> route)
 {
-  NS_LOG_FUNCTION (this << p << daddr);
+    NS_LOG_FUNCTION(this << p << daddr);
 
-  m_innerProto->Send (p->Copy (), route->GetSource (), daddr,
-                      m_endPoint->GetLocalPort (), m_endPoint->GetPeerPort (),
-                      route);
+    m_innerProto->Send(p->Copy(),
+                       route->GetSource(),
+                       daddr,
+                       m_endPoint->GetLocalPort(),
+                       m_endPoint->GetPeerPort(),
+                       route);
 }
 
 void
-UdpBasedSocket::NotifyFlowCompletes ()
+UdpBasedSocket::NotifyFlowCompletes()
 {
-  NS_LOG_FUNCTION (this);
+    NS_LOG_FUNCTION(this);
 
-  if (!m_flowCompleteCallback.IsNull())
+    if (!m_flowCompleteCallback.IsNull())
     {
-      m_flowCompleteCallback (this);
+        m_flowCompleteCallback(this);
     }
 }
 
 int
-UdpBasedSocket::SendTo (Ptr<Packet> p, uint32_t flags, const Address &toAddress)
+UdpBasedSocket::SendTo(Ptr<Packet> p, uint32_t flags, const Address& toAddress)
 {
-  NS_FATAL_ERROR ("Should not call SendTo on UdpBasedSocket");
-  return -1;
+    NS_FATAL_ERROR("Should not call SendTo on UdpBasedSocket");
+    return -1;
 }
 
 uint32_t
-UdpBasedSocket::GetRxAvailable (void) const
+UdpBasedSocket::GetRxAvailable(void) const
 {
-  NS_LOG_FUNCTION (this);
-  // We separately maintain this state to avoid walking the queue
-  // every time this might be called
-  return m_rxUsed;
+    NS_LOG_FUNCTION(this);
+    // We separately maintain this state to avoid walking the queue
+    // every time this might be called
+    return m_rxUsed;
 }
 
 Ptr<Packet>
-UdpBasedSocket::Recv (uint32_t maxSize, uint32_t flags)
+UdpBasedSocket::Recv(uint32_t maxSize, uint32_t flags)
 {
-  NS_LOG_FUNCTION (this << maxSize << flags);
+    NS_LOG_FUNCTION(this << maxSize << flags);
 
-  Address fromAddress;
-  Ptr<Packet> packet = RecvFrom (maxSize, flags, fromAddress);
-  return packet;
+    Address fromAddress;
+    Ptr<Packet> packet = RecvFrom(maxSize, flags, fromAddress);
+    return packet;
 }
 
 Ptr<Packet>
-UdpBasedSocket::RecvFrom (uint32_t maxSize, uint32_t flags, Address &fromAddress)
+UdpBasedSocket::RecvFrom(uint32_t maxSize, uint32_t flags, Address& fromAddress)
 {
-  NS_LOG_FUNCTION (this << maxSize << flags << fromAddress);
+    NS_LOG_FUNCTION(this << maxSize << flags << fromAddress);
 
-  if (m_deliveryQueue.empty ())
+    if (m_deliveryQueue.empty())
     {
-      return 0;
+        return 0;
     }
-  Ptr<Packet> p = m_deliveryQueue.front ().first;
-  fromAddress = m_deliveryQueue.front ().second;
+    Ptr<Packet> p = m_deliveryQueue.front().first;
+    fromAddress = m_deliveryQueue.front().second;
 
-  if (p->GetSize () <= maxSize)
+    if (p->GetSize() <= maxSize)
     {
-      m_deliveryQueue.pop ();
-      m_rxUsed -= p->GetSize ();
+        m_deliveryQueue.pop();
+        m_rxUsed -= p->GetSize();
     }
-  else
+    else
     {
-      p = 0;
+        p = 0;
     }
-  return p;
+    return p;
 }
 
 int
-UdpBasedSocket::GetSockName (Address &address) const
+UdpBasedSocket::GetSockName(Address& address) const
 {
-  NS_LOG_FUNCTION (this << address);
-  if (m_endPoint != 0)
+    NS_LOG_FUNCTION(this << address);
+    if (m_endPoint != 0)
     {
-      address = InetSocketAddress (m_innerProto->GetLocalAddress (), m_endPoint->GetLocalPort ());
+        address = InetSocketAddress(m_innerProto->GetLocalAddress(), m_endPoint->GetLocalPort());
     }
-  else
+    else
     { // It is possible to call this method on a socket without a name
-      // in which case, behavior is unspecified
-      // Should this return an InetSocketAddress or an Inet6SocketAddress?
-      address = InetSocketAddress (Ipv4Address::GetZero (), 0);
+        // in which case, behavior is unspecified
+        // Should this return an InetSocketAddress or an Inet6SocketAddress?
+        address = InetSocketAddress(Ipv4Address::GetZero(), 0);
     }
-  return 0;
+    return 0;
 }
 
 int
-UdpBasedSocket::GetPeerName (Address &address) const
+UdpBasedSocket::GetPeerName(Address& address) const
 {
-  NS_LOG_FUNCTION (this << address);
+    NS_LOG_FUNCTION(this << address);
 
-  if (!m_connected)
+    if (!m_connected)
     {
-      m_errno = ERROR_NOTCONN;
-      return -1;
+        m_errno = ERROR_NOTCONN;
+        return -1;
     }
 
-  if (Ipv4Address::IsMatchingType (m_defaultAddress))
+    if (Ipv4Address::IsMatchingType(m_defaultAddress))
     {
-      Ipv4Address addr = Ipv4Address::ConvertFrom (m_defaultAddress);
-      InetSocketAddress inet (addr, m_innerProto->GetProtocolNumber ());
-      inet.SetTos (GetIpTos ());
-      address = inet;
+        Ipv4Address addr = Ipv4Address::ConvertFrom(m_defaultAddress);
+        InetSocketAddress inet(addr, m_innerProto->GetProtocolNumber());
+        inet.SetTos(GetIpTos());
+        address = inet;
     }
-  else
+    else
     {
-      NS_ASSERT_MSG (false, "unexpected address type");
+        NS_ASSERT_MSG(false, "unexpected address type");
     }
 
-  return 0;
+    return 0;
 }
 
 bool
-UdpBasedSocket::SetAllowBroadcast (bool allowBroadcast)
+UdpBasedSocket::SetAllowBroadcast(bool allowBroadcast)
 {
-  if (allowBroadcast)
+    if (allowBroadcast)
     {
-      NS_FATAL_ERROR ("Broadcast is not allowed on UdpBasedSocket for now");
+        NS_FATAL_ERROR("Broadcast is not allowed on UdpBasedSocket for now");
     }
-  return false;
+    return false;
 }
 
 bool
-UdpBasedSocket::GetAllowBroadcast () const
+UdpBasedSocket::GetAllowBroadcast() const
 {
-  return false;
+    return false;
 }
 
 void
-UdpBasedSocket::ForwardUp (Ptr<Packet> packet, Ipv4Header header, uint32_t port,
-                           Ptr<Ipv4Interface> incomingInterface)
+UdpBasedSocket::ForwardUp(Ptr<Packet> packet,
+                          Ipv4Header header,
+                          uint32_t port,
+                          Ptr<Ipv4Interface> incomingInterface)
 {
-  NS_LOG_FUNCTION (this << packet << header << port);
+    NS_LOG_FUNCTION(this << packet << header << port);
 
-  if (m_shutdownRecv)
+    if (m_shutdownRecv)
     {
-      return;
+        return;
     }
 
-  // Should check via getsockopt ()..
-  if (IsRecvPktInfo ())
+    // Should check via getsockopt ()..
+    if (IsRecvPktInfo())
     {
-      Ipv4PacketInfoTag tag;
-      packet->RemovePacketTag (tag);
-      tag.SetAddress (header.GetDestination ());
-      tag.SetTtl (header.GetTtl ());
-      tag.SetRecvIf (incomingInterface->GetDevice ()->GetIfIndex ());
-      packet->AddPacketTag (tag);
+        Ipv4PacketInfoTag tag;
+        packet->RemovePacketTag(tag);
+        tag.SetAddress(header.GetDestination());
+        tag.SetTtl(header.GetTtl());
+        tag.SetRecvIf(incomingInterface->GetDevice()->GetIfIndex());
+        packet->AddPacketTag(tag);
     }
 
-  //Check only version 4 options
-  if (IsIpRecvTos ())
+    // Check only version 4 options
+    if (IsIpRecvTos())
     {
-      SocketIpTosTag ipTosTag;
-      ipTosTag.SetTos (header.GetTos ());
-      packet->AddPacketTag (ipTosTag);
+        SocketIpTosTag ipTosTag;
+        ipTosTag.SetTos(header.GetTos());
+        packet->AddPacketTag(ipTosTag);
     }
 
-  // in case the packet still has a priority tag attached, remove it
-  SocketPriorityTag priorityTag;
-  packet->RemovePacketTag (priorityTag);
+    // in case the packet still has a priority tag attached, remove it
+    SocketPriorityTag priorityTag;
+    packet->RemovePacketTag(priorityTag);
 
-  if ((m_rxUsed + packet->GetSize ()) <= m_rcvBufSize)
+    if ((m_rxUsed + packet->GetSize()) <= m_rcvBufSize)
     {
-      Address address = InetSocketAddress (header.GetSource (), port);
-      m_deliveryQueue.push (std::make_pair (packet, address));
-      m_rxUsed += packet->GetSize ();
-      NotifyDataRecv ();
+        Address address = InetSocketAddress(header.GetSource(), port);
+        m_deliveryQueue.push(std::make_pair(packet, address));
+        m_rxUsed += packet->GetSize();
+        NotifyDataRecv();
     }
-  else
+    else
     {
-      // In general, this case should not occur unless the
-      // receiving application reads data from this socket slowly
-      // in comparison to the arrival rate
-      //
-      // drop and trace packet
-      NS_LOG_WARN ("UdpBasedSocket: No receive buffer space available on node " << Simulator::GetContext () << ". Drop.");
-      m_dropTrace (packet);
+        // In general, this case should not occur unless the
+        // receiving application reads data from this socket slowly
+        // in comparison to the arrival rate
+        //
+        // drop and trace packet
+        NS_LOG_WARN("UdpBasedSocket: No receive buffer space available on node "
+                    << Simulator::GetContext() << ". Drop.");
+        m_dropTrace(packet);
     }
 }
 
 void
-UdpBasedSocket::FinishSending ()
+UdpBasedSocket::FinishSending()
 {
-  NS_LOG_FUNCTION (this);
+    NS_LOG_FUNCTION(this);
 }
 
 void
-UdpBasedSocket::SetFlowCompleteCallback (Callback<void, Ptr<UdpBasedSocket>> cb)
+UdpBasedSocket::SetFlowCompleteCallback(Callback<void, Ptr<UdpBasedSocket>> cb)
 {
-  NS_LOG_FUNCTION (this);
-  m_flowCompleteCallback = cb;
+    NS_LOG_FUNCTION(this);
+    m_flowCompleteCallback = cb;
 }
 
 uint32_t
-UdpBasedSocket::GetSrcPort () const
+UdpBasedSocket::GetSrcPort() const
 {
-  NS_LOG_FUNCTION (this);
-  return m_endPoint->GetLocalPort();
+    NS_LOG_FUNCTION(this);
+    return m_endPoint->GetLocalPort();
 }
 
 uint32_t
-UdpBasedSocket::GetDstPort () const
+UdpBasedSocket::GetDstPort() const
 {
-  NS_LOG_FUNCTION (this);
-  return m_endPoint->GetPeerPort();  
+    NS_LOG_FUNCTION(this);
+    return m_endPoint->GetPeerPort();
 }
 
 void
-UdpBasedSocket::SetRcvBufSize (uint32_t size)
+UdpBasedSocket::SetRcvBufSize(uint32_t size)
 {
-  m_rcvBufSize = size;
+    m_rcvBufSize = size;
 }
 
 uint32_t
-UdpBasedSocket::GetRcvBufSize (void) const
+UdpBasedSocket::GetRcvBufSize(void) const
 {
-  return m_rcvBufSize;
+    return m_rcvBufSize;
 }
 
 /* class UdpBasedSocketFactory */
-NS_OBJECT_ENSURE_REGISTERED (UdpBasedSocketFactory);
+NS_OBJECT_ENSURE_REGISTERED(UdpBasedSocketFactory);
 
 TypeId
-UdpBasedSocketFactory::GetTypeId (void)
+UdpBasedSocketFactory::GetTypeId(void)
 {
-  static TypeId tid = TypeId ("ns3::UdpBasedSocketFactory")
-                          .SetParent<SocketFactory> ()
-                          .SetGroupName ("Dcb")
-                          .AddConstructor<UdpBasedSocketFactory> ();
-  return tid;
+    static TypeId tid = TypeId("ns3::UdpBasedSocketFactory")
+                            .SetParent<SocketFactory>()
+                            .SetGroupName("Dcb")
+                            .AddConstructor<UdpBasedSocketFactory>();
+    return tid;
 }
 
-UdpBasedSocketFactory::UdpBasedSocketFactory ()
+UdpBasedSocketFactory::UdpBasedSocketFactory()
 {
 }
 
-UdpBasedSocketFactory::~UdpBasedSocketFactory ()
+UdpBasedSocketFactory::~UdpBasedSocketFactory()
 {
 }
 
 uint32_t
-UdpBasedSocketFactory::AddUdpBasedProtocol (Ptr<Node> node, Ptr<NetDevice> dev, TypeId protoTid)
+UdpBasedSocketFactory::AddUdpBasedProtocol(Ptr<Node> node, Ptr<NetDevice> dev, TypeId protoTid)
 {
-  ObjectFactory factory;
-  factory.SetTypeId (protoTid);
-  Ptr<UdpBasedL4Protocol> innerProto = DynamicCast<UdpBasedL4Protocol> (factory.Create ());
-  innerProto->Setup (node, dev);
-  uint16_t udpPort = innerProto->GetProtocolNumber ();
+    ObjectFactory factory;
+    factory.SetTypeId(protoTid);
+    Ptr<UdpBasedL4Protocol> innerProto = DynamicCast<UdpBasedL4Protocol>(factory.Create());
+    innerProto->Setup(node, dev);
+    uint16_t udpPort = innerProto->GetProtocolNumber();
 
-  auto proto = m_protoMapper.find (udpPort);
-  if (proto == m_protoMapper.end ())
+    auto proto = m_protoMapper.find(udpPort);
+    if (proto == m_protoMapper.end())
     {
-      m_protoMapper.emplace (udpPort, innerProto);
+        m_protoMapper.emplace(udpPort, innerProto);
     }
-  else
+    else
     {
-      NS_LOG_WARN ("Already added protocol on UDP port " << udpPort);
+        NS_LOG_WARN("Already added protocol on UDP port " << udpPort);
     }
-  SetNextProtocol (udpPort);
-  return innerProto->GetHeaderSize ();
+    SetNextProtocol(udpPort);
+    return innerProto->GetHeaderSize();
 }
 
 void
-UdpBasedSocketFactory::SetNextProtocol (uint16_t port)
+UdpBasedSocketFactory::SetNextProtocol(uint16_t port)
 {
-  auto it = m_protoMapper.find (port);
-  if (it != m_protoMapper.end ())
+    auto it = m_protoMapper.find(port);
+    if (it != m_protoMapper.end())
     {
-      m_nextProto = it->second;
+        m_nextProto = it->second;
     }
-  else
+    else
     {
-      NS_FATAL_ERROR ("Cannot find UDP-based protocol on UDP port " << port);
+        NS_FATAL_ERROR("Cannot find UDP-based protocol on UDP port " << port);
     }
 }
 
 Ptr<Socket>
-UdpBasedSocketFactory::CreateSocket (void)
+UdpBasedSocketFactory::CreateSocket(void)
 {
-  return m_nextProto->CreateSocket ();
+    return m_nextProto->CreateSocket();
 }
 
 } // namespace ns3

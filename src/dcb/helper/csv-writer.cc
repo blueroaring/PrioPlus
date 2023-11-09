@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -19,51 +18,53 @@
  */
 
 #include "csv-writer.h"
+
 #include "ns3/log.h"
 
-namespace ns3 {
-NS_LOG_COMPONENT_DEFINE ("CsvWriter");
-
-CsvWriter::CsvWriter (const std::string &filepath, std::size_t columnNum, char delimiter /* =',' */)
-    : m_fileStream (filepath),
-      m_stream (&m_fileStream),
-      m_delimiter (delimiter),
-      m_currentColumn (0),
-      m_totalColumn (columnNum)
+namespace ns3
 {
-  NS_LOG_FUNCTION (this << filepath);
+NS_LOG_COMPONENT_DEFINE("CsvWriter");
+
+CsvWriter::CsvWriter(const std::string& filepath, std::size_t columnNum, char delimiter /* =',' */)
+    : m_fileStream(filepath),
+      m_stream(&m_fileStream),
+      m_delimiter(delimiter),
+      m_currentColumn(0),
+      m_totalColumn(columnNum)
+{
+    NS_LOG_FUNCTION(this << filepath);
 }
 
-CsvWriter::CsvWriter (std::ostream* const stream, std::size_t columnNum, char delimiter /* =',' */)
-    : m_fileStream (),
-      m_stream (stream),
-      m_delimiter (delimiter),
-      m_currentColumn (0),
-      m_totalColumn (columnNum)
+CsvWriter::CsvWriter(std::ostream* const stream, std::size_t columnNum, char delimiter /* =',' */)
+    : m_fileStream(),
+      m_stream(stream),
+      m_delimiter(delimiter),
+      m_currentColumn(0),
+      m_totalColumn(columnNum)
 {
-  NS_LOG_FUNCTION (this);
+    NS_LOG_FUNCTION(this);
 }
 
 void
-CsvWriter::SetColumnCount (std::size_t columnNum)
+CsvWriter::SetColumnCount(std::size_t columnNum)
 {
-  NS_LOG_FUNCTION (this << columnNum);
+    NS_LOG_FUNCTION(this << columnNum);
 
-  m_totalColumn = columnNum;
+    m_totalColumn = columnNum;
 }
 
 std::size_t
-CsvWriter::GetColumnCount () const
+CsvWriter::GetColumnCount() const
 {
-  NS_LOG_FUNCTION (this);
+    NS_LOG_FUNCTION(this);
 
-  return m_totalColumn;
+    return m_totalColumn;
 }
 
 char
-CsvWriter::Delimiter () const
+CsvWriter::Delimiter() const
 {
-  NS_LOG_FUNCTION (this);
-  return m_delimiter;
+    NS_LOG_FUNCTION(this);
+    return m_delimiter;
 }
 } // namespace ns3

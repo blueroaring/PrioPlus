@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -25,47 +24,54 @@
 #include "ns3/ipv4-queue-disc-item.h"
 #include "ns3/random-variable-stream.h"
 
-namespace ns3 {
+namespace ns3
+{
 
-struct EcnConfig {
-  struct QueueConfig
-  {
-    uint32_t priority, kMin, kMax;
-    double pMax;
-    QueueConfig (uint32_t p, uint32_t kmin, uint32_t kmax, double pmax) : priority (p), kMin (kmin), kMax (kmax), pMax (pmax) {}
-  }; // struct QueueConfig
-  
-  void
-  AddQueueConfig (uint32_t prior, uint32_t kmin, uint32_t kmax, double pmax)
-  {
-    queues.emplace_back (prior, kmin, kmax, pmax);
-  }
+struct EcnConfig
+{
+    struct QueueConfig
+    {
+        uint32_t priority, kMin, kMax;
+        double pMax;
 
-  uint32_t port;
-  std::vector<QueueConfig> queues;
+        QueueConfig(uint32_t p, uint32_t kmin, uint32_t kmax, double pmax)
+            : priority(p),
+              kMin(kmin),
+              kMax(kmax),
+              pMax(pmax)
+        {
+        }
+    }; // struct QueueConfig
+
+    void AddQueueConfig(uint32_t prior, uint32_t kmin, uint32_t kmax, double pmax)
+    {
+        queues.emplace_back(prior, kmin, kmax, pmax);
+    }
+
+    uint32_t port;
+    std::vector<QueueConfig> queues;
 };
-  
+
 class FifoQueueDiscEcn : public FifoQueueDisc
 {
-public:
-  static TypeId GetTypeId ();
-  FifoQueueDiscEcn ();
-  virtual ~FifoQueueDiscEcn ();
-  
-  void ConfigECN (uint32_t kmin, uint32_t kmax, double pmax);
+  public:
+    static TypeId GetTypeId();
+    FifoQueueDiscEcn();
+    virtual ~FifoQueueDiscEcn();
 
-private:
-  virtual bool DoEnqueue (Ptr<QueueDiscItem> item) override;
-  
-  bool CheckShouldMarkECN (Ptr<Ipv4QueueDiscItem> item) const;
+    void ConfigECN(uint32_t kmin, uint32_t kmax, double pmax);
 
-  uint32_t m_ecnKMin;
-  uint32_t m_ecnKMax;
-  double m_ecnPMax;
-  Ptr<UniformRandomVariable> m_rng;
-  
+  private:
+    virtual bool DoEnqueue(Ptr<QueueDiscItem> item) override;
+
+    bool CheckShouldMarkECN(Ptr<Ipv4QueueDiscItem> item) const;
+
+    uint32_t m_ecnKMin;
+    uint32_t m_ecnKMax;
+    double m_ecnPMax;
+    Ptr<UniformRandomVariable> m_rng;
+
 }; // class FifoQueueDiscEcn
-
 
 } // namespace ns3
 

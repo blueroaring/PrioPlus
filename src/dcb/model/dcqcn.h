@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -26,7 +25,8 @@
 #include "ns3/packet.h"
 #include "ns3/timer.h"
 
-namespace ns3 {
+namespace ns3
+{
 
 class RoCEv2SocketState;
 
@@ -37,66 +37,64 @@ class RoCEv2SocketState;
  */
 class DcqcnCongestionOps : public Object
 {
-public:
+  public:
+    /**
+     * Get the type ID.
+     * \brief Get the type ID.
+     * \return the object TypeId
+     */
+    static TypeId GetTypeId(void);
 
-  /**
-   * Get the type ID.
-   * \brief Get the type ID.
-   * \return the object TypeId
-   */
-  static TypeId GetTypeId (void);
-  
-  DcqcnCongestionOps (Ptr<RoCEv2SocketState> sockState);
-  ~DcqcnCongestionOps ();
-  
-  void SetRateAIRatio (double ratio);
-  void SetRateHyperAIRatio (double ratio);
+    DcqcnCongestionOps(Ptr<RoCEv2SocketState> sockState);
+    ~DcqcnCongestionOps();
 
-  /**
-   * After configuring the DCQCN, call this function to start the timer.
-   */
-  void SetReady ();
+    void SetRateAIRatio(double ratio);
+    void SetRateHyperAIRatio(double ratio);
 
-  /**
-   * Update socket state when receiving a CNP.
-   */
-  void UpdateStateWithCNP ();
+    /**
+     * After configuring the DCQCN, call this function to start the timer.
+     */
+    void SetReady();
 
-  /**
-   * When the sender sending out a packet, update the state if needed.
-   */
-  void UpdateStateSend (Ptr<Packet> packet);
+    /**
+     * Update socket state when receiving a CNP.
+     */
+    void UpdateStateWithCNP();
 
-  void SetStopTime (Time stopTime);
+    /**
+     * When the sender sending out a packet, update the state if needed.
+     */
+    void UpdateStateSend(Ptr<Packet> packet);
 
-  Time GetCNPInterval () const;
-  
-private:
+    void SetStopTime(Time stopTime);
 
-  void UpdateAlpha ();
+    Time GetCNPInterval() const;
 
-  void RateTimerTriggered ();
+  private:
+    void UpdateAlpha();
 
-  void UpdateRate ();
+    void RateTimerTriggered();
 
-  const Ptr<RoCEv2SocketState> m_sockState;
-  double m_alpha;
-  const double m_g;
-  double m_raiRatio; //!< RateAI / link rate for additive increase
-  double m_hraiRatio; //!< Hyper rate AI / link rate for hyper additive increase
-  Timer m_alphaTimer; //!< update alpha if haven't received CNP for a configured time
-  Timer m_rateTimer;
-  const uint32_t m_bytesThreshold;
-  uint32_t m_bytesCounter;
-  uint32_t m_rateUpdateIter;
-  uint32_t m_bytesUpdateIter;
-  const uint32_t m_F;
-  double m_targetRateRatio;
-  double m_curRateRatio;
-  Time m_CNPInterval;
-  double m_minRateRatio;
-  Time m_stopTime;
-  
+    void UpdateRate();
+
+    const Ptr<RoCEv2SocketState> m_sockState;
+    double m_alpha;
+    const double m_g;
+    double m_raiRatio;  //!< RateAI / link rate for additive increase
+    double m_hraiRatio; //!< Hyper rate AI / link rate for hyper additive increase
+    Timer m_alphaTimer; //!< update alpha if haven't received CNP for a configured time
+    Timer m_rateTimer;
+    const uint32_t m_bytesThreshold;
+    uint32_t m_bytesCounter;
+    uint32_t m_rateUpdateIter;
+    uint32_t m_bytesUpdateIter;
+    const uint32_t m_F;
+    double m_targetRateRatio;
+    double m_curRateRatio;
+    Time m_CNPInterval;
+    double m_minRateRatio;
+    Time m_stopTime;
+
 }; // class DcqcnCongestionOps
 
 } // namespace ns3

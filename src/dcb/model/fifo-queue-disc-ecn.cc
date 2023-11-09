@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -19,108 +18,114 @@
  */
 
 #include "fifo-queue-disc-ecn.h"
+
 #include "ns3/abort.h"
 #include "ns3/drop-tail-queue.h"
 #include "ns3/simulator.h"
+
 #include <cstdint>
 
-namespace ns3 {
+namespace ns3
+{
 
-NS_LOG_COMPONENT_DEFINE ("FifoQueueDiscEcn");
+NS_LOG_COMPONENT_DEFINE("FifoQueueDiscEcn");
 
-NS_OBJECT_ENSURE_REGISTERED (FifoQueueDiscEcn);
+NS_OBJECT_ENSURE_REGISTERED(FifoQueueDiscEcn);
 
 TypeId
-FifoQueueDiscEcn::GetTypeId ()
+FifoQueueDiscEcn::GetTypeId()
 {
-  static TypeId tid = TypeId ("ns3::FifoQueueDiscEcn")
-    .SetParent<FifoQueueDisc> ()
-    .SetGroupName ("dcb")
-    .AddConstructor<FifoQueueDiscEcn> ();
-  return tid;
+    static TypeId tid = TypeId("ns3::FifoQueueDiscEcn")
+                            .SetParent<FifoQueueDisc>()
+                            .SetGroupName("dcb")
+                            .AddConstructor<FifoQueueDiscEcn>();
+    return tid;
 }
 
-FifoQueueDiscEcn::FifoQueueDiscEcn ()
-  : m_ecnKMin (UINT32_MAX - 1), m_ecnKMax (UINT32_MAX), m_ecnPMax (0.)
+FifoQueueDiscEcn::FifoQueueDiscEcn()
+    : m_ecnKMin(UINT32_MAX - 1),
+      m_ecnKMax(UINT32_MAX),
+      m_ecnPMax(0.)
 {
-  NS_LOG_FUNCTION (this);
+    NS_LOG_FUNCTION(this);
 }
 
-FifoQueueDiscEcn::~FifoQueueDiscEcn ()
+FifoQueueDiscEcn::~FifoQueueDiscEcn()
 {
-  NS_LOG_FUNCTION (this);
+    NS_LOG_FUNCTION(this);
 }
 
 bool
-FifoQueueDiscEcn::DoEnqueue (Ptr<QueueDiscItem> item)
+FifoQueueDiscEcn::DoEnqueue(Ptr<QueueDiscItem> item)
 {
-  NS_LOG_FUNCTION (this << item);
+    NS_LOG_FUNCTION(this << item);
 
-  Ptr<Ipv4QueueDiscItem> ipv4Item = DynamicCast<Ipv4QueueDiscItem> (item);
-  if (ipv4Item && CheckShouldMarkECN (ipv4Item))
+    Ptr<Ipv4QueueDiscItem> ipv4Item = DynamicCast<Ipv4QueueDiscItem>(item);
+    if (ipv4Item && CheckShouldMarkECN(ipv4Item))
     {
-      NS_LOG_DEBUG ("Switch " << Simulator::GetContext () << " FifoQueueDiscEcn marks ECN on packet");
-      ipv4Item->Mark ();
+        NS_LOG_DEBUG("Switch " << Simulator::GetContext()
+                               << " FifoQueueDiscEcn marks ECN on packet");
+        ipv4Item->Mark();
     }
 
-  if (GetCurrentSize () + item > GetMaxSize ())
+    if (GetCurrentSize() + item > GetMaxSize())
     {
-      NS_LOG_LOGIC ("Queue full -- dropping pkt");
-      DropBeforeEnqueue (item, LIMIT_EXCEEDED_DROP);
-      return false;
+        NS_LOG_LOGIC("Queue full -- dropping pkt");
+        DropBeforeEnqueue(item, LIMIT_EXCEEDED_DROP);
+        return false;
     }
 
-  bool retval = GetInternalQueue (0)->Enqueue (item);
+    bool retval = GetInternalQueue(0)->Enqueue(item);
 
-  // If Queue::Enqueue fails, QueueDisc::DropBeforeEnqueue is called by the
-  // internal queue because QueueDisc::AddInternalQueue sets the trace callback
+    // If Queue::Enqueue fails, QueueDisc::DropBeforeEnqueue is called by the
+    // internal queue because QueueDisc::AddInternalQueue sets the trace callback
 
-  NS_LOG_LOGIC ("Number packets " << GetInternalQueue (0)->GetNPackets ());
-  NS_LOG_LOGIC ("Number bytes " << GetInternalQueue (0)->GetNBytes ());
+    NS_LOG_LOGIC("Number packets " << GetInternalQueue(0)->GetNPackets());
+    NS_LOG_LOGIC("Number bytes " << GetInternalQueue(0)->GetNBytes());
 
-  return retval;
+    return retval;
 }
 
 void
-FifoQueueDiscEcn::ConfigECN (uint32_t kmin, uint32_t kmax, double pmax)
+FifoQueueDiscEcn::ConfigECN(uint32_t kmin, uint32_t kmax, double pmax)
 {
-  NS_LOG_FUNCTION (this);
+    NS_LOG_FUNCTION(this);
 
-  if (kmin >= kmax)
+    if (kmin >= kmax)
     {
-      NS_FATAL_ERROR ("ECN kMin should be smaller than kMax");
+        NS_FATAL_ERROR("ECN kMin should be smaller than kMax");
     }
-  if (pmax > 1.0 || pmax < 0.)
+    if (pmax > 1.0 || pmax < 0.)
     {
-      NS_FATAL_ERROR ("ECN pMAx should be between 0 and 1");
+        NS_FATAL_ERROR("ECN pMAx should be between 0 and 1");
     }
-  m_ecnKMin = kmin;
-  m_ecnKMax = kmax;
-  m_ecnPMax = pmax;
+    m_ecnKMin = kmin;
+    m_ecnKMax = kmax;
+    m_ecnPMax = pmax;
 
-  m_rng = CreateObject<UniformRandomVariable> ();
-  m_rng->SetAttribute ("Min", DoubleValue (0.0));
-  m_rng->SetAttribute ("Max", DoubleValue (1.0));
+    m_rng = CreateObject<UniformRandomVariable>();
+    m_rng->SetAttribute("Min", DoubleValue(0.0));
+    m_rng->SetAttribute("Max", DoubleValue(1.0));
 }
 
 bool
-FifoQueueDiscEcn::CheckShouldMarkECN (Ptr<Ipv4QueueDiscItem> item) const
+FifoQueueDiscEcn::CheckShouldMarkECN(Ptr<Ipv4QueueDiscItem> item) const
 {
-  NS_LOG_FUNCTION (this << item);
-  uint32_t nbytes = GetNBytes () + item->GetPacket ()->GetSize ();
-  if (nbytes <= m_ecnKMin)
+    NS_LOG_FUNCTION(this << item);
+    uint32_t nbytes = GetNBytes() + item->GetPacket()->GetSize();
+    if (nbytes <= m_ecnKMin)
     {
-      return false;
+        return false;
     }
-  else if (nbytes >= m_ecnKMax)
+    else if (nbytes >= m_ecnKMax)
     {
-      return true;
+        return true;
     }
-  else
+    else
     { // mark ECN with probability
-      // multiplied by 1024 to improve precision
-      double prob = m_ecnPMax * 1024 * (nbytes - m_ecnKMin) / (m_ecnKMax - m_ecnKMin);
-      return m_rng->GetValue () * 1024 < prob;
+        // multiplied by 1024 to improve precision
+        double prob = m_ecnPMax * 1024 * (nbytes - m_ecnKMin) / (m_ecnKMax - m_ecnKMin);
+        return m_rng->GetValue() * 1024 < prob;
     }
 }
 

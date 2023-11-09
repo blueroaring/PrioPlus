@@ -33,7 +33,7 @@
         },
         "switch": {
             "pfcDynamic": false,
-            "bufferSize": "13180MB"
+            "bufferSize": "13180KB"
         },
         "switchPort": {
             "pfcEnabled": true,

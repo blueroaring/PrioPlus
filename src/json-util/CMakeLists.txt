@@ -6,13 +6,13 @@ endif()
 if(${Boost_FOUND})
 build_lib(
     LIBNAME json-util
-    SOURCE_FILES 
+    SOURCE_FILES
         model/json-util.cc
         helper/json-topology-helper.cc
-    HEADER_FILES 
+    HEADER_FILES
         model/json-util.h
         helper/json-topology-helper.h
-    LIBRARIES_TO_LINK 
+    LIBRARIES_TO_LINK
         ${libcore}
         ${libnetwork}
         ${libpoint-to-point}

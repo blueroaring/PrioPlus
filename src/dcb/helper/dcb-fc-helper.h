@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -23,18 +22,21 @@
 
 #include "ns3/dcb-pfc-port.h"
 
-namespace ns3 {
+namespace ns3
+{
 
 class DcbFcHelper
 {
-public:
-  DcbFcHelper ();
+  public:
+    DcbFcHelper();
 
-  virtual ~DcbFcHelper ();
+    virtual ~DcbFcHelper();
 
-  static void InstallPFCtoNodePort (Ptr<Node> node, const uint32_t port, const DcbPfcPortConfig &config);
+    static void InstallPFCtoNodePort(Ptr<Node> node,
+                                     const uint32_t port,
+                                     const DcbPfcPortConfig& config);
 
-  // ... other flow control configurtions should be added here
+    // ... other flow control configurtions should be added here
 
 }; // class DcbFcHelper
 

@@ -422,13 +422,13 @@ class QueueDisc : public Object
      * Dequeues multiple packets, until a quota is exceeded or sending a packet
      * to the device failed.
      */
-      virtual void Run (void);
+    virtual void Run(void);
 
     /**
      * Modelled after the Linux function qdisc_run_end (include/net/sch_generic.h).
      * Set the qdisc as not running.
      */
-    void RunEnd (void);
+    void RunEnd(void);
 
     /// Internal queues store QueueDiscItem objects
     typedef Queue<QueueDiscItem> InternalQueue;
@@ -585,8 +585,8 @@ class QueueDisc : public Object
      */
     bool RunBegin();
 
-    SendCallback m_send;           //!< Callback used to send a packet to the receiving object
-    bool m_running;                //!< The queue disc is performing multiple dequeue operations
+    SendCallback m_send; //!< Callback used to send a packet to the receiving object
+    bool m_running;      //!< The queue disc is performing multiple dequeue operations
 
   private:
     /**
@@ -702,8 +702,8 @@ class QueueDisc : public Object
     Stats m_stats;    //!< The collected statistics
     uint32_t m_quota; //!< Maximum number of packets dequeued in a qdisc run
     Ptr<NetDeviceQueueInterface> m_devQueueIface; //!< NetDevice queue interface
-    Ptr<QueueDiscItem> m_requeued; //!< The last packet that failed to be transmitted
-    bool m_peeked;                 //!< A packet was dequeued because Peek was called
+    Ptr<QueueDiscItem> m_requeued;                //!< The last packet that failed to be transmitted
+    bool m_peeked;                                //!< A packet was dequeued because Peek was called
     std::string m_childQueueDiscDropMsg; //!< Reason why a packet was dropped by a child queue disc
     std::string m_childQueueDiscMarkMsg; //!< Reason why a packet was marked by a child queue disc
     QueueDiscSizePolicy m_sizePolicy;    //!< The queue disc size policy

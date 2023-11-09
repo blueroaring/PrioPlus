@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2010 Universita' di Firenze, Italy
  *
@@ -28,49 +27,49 @@
 #include "ns3/net-device.h"
 #include "ns3/object-factory.h"
 
-namespace ns3 {
+namespace ns3
+{
 
 class DcbNetDevice;
 
 class TraceApplicationHelper
 {
-public:
-  TraceApplicationHelper (Ptr<DcTopology> topology);
-  
-  ApplicationContainer Install (Ptr<Node> node) const;
+  public:
+    TraceApplicationHelper(Ptr<DcTopology> topology);
 
-  void SetProtocolGroup (TraceApplication::ProtocolGroup protoGroup);
-  void SetCdf (const TraceApplication::TraceCdf& cdf);
-  void SetLoad (Ptr<const DcbNetDevice> dev, double load);
-  void SetDestination (int32_t dest);
+    ApplicationContainer Install(Ptr<Node> node) const;
 
-  /**
-   * Record an attribute to be set in each Application after it is is created.
-   *
-   * \param name the name of the attribute to set
-   * \param value the value of the attribute to set
-   */
-  // void SetAttribute (std::string name, const AttributeValue &value);
+    void SetProtocolGroup(TraceApplication::ProtocolGroup protoGroup);
+    void SetCdf(const TraceApplication::TraceCdf& cdf);
+    void SetLoad(Ptr<const DcbNetDevice> dev, double load);
+    void SetDestination(int32_t dest);
 
-private:
+    /**
+     * Record an attribute to be set in each Application after it is is created.
+     *
+     * \param name the name of the attribute to set
+     * \param value the value of the attribute to set
+     */
+    // void SetAttribute (std::string name, const AttributeValue &value);
 
-  /**
-   * Install an ns3::UdpEchoClient on the node configured with all the
-   * attributes set with SetAttribute.
-   *
-   * \param node The node on which an UdpEchoClient will be installed.
-   * \returns Ptr to the application installed.
-   */
-  Ptr<Application> InstallPriv (Ptr<Node> node) const;
+  private:
+    /**
+     * Install an ns3::UdpEchoClient on the node configured with all the
+     * attributes set with SetAttribute.
+     *
+     * \param node The node on which an UdpEchoClient will be installed.
+     * \returns Ptr to the application installed.
+     */
+    Ptr<Application> InstallPriv(Ptr<Node> node) const;
 
-  static double CalculateCdfMeanSize (const TraceApplication::TraceCdf * const cdf);
+    static double CalculateCdfMeanSize(const TraceApplication::TraceCdf* const cdf);
 
-  Ptr<DcTopology> m_topology;
-  TraceApplication::ProtocolGroup m_protoGroup;
-  TraceApplication::TraceCdf* m_cdf;
-  double m_flowMeanInterval;
-  int32_t m_dest;
-  bool m_sendEnabled;
+    Ptr<DcTopology> m_topology;
+    TraceApplication::ProtocolGroup m_protoGroup;
+    TraceApplication::TraceCdf* m_cdf;
+    double m_flowMeanInterval;
+    int32_t m_dest;
+    bool m_sendEnabled;
 
 }; // class TraceApplicationHelper
 

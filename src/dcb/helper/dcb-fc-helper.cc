@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -19,53 +18,58 @@
  */
 
 #include "dcb-fc-helper.h"
+
 #include "ns3/assert.h"
 
-namespace ns3 {
+namespace ns3
+{
 
-DcbFcHelper::DcbFcHelper ()
+DcbFcHelper::DcbFcHelper()
 {
 }
 
-DcbFcHelper::~DcbFcHelper ()
+DcbFcHelper::~DcbFcHelper()
 {
 }
 
 // static
 void
-DcbFcHelper::InstallPFCtoNodePort(Ptr<Node> node, const uint32_t port, const DcbPfcPortConfig &config)
+DcbFcHelper::InstallPFCtoNodePort(Ptr<Node> node,
+                                  const uint32_t port,
+                                  const DcbPfcPortConfig& config)
 {
-  Ptr<DcbTrafficControl> dcbTc = node->GetObject<DcbTrafficControl> ();
-  NS_ASSERT_MSG(dcbTc, "PFC enabled but there is no DcbTrafficControl aggregated to the node");
-  
-  Ptr<NetDevice> dev = node->GetDevice (port);
-  
-  // enable flow control on queue disc
-  Ptr<PausableQueueDisc> qDisc = DynamicCast<DcbNetDevice>(node->GetDevice (port))->GetQueueDisc ();
-  qDisc->SetFCEnabled (true);
+    Ptr<DcbTrafficControl> dcbTc = node->GetObject<DcbTrafficControl>();
+    NS_ASSERT_MSG(dcbTc, "PFC enabled but there is no DcbTrafficControl aggregated to the node");
 
-  // install PFC
-  Ptr<DcbPfcPort> pfc = CreateObject <DcbPfcPort> (dev, dcbTc);
-  uint8_t enableVec = 0;
-  for (const DcbPfcPortConfig::QueueConfig &qConfig : config.queues)
-	{
-	  if (qConfig.priority >= DcbTrafficControl::PRIORITY_NUMBER)
-        {
-          NS_FATAL_ERROR ("PFC priority should be 0~7, your input is " << qConfig.priority);
-        }
-      if (qConfig.xon > qConfig.reserve)
-        {
-          NS_FATAL_ERROR ("XON should be less or equal to reserve");
-        }
-	  enableVec |= (1 << qConfig.priority);
-	  pfc->ConfigQueue(qConfig.priority, qConfig.reserve, qConfig.xon);
-	}
-  pfc->SetEnableVec (enableVec);
-  dcbTc->InstallFCToPort (port, pfc);
+    Ptr<NetDevice> dev = node->GetDevice(port);
 
-  // register protocol handler
-  node->RegisterProtocolHandler (MakeCallback (&DcbPfcPort::ReceivePfc, pfc),
-                                 PfcFrame::PROT_NUMBER, dev);
+    // enable flow control on queue disc
+    Ptr<PausableQueueDisc> qDisc = DynamicCast<DcbNetDevice>(node->GetDevice(port))->GetQueueDisc();
+    qDisc->SetFCEnabled(true);
+
+    // install PFC
+    Ptr<DcbPfcPort> pfc = CreateObject<DcbPfcPort>(dev, dcbTc);
+    uint8_t enableVec = 0;
+    for (const DcbPfcPortConfig::QueueConfig& qConfig : config.queues)
+    {
+        if (qConfig.priority >= DcbTrafficControl::PRIORITY_NUMBER)
+        {
+            NS_FATAL_ERROR("PFC priority should be 0~7, your input is " << qConfig.priority);
+        }
+        if (qConfig.xon > qConfig.reserve)
+        {
+            NS_FATAL_ERROR("XON should be less or equal to reserve");
+        }
+        enableVec |= (1 << qConfig.priority);
+        pfc->ConfigQueue(qConfig.priority, qConfig.reserve, qConfig.xon);
+    }
+    pfc->SetEnableVec(enableVec);
+    dcbTc->InstallFCToPort(port, pfc);
+
+    // register protocol handler
+    node->RegisterProtocolHandler(MakeCallback(&DcbPfcPort::ReceivePfc, pfc),
+                                  PfcFrame::PROT_NUMBER,
+                                  dev);
 }
 
 } // namespace ns3

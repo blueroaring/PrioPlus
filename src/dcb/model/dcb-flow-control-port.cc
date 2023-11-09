@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -19,71 +18,79 @@
  */
 
 #include "dcb-flow-control-port.h"
+
 #include "dcb-traffic-control.h"
-#include "ns3/type-id.h"
+
 #include "ns3/ipv4-header.h"
 #include "ns3/socket.h"
+#include "ns3/type-id.h"
 
-namespace ns3 {
+namespace ns3
+{
 
-NS_LOG_COMPONENT_DEFINE ("DcbFlowControlPort");
+NS_LOG_COMPONENT_DEFINE("DcbFlowControlPort");
 
-NS_OBJECT_ENSURE_REGISTERED (DcbFlowControlPort);
+NS_OBJECT_ENSURE_REGISTERED(DcbFlowControlPort);
 
 TypeId
-DcbFlowControlPort::GetTypeId ()
+DcbFlowControlPort::GetTypeId()
 {
-  static TypeId tid = TypeId ("ns3::DcbFlowControlPort").SetParent<Object> ().SetGroupName ("Dcb");
-  return tid;
+    static TypeId tid = TypeId("ns3::DcbFlowControlPort").SetParent<Object>().SetGroupName("Dcb");
+    return tid;
 }
 
-DcbFlowControlPort::DcbFlowControlPort (Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc)
-    : m_dev (dev), m_tc (tc), m_enableIngressControl (true), m_enableEgressControl (false)
+DcbFlowControlPort::DcbFlowControlPort(Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc)
+    : m_dev(dev),
+      m_tc(tc),
+      m_enableIngressControl(true),
+      m_enableEgressControl(false)
 {
-  NS_LOG_FUNCTION (this);
+    NS_LOG_FUNCTION(this);
 }
 
-DcbFlowControlPort::~DcbFlowControlPort ()
+DcbFlowControlPort::~DcbFlowControlPort()
 {
-  NS_LOG_FUNCTION (this);
+    NS_LOG_FUNCTION(this);
 }
 
 void
-DcbFlowControlPort::IngressProcess (Ptr<const Packet> packet, uint16_t protocol,
-                                    const Address &from, const Address &to,
-                                    NetDevice::PacketType packetType)
+DcbFlowControlPort::IngressProcess(Ptr<const Packet> packet,
+                                   uint16_t protocol,
+                                   const Address& from,
+                                   const Address& to,
+                                   NetDevice::PacketType packetType)
 {
-  NS_LOG_FUNCTION (this);
-  if (m_enableIngressControl)
+    NS_LOG_FUNCTION(this);
+    if (m_enableIngressControl)
     {
-      DoIngressProcess (packet, protocol, from, to, packetType);
+        DoIngressProcess(packet, protocol, from, to, packetType);
     }
 }
 
 void
-DcbFlowControlPort::PacketOutCallbackProcess (uint8_t priority, Ptr<Packet> packet)
+DcbFlowControlPort::PacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet)
 {
-  NS_LOG_FUNCTION (this << packet);
-  if (m_enableIngressControl)
+    NS_LOG_FUNCTION(this << packet);
+    if (m_enableIngressControl)
     {
-      DoPacketOutCallbackProcess (priority, packet);
+        DoPacketOutCallbackProcess(priority, packet);
     }
 }
 
 void
-DcbFlowControlPort::EgressProcess (Ptr<Packet> packet)
+DcbFlowControlPort::EgressProcess(Ptr<Packet> packet)
 {
-  NS_LOG_FUNCTION (this);
-  if (m_enableEgressControl)
+    NS_LOG_FUNCTION(this);
+    if (m_enableEgressControl)
     {
-      DoEgressProcess (packet);
+        DoEgressProcess(packet);
     }
 }
 
 void
-DcbFlowControlPort::SetFcEnabled (bool enable)
+DcbFlowControlPort::SetFcEnabled(bool enable)
 {
-  m_enableIngressControl = enable;
+    m_enableIngressControl = enable;
 }
 
 } // namespace ns3

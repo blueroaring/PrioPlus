@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -25,74 +24,74 @@
 #include "ns3/queue-item.h"
 #include "ns3/type-id.h"
 
-namespace ns3 {
+namespace ns3
+{
 
 struct EcnConfig;
 
 class PausableQueueDiscClass : public QueueDiscClass
 {
-public:
-  static TypeId GetTypeId ();
+  public:
+    static TypeId GetTypeId();
 
-  PausableQueueDiscClass ();
-  virtual ~PausableQueueDiscClass ();
+    PausableQueueDiscClass();
+    virtual ~PausableQueueDiscClass();
 
-  bool IsPaused () const;
+    bool IsPaused() const;
 
-  void SetPaused (bool paused);
+    void SetPaused(bool paused);
 
-private:
-  bool m_isPaused;  
+  private:
+    bool m_isPaused;
 }; // PausableQueueDiscClass
 
 class PausableQueueDisc : public QueueDisc
 {
+  public:
+    static TypeId GetTypeId(void);
 
-public:
-  static TypeId GetTypeId (void);
+    PausableQueueDisc();
+    explicit PausableQueueDisc(uint32_t port);
 
-  PausableQueueDisc ();
-  explicit PausableQueueDisc (uint32_t port);
+    virtual ~PausableQueueDisc();
 
-  virtual ~PausableQueueDisc ();
+    /**
+     * \brief Get the i-th queue disc class
+     * \param i the index of the queue disc class
+     * \return the i-th queue disc class.
+     */
+    Ptr<PausableQueueDiscClass> GetQueueDiscClass(std::size_t i) const;
 
-  /**
-   * \brief Get the i-th queue disc class
-   * \param i the index of the queue disc class
-   * \return the i-th queue disc class.
-   */
-  Ptr<PausableQueueDiscClass> GetQueueDiscClass (std::size_t i) const;
+    virtual void Run(void) override;
 
-  virtual void Run (void) override;
+    void SetPortIndex(uint32_t portIndex);
+    void SetFCEnabled(bool enable);
+    void SetQueueSize(QueueSize qSize);
 
-  void SetPortIndex (uint32_t portIndex);
-  void SetFCEnabled (bool enable);
-  void SetQueueSize (QueueSize qSize);
+    void SetPaused(uint8_t priority, bool paused);
 
-  void SetPaused (uint8_t priority, bool paused);
+    typedef Callback<void, uint32_t, uint8_t, Ptr<Packet>> TCEgressCallback;
 
-  typedef Callback<void, uint32_t, uint8_t, Ptr<Packet>> TCEgressCallback;
+    void RegisterTrafficControlCallback(TCEgressCallback cb);
 
-  void RegisterTrafficControlCallback (TCEgressCallback cb);
+  private:
+    virtual bool DoEnqueue(Ptr<QueueDiscItem> item) override;
 
-private:
-  virtual bool DoEnqueue (Ptr<QueueDiscItem> item) override;
+    virtual Ptr<QueueDiscItem> DoDequeue(void) override;
 
-  virtual Ptr<QueueDiscItem> DoDequeue (void) override;
+    virtual Ptr<const QueueDiscItem> DoPeek(void) override;
 
-  virtual Ptr<const QueueDiscItem> DoPeek (void) override;
+    virtual bool CheckConfig(void) override;
 
-  virtual bool CheckConfig (void) override;
+    virtual void InitializeParams(void) override;
 
-  virtual void InitializeParams (void) override;
+    bool m_fcEnabled;
 
-  bool m_fcEnabled;
+    TCEgressCallback m_tcEgress;
 
-  TCEgressCallback m_tcEgress;
+    int32_t m_portIndex; //!< the port index this QueueDisc belongs to
 
-  int32_t m_portIndex; //!< the port index this QueueDisc belongs to
-
-  QueueSize m_queueSize;
+    QueueSize m_queueSize;
 
 }; // class PausableQueueDisc
 

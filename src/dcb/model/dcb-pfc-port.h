@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -23,112 +22,123 @@
 
 #include "dcb-flow-control-port.h"
 #include "dcb-traffic-control.h"
+
 #include "ns3/event-id.h"
 #include "ns3/net-device.h"
 
-namespace ns3 {
+namespace ns3
+{
 
 struct DcbPfcPortConfig
 {
-  struct QueueConfig
-  {
-    uint32_t priority, reserve, xon;
-    QueueConfig (uint32_t prior, uint32_t resv, uint32_t x)
-        : priority (prior), reserve (resv), xon (x)
+    struct QueueConfig
     {
+        uint32_t priority, reserve, xon;
+
+        QueueConfig(uint32_t prior, uint32_t resv, uint32_t x)
+            : priority(prior),
+              reserve(resv),
+              xon(x)
+        {
+        }
+    }; // struct QueueConfig
+
+    void AddQueueConfig(uint32_t prior, uint32_t resv, uint32_t x)
+    {
+        queues.emplace_back(prior, resv, x);
     }
-  }; //struct QueueConfig
 
-  void
-  AddQueueConfig (uint32_t prior, uint32_t resv, uint32_t x)
-  {
-    queues.emplace_back (prior, resv, x);
-  }
-
-  uint32_t port;
-  uint8_t enableVec = 0xff;
-  std::vector<QueueConfig> queues;
+    uint32_t port;
+    uint8_t enableVec = 0xff;
+    std::vector<QueueConfig> queues;
 
 }; // struct DcbPfcPortConfig
 
 class DcbPfcPort : public DcbFlowControlPort
 {
-public:
-  static TypeId GetTypeId ();
+  public:
+    static TypeId GetTypeId();
 
-  DcbPfcPort (Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc);
-  virtual ~DcbPfcPort ();
+    DcbPfcPort(Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc);
+    virtual ~DcbPfcPort();
 
-  virtual void DoIngressProcess (Ptr<const Packet> packet, uint16_t protocol, const Address &from,
-                                 const Address &to, NetDevice::PacketType packetType) override;
-  /**
-   * \brief Process when a packet previously came from this port is going to send
-   * out though other port.
-   */
-  virtual void DoPacketOutCallbackProcess (uint8_t priority, Ptr<Packet> packet) override;
+    virtual void DoIngressProcess(Ptr<const Packet> packet,
+                                  uint16_t protocol,
+                                  const Address& from,
+                                  const Address& to,
+                                  NetDevice::PacketType packetType) override;
+    /**
+     * \brief Process when a packet previously came from this port is going to send
+     * out though other port.
+     */
+    virtual void DoPacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet) override;
 
-  /**
-   * \brief Egress process. Do nothing in PFC. 
-   */
-  virtual void DoEgressProcess (Ptr<Packet> packet) override;
+    /**
+     * \brief Egress process. Do nothing in PFC.
+     */
+    virtual void DoEgressProcess(Ptr<Packet> packet) override;
 
-  void ReceivePfc (Ptr<NetDevice> device, Ptr<const Packet> p, uint16_t protocol,
-                   const Address &from, const Address &to, NetDevice::PacketType packetType);
+    void ReceivePfc(Ptr<NetDevice> device,
+                    Ptr<const Packet> p,
+                    uint16_t protocol,
+                    const Address& from,
+                    const Address& to,
+                    NetDevice::PacketType packetType);
 
-  void ConfigQueue (uint32_t priority, uint32_t reserve, uint32_t xon);
+    void ConfigQueue(uint32_t priority, uint32_t reserve, uint32_t xon);
 
-  /*
-   * \brief Set the EnableVec field of PFC to deviceIndex with enableVec.
-   * enableVec should be a 8 bits variable, each bit of it represents whether
-   * PFC is enabled on the corresponding priority.
-   */
-  void SetEnableVec (uint8_t enableVec);
+    /*
+     * \brief Set the EnableVec field of PFC to deviceIndex with enableVec.
+     * enableVec should be a 8 bits variable, each bit of it represents whether
+     * PFC is enabled on the corresponding priority.
+     */
+    void SetEnableVec(uint8_t enableVec);
 
-protected:
-  /**
-   * A port has 8 priority queues and stores an PFC enableVec
-   */
-  struct PortInfo
-  {
-    struct IngressQueueInfo
+  protected:
+    /**
+     * A port has 8 priority queues and stores an PFC enableVec
+     */
+    struct PortInfo
     {
-      uint32_t reserve;
-      uint32_t xon;
-      bool isPaused; // Whether the upstream priorty is paused
+        struct IngressQueueInfo
+        {
+            uint32_t reserve;
+            uint32_t xon;
+            bool isPaused; // Whether the upstream priorty is paused
 
-      bool hasEvent;
-      EventId pauseEvent;
-      
-      IngressQueueInfo ();
+            bool hasEvent;
+            EventId pauseEvent;
 
-      void ReplacePauseEvent (const EventId &event);
-      void CancelPauseEvent ();
-    }; // struct IngressQueueInfo
+            IngressQueueInfo();
 
-    explicit PortInfo (uint32_t index);
-    PortInfo (uint32_t index, uint8_t enableVec);
+            void ReplacePauseEvent(const EventId& event);
+            void CancelPauseEvent();
+        }; // struct IngressQueueInfo
 
-    const IngressQueueInfo &getQueue (uint8_t priority) const;
+        explicit PortInfo(uint32_t index);
+        PortInfo(uint32_t index, uint8_t enableVec);
 
-    IngressQueueInfo &getQueue (uint8_t priority);
+        const IngressQueueInfo& getQueue(uint8_t priority) const;
 
-    uint32_t m_index;
-    std::vector<IngressQueueInfo> m_ingressQueues;
-    uint8_t m_enableVec;
-  }; // struct PortInfo
+        IngressQueueInfo& getQueue(uint8_t priority);
 
-  bool CheckEnableVec (uint8_t cls);
+        uint32_t m_index;
+        std::vector<IngressQueueInfo> m_ingressQueues;
+        uint8_t m_enableVec;
+    }; // struct PortInfo
 
-  bool CheckShouldSendPause (uint8_t priority, uint32_t packetSize) const;
-  bool CheckShouldSendResume (uint8_t priority) const;
+    bool CheckEnableVec(uint8_t cls);
 
-  void SetPaused (uint8_t priority, bool paused);
+    bool CheckShouldSendPause(uint8_t priority, uint32_t packetSize) const;
+    bool CheckShouldSendResume(uint8_t priority) const;
 
-  void UpdatePauseEvent (uint8_t priority, const EventId &event);
-  void CancelPauseEvent (uint8_t priority);
+    void SetPaused(uint8_t priority, bool paused);
 
-private:
-  PortInfo m_port;
+    void UpdatePauseEvent(uint8_t priority, const EventId& event);
+    void CancelPauseEvent(uint8_t priority);
+
+  private:
+    PortInfo m_port;
 
 }; // class DcbPfcPort
 

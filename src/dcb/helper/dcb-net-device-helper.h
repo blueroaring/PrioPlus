@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  *
@@ -23,18 +22,23 @@
 
 #include "ns3/trace-helper.h"
 
-namespace ns3 {
+namespace ns3
+{
 
 class DcbNetDeviceHelper : public PcapHelperForDevice, public AsciiTraceHelperForDevice
 {
-public:
-  DcbNetDeviceHelper ();
+  public:
+    DcbNetDeviceHelper();
 
-  virtual void EnablePcapInternal (std::string prefix, Ptr<NetDevice> nd, bool promiscuous,
-                                   bool explicitFilename) override;
+    virtual void EnablePcapInternal(std::string prefix,
+                                    Ptr<NetDevice> nd,
+                                    bool promiscuous,
+                                    bool explicitFilename) override;
 
-  virtual void EnableAsciiInternal (Ptr<OutputStreamWrapper> stream, std::string prefix,
-                                    Ptr<NetDevice> nd, bool explicitFilename) override;
+    virtual void EnableAsciiInternal(Ptr<OutputStreamWrapper> stream,
+                                     std::string prefix,
+                                     Ptr<NetDevice> nd,
+                                     bool explicitFilename) override;
 
 }; // class DcbNetDeviceHelper
 

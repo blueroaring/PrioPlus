@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2023
  *
@@ -20,44 +19,44 @@
 #ifndef JSON_UTIL_H
 #define JSON_UTIL_H
 
-#include "ns3/core-module.h"
-#include "ns3/point-to-point-helper.h"
 #include "ns3/applications-module.h"
-#include "ns3/internet-module.h"
-#include "ns3/global-route-manager.h"
-#include "ns3/ipv4-static-routing-helper.h"
-#include "ns3/packet.h"
-#include "ns3/error-model.h"
-#include "ns3/point-to-point-module.h"
-#include "ns3/network-module.h"
-#include "ns3/traffic-control-module.h"
-#include "ns3/global-value.h"
+#include "ns3/core-module.h"
 #include "ns3/dc-topology.h"
-#include "ns3/dcb-trace-application.h"
 #include "ns3/dcb-trace-application-helper.h"
+#include "ns3/dcb-trace-application.h"
+#include "ns3/error-model.h"
+#include "ns3/global-route-manager.h"
+#include "ns3/global-value.h"
+#include "ns3/internet-module.h"
+#include "ns3/ipv4-static-routing-helper.h"
+#include "ns3/network-module.h"
+#include "ns3/packet.h"
+#include "ns3/point-to-point-helper.h"
+#include "ns3/point-to-point-module.h"
+#include "ns3/traffic-control-module.h"
 
 #include <boost/json.hpp>
 
+namespace ns3
+{
 
-namespace ns3 {
+namespace json_util
+{
 
-namespace json_util {
+boost::json::object ReadConfig(std::string config_file);
 
-boost::json::object ReadConfig (std::string config_file);
-    
-void SetDefault (boost::json::object defaultObj);
+void SetDefault(boost::json::object defaultObj);
 
-void PrettyPrint (std::ostream& os, boost::json::value const& jv, std::string* indent = nullptr);
+void PrettyPrint(std::ostream& os, const boost::json::value& jv, std::string* indent = nullptr);
 
-void SetRandomSeed (boost::json::object& configJsonObj);
+void SetRandomSeed(boost::json::object& configJsonObj);
 
-void SetRandomSeed (uint32_t seed);
+void SetRandomSeed(uint32_t seed);
 
-void InstallApplications (const boost::json::object &conf, Ptr<DcTopology> topology);
+void InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology);
 
-}
+} // namespace json_util
 
-}
+} // namespace ns3
 
 #endif /* JSON_UTIL_H */
-
