@@ -90,24 +90,24 @@ class Ipv4GlobalRouting : public Ipv4RoutingProtocol
 
     // These methods inherited from base class
     Ptr<Ipv4Route> RouteOutput(Ptr<Packet> p,
-                               const Ipv4Header& header,
-                               Ptr<NetDevice> oif,
-                               Socket::SocketErrno& sockerr) override;
+                                       const Ipv4Header& header,
+                                       Ptr<NetDevice> oif,
+                                       Socket::SocketErrno& sockerr) override;
 
     bool RouteInput(Ptr<const Packet> p,
-                    const Ipv4Header& header,
-                    Ptr<const NetDevice> idev,
-                    const UnicastForwardCallback& ucb,
-                    const MulticastForwardCallback& mcb,
-                    const LocalDeliverCallback& lcb,
-                    const ErrorCallback& ecb) override;
+                            const Ipv4Header& header,
+                            Ptr<const NetDevice> idev,
+                            const UnicastForwardCallback& ucb,
+                            const MulticastForwardCallback& mcb,
+                            const LocalDeliverCallback& lcb,
+                            const ErrorCallback& ecb) override;
     void NotifyInterfaceUp(uint32_t interface) override;
     void NotifyInterfaceDown(uint32_t interface) override;
     void NotifyAddAddress(uint32_t interface, Ipv4InterfaceAddress address) override;
     void NotifyRemoveAddress(uint32_t interface, Ipv4InterfaceAddress address) override;
     void SetIpv4(Ptr<Ipv4> ipv4) override;
     void PrintRoutingTable(Ptr<OutputStreamWrapper> stream,
-                           Time::Unit unit = Time::S) const override;
+                                   Time::Unit unit = Time::S) const override;
 
     /**
      * \brief Add a host route to the global routing table.
@@ -232,13 +232,27 @@ class Ipv4GlobalRouting : public Ipv4RoutingProtocol
      */
     int64_t AssignStreams(int64_t stream);
 
+    enum EcmpMode
+    {
+        NONE,
+        PER_PACKET_ECMP,
+        PER_FLOW_ECMP,
+    };
+
   protected:
     void DoDispose() override;
 
   private:
+    static uint32_t TcpEcmp(const Ipv4Header& header,
+                            const Ptr<const Packet> p,
+                            const size_t totalRoutes);
+    static uint32_t UdpEcmp(const Ipv4Header& header,
+                            const Ptr<const Packet> p,
+                            const size_t totalRoutes);
+
     /// Set to true if packets are randomly routed among ECMP; set to false for using only one route
     /// consistently
-    bool m_randomEcmpRouting;
+    EcmpMode m_randomEcmpRouting;
     /// Set to true if this interface should respond to interface events by globallly recomputing
     /// routes
     bool m_respondToInterfaceEvents;
@@ -272,7 +286,20 @@ class Ipv4GlobalRouting : public Ipv4RoutingProtocol
      * \param oif output interface if any (put 0 otherwise)
      * \return Ipv4Route to route the packet to reach dest address
      */
-    Ptr<Ipv4Route> LookupGlobal(Ipv4Address dest, Ptr<NetDevice> oif = nullptr);
+    Ptr<Ipv4Route> LookupGlobal(Ipv4Header header, Ptr<const Packet> p, Ptr<NetDevice> oif = 0);
+    constexpr static const uint32_t HASH_BUF_SIZE = 12;
+
+    union HashBuf {
+        struct
+        {
+            uint32_t _srcIp;
+            uint32_t _dstIp;
+            uint16_t _srcPort;
+            uint16_t _dstPort;
+        } __attribute__((__packed__));
+
+        char _b[HASH_BUF_SIZE];
+    };
 
     HostRoutes m_hostRoutes;             //!< Routes to hosts
     NetworkRoutes m_networkRoutes;       //!< Routes to networks

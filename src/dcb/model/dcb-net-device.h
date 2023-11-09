@@ -28,7 +28,7 @@
 
 namespace ns3 {
 
-template <typename Item> class Queue;
+// template <typename Item> class Queue;
 class ErrorModel;
 class DcbChannel; 
 

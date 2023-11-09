@@ -80,7 +80,7 @@ private:
   virtual uint32_t ParseInnerPort (Ptr<Packet> packet, Ipv4Header header, uint16_t port,
                                    Ptr<Ipv4Interface> incomingIntf) override;
 
-  std::map<uint32_t, uint32_t> m_qpMapper; //!< map destQP to stcQP
+  std::map<uint32_t, uint32_t> m_qpMapper; //!< map destQP to stcQP, not used for now
 
 }; // class RoCEv2L4Protocol
 

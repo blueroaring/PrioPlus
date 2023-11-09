@@ -32,6 +32,7 @@
 #include "ns3/ipv4-route.h"
 #include "ns3/simulator.h"
 #include "ns3/csv-writer.h"
+#include "ns3/ipv4-l3-protocol.h"
 #include <tuple>
 #include <fstream>
 
@@ -235,7 +236,7 @@ RoCEv2Socket::GoBackN (uint32_t lostPSN) const
 {
   // DcbTxBuffer::DcbTxBufferItemI item = m_buffer.FindPSN(lostPSN);
   NS_LOG_WARN ("Go-back-N not implemented. Packet lost or out-of-order happens. Sender is node "
-               << Simulator::GetContext () << " at time " << Simulator::Now ());
+               << Simulator::GetContext () << " at time " << Simulator::Now ().GetNanoSeconds() << "ns.");
 }
 
 void
@@ -279,7 +280,7 @@ RoCEv2Socket::BindToNetDevice (Ptr<NetDevice> netdevice)
 {
   NS_LOG_FUNCTION (this << netdevice);
   // a little check
-  if (netdevice != 0)
+  if (netdevice)
     {
       bool found = false;
       Ptr<Node> node = GetNode ();
@@ -305,6 +306,9 @@ RoCEv2Socket::BindToNetDevice (Ptr<NetDevice> netdevice)
       // m_ccOps->SetRateHyperAIRatio (10 * rai);
       m_ccOps->SetReady ();
     }
+  // Get local ipv4 address
+    m_localAddress = m_boundnetdevice->GetNode ()->GetObject<Ipv4L3Protocol> ()->GetAddress (
+      m_boundnetdevice->GetIfIndex (), 0).GetAddress ();
 }
 
 int

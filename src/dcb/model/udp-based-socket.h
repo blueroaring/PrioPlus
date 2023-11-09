@@ -26,6 +26,7 @@
 #include "ns3/socket.h"
 #include "ns3/traced-callback.h"
 #include "ns3/udp-l4-protocol.h"
+#include "ns3/ipv4-address.h"
 #include "udp-based-l4-protocol.h"
 #include <queue>
 #include <map>
@@ -377,14 +378,14 @@ protected:
 
   Ptr<Node> m_node; //!< the associated node
   Ptr<UdpBasedL4Protocol> m_innerProto; //!< the associated UDP L4 protocol
-  InnerEndPoint *m_endPoint; //!< the IPv4 endpoint
+  InnerEndPoint *m_endPoint; //!< the inner endpoint, the port of this endpoint is qp
+  Ipv4Address m_localAddress; //!< Local address, not used for now, just for debug
+  Address m_defaultAddress; //!< Default address, ie, peer address
 
   mutable enum SocketErrno m_errno; //!< Socket error code
   TracedCallback<Ptr<const Packet>> m_dropTrace; //!< Trace for dropped packets
 
 private:
-
-  Address m_defaultAddress; //!< Default address
   bool m_shutdownSend; //!< Send no longer allowed
   bool m_shutdownRecv; //!< Receive no longer allowed
   bool m_connected; //!< Connection established
