@@ -166,6 +166,7 @@ int32_t
 DcbTrafficControl::CompareIngressQueueLength(uint32_t port, uint8_t priority, uint32_t bytes) const
 {
     uint32_t l = m_buffer.GetIngressQueueCells(port, priority);
+    // rounds up in cells, why not round down?
     uint32_t cells = ceil(bytes / Buffer::CELL_SIZE);
     if (l > cells)
     {

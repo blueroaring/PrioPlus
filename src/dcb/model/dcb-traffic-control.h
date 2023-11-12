@@ -149,7 +149,7 @@ class DcbTrafficControl : public TrafficControlLayer
                          NetDevice::PacketType packetType) override;
 
     /**
-     * \breif Called after egress queue pops out a packet.
+     * \brief Called after egress queue pops out a packet.
      * For example, it can be used for flow control doing some egress action.
      */
     void EgressProcess(uint32_t port, uint8_t priority, Ptr<Packet> packet);
@@ -158,6 +158,9 @@ class DcbTrafficControl : public TrafficControlLayer
 
     void InstallFCToPort(uint32_t portIdx, Ptr<DcbFlowControlPort> fc);
 
+    /**
+     * \brief Peek the priority of from ToS field of IP header.
+     */
     static uint8_t PeekPriorityOfPacket(const Ptr<const Packet> packet);
     constexpr static const uint8_t PRIORITY_NUMBER = 8;
 
@@ -206,7 +209,7 @@ class DcbTrafficControl : public TrafficControlLayer
         }
 
       private:
-        uint32_t m_ingressQueueLength[PRIORITY_NUMBER];
+        uint32_t m_ingressQueueLength[PRIORITY_NUMBER]; // in cells
         bool m_fcEnabled;
         Ptr<DcbFlowControlPort> m_fc;
         std::vector<std::pair<uint32_t, FCPacketOutCb>> m_fcPacketOutPipeline;
