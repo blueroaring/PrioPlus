@@ -57,7 +57,6 @@ RoCEv2Socket::GetTypeId()
 
 RoCEv2Socket::RoCEv2Socket()
     : UdpBasedSocket(),
-      m_isSending(false),
       m_senderNextPSN(0),
       m_psnEnd(0)
 {
@@ -87,41 +86,56 @@ RoCEv2Socket::SendPendingPacket()
 {
     NS_LOG_FUNCTION(this);
 
-    if (m_isSending || m_buffer.GetSizeToBeSent() == 0)
+    if (m_sendEvent.IsRunning())
     {
         return;
+    }
+
+    if (m_buffer.GetSizeToBeSent() == 0)
+    {
+        // No packet to send.
+        return;
+        // Do not need to schedule next sending here.
+        // When a new packet is pushed into the buffer, the sending will be scheduled at other place.
     }
     // rateRatio is controled by congestion control
     // rateRatio = sending rate calculated by CC / line rate, which is between [0.0., 1.0]
     const double rateRatio =
         m_sockState->GetRateRatioPercent(); // in percentage, i.e., maximum is 100.0
+    // XXX Why? Do not have minimum rate ratio?
+    // TODO Add minimum rate ratio
+    // TODO Add window constraint
     if (rateRatio > 1e-6)
     {
-        m_isSending = true;
-        [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] =
-            m_buffer.GetNextShouldSent();
-        const uint32_t sz = payload->GetSize() + 8 + 20 + 14;
-        // DCQCN is a rate based CC.
-        // Send packet and delay a bit time to control the sending rate.
-        Time delay = m_deviceRate.CalculateBytesTxTime(sz * 100 / rateRatio);
-        m_ccOps->UpdateStateSend(payload);
-        Ptr<Packet> packet = payload->Copy(); // do not modify the payload in the buffer
-        packet->AddHeader(rocev2Header);
-        m_innerProto->Send(packet,
-                           route->GetSource(),
-                           daddr,
-                           m_endPoint->GetLocalPort(),
-                           m_endPoint->GetPeerPort(),
-                           route);
-        Simulator::Schedule(delay, &RoCEv2Socket::FinishSendPendingPacket, this);
+        // [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] =
+        //     m_buffer.GetNextShouldSent();
+        const DcbTxBuffer::DcbTxBufferItem& item = m_buffer.GetNextShouldSent();
+        const uint32_t sz = item.m_payload->GetSize() + 8 + 20 + 14;
+        DoSendDataPacket(item);
+
+        // Control the send rate by interval of sending packets.
+        Time interval = m_deviceRate.CalculateBytesTxTime(sz * 100 / rateRatio);
+        m_sendEvent = Simulator::Schedule(interval, &RoCEv2Socket::SendPendingPacket, this);
     }
 }
 
 void
-RoCEv2Socket::FinishSendPendingPacket()
+RoCEv2Socket::DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item)
 {
-    m_isSending = false;
-    SendPendingPacket();
+    NS_LOG_FUNCTION(this);
+    
+    [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] = item;
+    // DCQCN is a rate based CC.
+    // Send packet and delay a bit time to control the sending rate.
+    m_ccOps->UpdateStateSend(payload);
+    Ptr<Packet> packet = payload->Copy(); // do not modify the payload in the buffer
+    packet->AddHeader(rocev2Header);
+    m_innerProto->Send(packet,
+                       route->GetSource(),
+                       daddr,
+                       m_endPoint->GetLocalPort(),
+                       m_endPoint->GetPeerPort(),
+                       route);
 }
 
 void
@@ -430,6 +444,7 @@ DcbTxBuffer::Pop()
 const DcbTxBuffer::DcbTxBufferItem&
 DcbTxBuffer::GetNextShouldSent()
 {
+    // TODO The next should send packet could not be the packet who is pointed by sentIdx
     if (m_buffer.size() - m_sentIdx)
     {
         return m_buffer.at(m_sentIdx++);
