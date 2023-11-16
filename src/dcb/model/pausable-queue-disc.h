@@ -72,7 +72,16 @@ class PausableQueueDisc : public QueueDisc
 
     typedef Callback<void, uint32_t, uint8_t, Ptr<Packet>> TCEgressCallback;
 
+    /**
+     * \brief Called when install the qdisc, to register the callback called after packet is dequeued
+     */
     void RegisterTrafficControlCallback(TCEgressCallback cb);
+
+    /**
+     * \brief Get the i-th inner queue size.
+     * Used by host's socket to determine whether to send more packets down.
+     */
+    QueueSize GetInnerQueueSize(uint8_t priority) const;
 
   private:
     virtual bool DoEnqueue(Ptr<QueueDiscItem> item) override;
@@ -85,9 +94,9 @@ class PausableQueueDisc : public QueueDisc
 
     virtual void InitializeParams(void) override;
 
-    bool m_fcEnabled;
+    bool m_fcEnabled; // Whether flow control is enabled, once enabled, the queue disc will be pausable
 
-    TCEgressCallback m_tcEgress;
+    TCEgressCallback m_tcEgress; // Costum callback, called after packet is dequeued
 
     int32_t m_portIndex; //!< the port index this QueueDisc belongs to
 

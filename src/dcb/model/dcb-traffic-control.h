@@ -212,7 +212,8 @@ class DcbTrafficControl : public TrafficControlLayer
         uint32_t m_ingressQueueLength[PRIORITY_NUMBER]; // in cells
         bool m_fcEnabled;
         Ptr<DcbFlowControlPort> m_fc;
-        std::vector<std::pair<uint32_t, FCPacketOutCb>> m_fcPacketOutPipeline;
+        // a vector of out callbacks, which will be called one by one when packet out
+        std::vector<std::pair<uint32_t, FCPacketOutCb>> m_fcPacketOutPipeline; 
     }; // class PortInfo
 
   private:

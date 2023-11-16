@@ -146,16 +146,16 @@ class RoCEv2Socket : public UdpBasedSocket
 
     /**
      * \brief Try to send a pending packet.
-     * 
+     *
      * Try to send a pending packet. Usually called when a new packet can be sent.
-     * The function will check if it is allowed to send a packet, and if so, 
+     * The function will check if it is allowed to send a packet, and if so,
      * call DoSendDataPacket to send a data packet.
      */
     void SendPendingPacket();
-    
+
     /**
      * \brief Actually send out a data packet.
-     * 
+     *
      * The packet to be sent is controled by m_buffer. This function just call m_buffer
      * and send the packet out.
      */
@@ -194,6 +194,20 @@ class RoCEv2Socket : public UdpBasedSocket
     void GoBackN(uint32_t lostPSN) const;
     void ScheduleNextCNP(std::map<FlowIdentifier, FlowInfo>::iterator flowInfoIter,
                          Ipv4Header header);
+    /**
+     * \brief Check whether the given priority queue disc avaliable to buffer more packet.
+     *
+     * Get the size of the given priority queue disc, and check if it is lower than a threshold.
+     * If so, return true, otherwise return false. In this way, sockets can avoid to overwhelm
+     * the queue disc. As well as avoid to send too many uncontrolled packet in the queue disc.
+     */
+    bool CheckQueueDiscAvaliable(uint8_t priority) const;
+    /**
+     * \brief Check whether the queue disc of control priority avaliable to buffer more packet.
+     * 
+     * Throw fatal error if it is inavaliable as control packet should always be sent.
+     */
+    void CheckControlQueueDiscAvaliable() const;
 
     // Time CalcTxTime (uint32_t bytes);
 

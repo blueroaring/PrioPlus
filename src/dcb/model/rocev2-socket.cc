@@ -88,6 +88,24 @@ RoCEv2Socket::SendPendingPacket()
 
     if (m_sendEvent.IsRunning())
     {
+        // Already scheduled, wait for the scheduled sending.
+        // XXX Logic problem. In the case of low rate before and high rate now, the new
+        // sending rate will be applied after the scheduled low-rate sending.
+        return;
+    }
+
+    if (!CheckQueueDiscAvaliable(GetPriority()))
+    {
+        // The queue disc is unavaliable, wait for the next sending.
+
+        // The interval serve as the interval of spinning when the qdisc is unavaliable.
+        uint32_t sz = 1000; // XXX A typical packet size
+        Time interval =
+            m_deviceRate.CalculateBytesTxTime(sz * 100 / m_sockState->GetRateRatioPercent());
+        m_sendEvent = Simulator::Schedule(interval, &RoCEv2Socket::SendPendingPacket, this);
+        // XXX If all the sender's send rate is line rate, this will cause unfairness,
+        // however, it is unlikely to happen.
+
         return;
     }
 
@@ -96,10 +114,12 @@ RoCEv2Socket::SendPendingPacket()
         // No packet to send.
         return;
         // Do not need to schedule next sending here.
-        // When a new packet is pushed into the buffer, the sending will be scheduled at other place.
+        // When a new packet is pushed into the buffer, the sending will be scheduled at other
+        // place.
     }
+
     // rateRatio is controled by congestion control
-    // rateRatio = sending rate calculated by CC / line rate, which is between [0.0., 1.0]
+    // rateRatio = sending rate calculated by CC / line rate, which is between [0.0., 100.0]
     const double rateRatio =
         m_sockState->GetRateRatioPercent(); // in percentage, i.e., maximum is 100.0
     // XXX Why? Do not have minimum rate ratio?
@@ -123,7 +143,7 @@ void
 RoCEv2Socket::DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item)
 {
     NS_LOG_FUNCTION(this);
-    
+
     [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] = item;
     // DCQCN is a rate based CC.
     // Send packet and delay a bit time to control the sending rate.
@@ -240,7 +260,9 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     {
         flowInfoIter->second.nextPSN = (expectedPSN + 1) & 0xffffff;
         if (roce.GetAckQ())
-        { // send ACK
+        {   // send ACK
+            // XXX Which priority should be used?
+            CheckControlQueueDiscAvaliable();
             Ptr<Packet> ack = RoCEv2L4Protocol::GenerateACK(dstQP, srcQP, psn);
             m_innerProto->Send(ack, header.GetDestination(), header.GetSource(), dstQP, srcQP, 0);
         }
@@ -249,6 +271,8 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     { // packet out-of-order, send NACK
         NS_LOG_LOGIC("RoCEv2 receiver " << Simulator::GetContext() << "send NACK of flow " << srcQP
                                         << "->" << dstQP);
+        // XXX Which priority should be used?
+        CheckControlQueueDiscAvaliable();
         Ptr<Packet> nack = RoCEv2L4Protocol::GenerateNACK(dstQP, srcQP, expectedPSN);
         m_innerProto
             ->Send(nack, header.GetDestination(), header.GetSource(), dstQP, srcQP, nullptr);
@@ -284,6 +308,7 @@ RoCEv2Socket::ScheduleNextCNP(std::map<FlowIdentifier, FlowInfo>::iterator flowI
     auto [srcIp, srcQP] = flowInfoIter->first;
 
     // send Congestion Notification Packet (CNP) to sender
+    CheckControlQueueDiscAvaliable();
     Ptr<Packet> cnp = RoCEv2L4Protocol::GenerateCNP(flowInfo.dstQP, srcQP);
     m_innerProto
         ->Send(cnp, header.GetDestination(), header.GetSource(), flowInfo.dstQP, srcQP, nullptr);
@@ -394,6 +419,32 @@ RoCEv2Socket::CreateNextProtocolHeader()
     rocev2Header.SetAckQ(true);
     m_senderNextPSN = (m_senderNextPSN + 1) % 0xffffff;
     return rocev2Header;
+}
+
+bool
+RoCEv2Socket::CheckQueueDiscAvaliable(uint8_t priority) const
+{
+    Ptr<PausableQueueDisc> qdisc =
+        DynamicCast<PausableQueueDisc>(DynamicCast<DcbNetDevice>(m_boundnetdevice)->GetQueueDisc());
+    QueueSize qsize = qdisc->GetInnerQueueSize(priority);
+    // TODO Make the threshold clearer
+    QueueSize threshold = QueueSize("10000B");
+    if (qsize < threshold)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+void
+RoCEv2Socket::CheckControlQueueDiscAvaliable() const
+{
+    NS_ASSERT_MSG(CheckQueueDiscAvaliable(Socket::SocketPriority::NS3_PRIO_INTERACTIVE),
+                  "The control queue disc of Node " << GetObject<Node>()->GetId()
+                                                    << " is unavaliable.");
 }
 
 NS_OBJECT_ENSURE_REGISTERED(DcbTxBuffer);

@@ -272,6 +272,7 @@ UdpBasedSocket::DoSend(Ptr<Packet> p)
         uint8_t priority = GetPriority();
         if (tos)
         {
+            // This tag will be used to set IP TOS field in L3
             SocketIpTosTag ipTosTag;
             ipTosTag.SetTos(tos);
             // This packet may already have a SocketIpTosTag (see BUG 2440)
