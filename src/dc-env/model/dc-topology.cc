@@ -153,7 +153,7 @@ DcTopology::CreateRamdomHostChooser() const
     Ptr<UniformRandomVariable> rng = CreateObject<UniformRandomVariable>();
     rng->SetAttribute("Min", DoubleValue(0));
     // Note that the max value is included in the range
-    rng->SetAttribute("Max", DoubleValue(m_nHosts));
+    rng->SetAttribute("Max", DoubleValue(m_nHosts-1));
     return rng;
 }
 
