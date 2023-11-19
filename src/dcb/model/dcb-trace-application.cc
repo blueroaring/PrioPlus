@@ -102,6 +102,7 @@ TraceApplication::InitForRngs()
     m_flowArriveTimeRng->SetAntithetic(true);
 
     m_flowSizeRng = CreateObject<EmpiricalRandomVariable>();
+    // Enable interpolation from CDF
     m_flowSizeRng->SetAttribute("Interpolate", BooleanValue(true));
 
     m_socketLinkRate = GetOutboundNetDevice()->GetDataRate();
