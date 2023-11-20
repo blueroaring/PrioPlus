@@ -102,7 +102,7 @@ class DcbPfcPort : public DcbFlowControlPort
     {
         struct IngressQueueInfo
         {
-            uint32_t reserve;
+            uint32_t reserve; // XXX Act as xoff now
             uint32_t xon;
             bool isPaused; // Whether the upstream priorty is paused
 
