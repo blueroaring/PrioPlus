@@ -32,6 +32,7 @@
 #include "ns3/buffer.h"
 #include "ns3/nstime.h"
 
+#include <atomic>
 #include <list>
 #include <mpi.h>
 #include <stdint.h>
@@ -79,6 +80,7 @@ class SentBuffer
 
 class Packet;
 class DistributedSimulatorImpl;
+class HybridSimulatorImpl;
 
 /**
  * \ingroup mpi
@@ -117,6 +119,7 @@ class GrantedTimeWindowMpiInterface : public ParallelCommunicationInterface, Obj
      * It is not intended for state to be shared.
      */
     friend ns3::DistributedSimulatorImpl;
+    friend ns3::HybridSimulatorImpl;
 
     /**
      * Check for received messages complete
@@ -169,6 +172,10 @@ class GrantedTimeWindowMpiInterface : public ParallelCommunicationInterface, Obj
 
     /** Did ns-3 create the communicator?  Have to free it. */
     static bool g_freeCommunicator;
+
+#ifdef NS3_MTP
+    static std::atomic<bool> g_sending;
+#endif
 };
 
 } // namespace ns3
