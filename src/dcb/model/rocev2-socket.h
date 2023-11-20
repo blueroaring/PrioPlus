@@ -200,12 +200,16 @@ class RoCEv2Socket : public UdpBasedSocket
      * Get the size of the given priority queue disc, and check if it is lower than a threshold.
      * If so, return true, otherwise return false. In this way, sockets can avoid to overwhelm
      * the queue disc. As well as avoid to send too many uncontrolled packet in the queue disc.
+     * 
+     * This function only work with dcb dev and pausable queue disc, if not, it will always return true.
      */
     bool CheckQueueDiscAvaliable(uint8_t priority) const;
     /**
      * \brief Check whether the queue disc of control priority avaliable to buffer more packet.
      * 
      * Throw fatal error if it is inavaliable as control packet should always be sent.
+     * 
+     * This function only work with dcb dev and pausable queue disc, if not, it will always return true.
      */
     void CheckControlQueueDiscAvaliable() const;
 

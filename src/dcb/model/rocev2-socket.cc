@@ -424,8 +424,19 @@ RoCEv2Socket::CreateNextProtocolHeader()
 bool
 RoCEv2Socket::CheckQueueDiscAvaliable(uint8_t priority) const
 {
+    Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(m_boundnetdevice);
+    if (dcbDev == nullptr)
+    {
+        return true;
+    }
+
     Ptr<PausableQueueDisc> qdisc =
-        DynamicCast<PausableQueueDisc>(DynamicCast<DcbNetDevice>(m_boundnetdevice)->GetQueueDisc());
+        DynamicCast<PausableQueueDisc>(dcbDev->GetQueueDisc());
+    if (qdisc == nullptr)
+    {
+        return true;
+    }
+    
     QueueSize qsize = qdisc->GetInnerQueueSize(priority);
     // TODO Make the threshold clearer
     QueueSize threshold = QueueSize("10000B");
