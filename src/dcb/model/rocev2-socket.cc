@@ -366,6 +366,14 @@ RoCEv2Socket::BindToNetDevice(Ptr<NetDevice> netdevice)
         // m_ccOps->SetRateHyperAIRatio (10 * rai);
         m_ccOps->SetReady();
     }
+    else
+    {
+        // Set the data rate to the default value
+        // TODO Make it configurable
+        m_deviceRate = DataRate("100Gbps");
+        NS_LOG_WARN("RoCEv2Socket is not bound to a DcbNetDevice, use default rate 100Gbps");
+        m_ccOps->SetReady();
+    }
     // Get local ipv4 address
     m_localAddress = m_boundnetdevice->GetNode()
                          ->GetObject<Ipv4L3Protocol>()
