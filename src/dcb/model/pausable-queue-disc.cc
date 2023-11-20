@@ -35,6 +35,7 @@
 #include "ns3/queue-size.h"
 #include "ns3/random-variable-stream.h"
 #include "ns3/simulator.h"
+#include "ns3/socket.h"
 #include "ns3/type-id.h"
 #include "ns3/uinteger.h"
 
@@ -54,7 +55,7 @@ PausableQueueDisc::GetTypeId()
             .SetGroupName("Dcb")
             .AddConstructor<PausableQueueDisc>()
             .AddAttribute("FcEnabled",
-                          "Wether flow control is enabled",
+                          "Whether flow control is enabled",
                           BooleanValue(false),
                           MakeBooleanAccessor(&PausableQueueDisc::m_fcEnabled),
                           MakeBooleanChecker())
@@ -150,6 +151,13 @@ PausableQueueDisc::RegisterTrafficControlCallback(TCEgressCallback cb)
     m_tcEgress = cb;
 }
 
+QueueSize
+PausableQueueDisc::GetInnerQueueSize(uint8_t priority) const
+{
+    NS_LOG_FUNCTION(this);
+    return GetQueueDiscClass(priority)->GetQueueDisc()->GetCurrentSize();
+}
+
 bool
 PausableQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
 {
@@ -161,22 +169,34 @@ PausableQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
     // We use tag rather than DSCP field to get the priority because in this way
     // we can use different strategies to set priority.
     CoSTag cosTag;
+    uint8_t priority;
     if (item->GetPacket()->RemovePacketTag(cosTag))
     {
-        uint8_t priority = cosTag.GetCoS() & 0x0f;
-        NS_ASSERT_MSG(priority < 8, "Priority should be 0~7 but here we have " << priority);
-        Ptr<PausableQueueDiscClass> qdiscClass = GetQueueDiscClass(priority);
-        bool retval = qdiscClass->GetQueueDisc()->Enqueue(item);
-        if (!retval)
-        {
-            NS_LOG_WARN("PausableQueueDisc: enqueue failed on node "
-                        << Simulator::GetContext()
-                        << ", queue size=" << qdiscClass->GetQueueDisc()->GetCurrentSize());
-        }
-        return retval;
+        priority = cosTag.GetCoS() & 0x0f;
     }
-    NS_FATAL_ERROR("No priority tag set one the item" << item);
-    return false;
+    else
+    {
+        // If the packet doesn't have CoSTag, we use the TOS field in IP header.
+        // In this branch, we assume the node is host and the l3 proto is IPv4.
+        Ptr<Ipv4QueueDiscItem> ipv4Qdi = DynamicCast<Ipv4QueueDiscItem>(item);
+        if (ipv4Qdi == nullptr)
+        {
+            NS_LOG_ERROR("PausableQueueDisc: could not find the packet's priority");
+            return false;
+        }
+        priority = Socket::IpTos2Priority(ipv4Qdi->GetHeader().GetTos());
+    }
+    NS_ASSERT_MSG(priority < 8, "Priority should be 0~7 but here we have " << priority);
+
+    Ptr<PausableQueueDiscClass> qdiscClass = GetQueueDiscClass(priority);
+    bool retval = qdiscClass->GetQueueDisc()->Enqueue(item);
+    if (!retval)
+    {
+        NS_LOG_WARN("PausableQueueDisc: enqueue failed on node "
+                    << Simulator::GetContext()
+                    << ", queue size=" << qdiscClass->GetQueueDisc()->GetCurrentSize());
+    }
+    return retval;
 }
 
 Ptr<QueueDiscItem>
@@ -185,6 +205,8 @@ PausableQueueDisc::DoDequeue()
     NS_LOG_FUNCTION(this);
     Ptr<QueueDiscItem> item = 0;
 
+    // The strict priority is implemented
+    // The order is from high to low priority
     for (uint32_t i = GetNQueueDiscClasses(); i-- > 0;)
     {
         Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(i);
@@ -192,7 +214,8 @@ PausableQueueDisc::DoDequeue()
             (item = qdclass->GetQueueDisc()->Dequeue()) != 0)
         {
             NS_LOG_LOGIC("Popoed from priority " << i << ": " << item);
-            m_tcEgress(m_portIndex, i, item->GetPacket());
+            if (!m_tcEgress.IsNull())
+                m_tcEgress(m_portIndex, i, item->GetPacket());
             return item;
         }
     }
@@ -235,11 +258,14 @@ PausableQueueDisc::CheckConfig(void)
     //     NS_LOG_ERROR ("Quota of PausableQueueDisc should be 1");
     //     return false;
     //   }
+
+    // If no queue disc class is set
     if (GetNQueueDiscClasses() == 0)
     {
         // create 8 fifo queue discs
         ObjectFactory factory;
         factory.SetTypeId("ns3::FifoQueueDiscEcn");
+        // Each inner fifo queue's size is equal to the total queue size
         factory.Set("MaxSize", QueueSizeValue(m_queueSize));
         for (uint8_t i = 0; i < 8; i++)
         {

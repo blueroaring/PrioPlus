@@ -154,6 +154,7 @@ DcbTrafficControl::EgressProcess(uint32_t outPort, uint8_t priority, Ptr<Packet>
     uint32_t fromIdx = tag.GetIndex();
     m_buffer.OutPacketProcess(fromIdx, priority, packet->GetSize());
 
+    // Call the packet out pipeline of the ingress port
     PortInfo& port = m_buffer.GetPort(outPort);
     port.CallFCPacketOutPipeline(fromIdx, priority, packet);
     if (port.FcEnabled())
@@ -166,6 +167,7 @@ int32_t
 DcbTrafficControl::CompareIngressQueueLength(uint32_t port, uint8_t priority, uint32_t bytes) const
 {
     uint32_t l = m_buffer.GetIngressQueueCells(port, priority);
+    // rounds up in cells, why not round down?
     uint32_t cells = ceil(bytes / Buffer::CELL_SIZE);
     if (l > cells)
     {
@@ -227,6 +229,7 @@ DcbTrafficControl::PortInfo::CallFCPacketOutPipeline(uint32_t fromIdx,
 {
     NS_LOG_FUNCTION(this << packet);
 
+    // Check all handler and call the one with the same ingress port
     for (const auto& handler : m_fcPacketOutPipeline)
     {
         if (handler.first == fromIdx)

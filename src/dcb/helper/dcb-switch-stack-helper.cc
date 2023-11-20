@@ -476,10 +476,11 @@ DcbSwitchStackHelper::InstallPortsProtos(Ptr<Node> node) const
 
             Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(i);
             qDisc->RegisterTrafficControlCallback(tcCallback);
-            qDisc->SetQueueSize(m_bufferSize);
+            // The queue size of a pauseable queue disc is fixed to the size of the switch
+            qDisc->SetQueueSize(m_bufferSize); 
             qDisc->SetFCEnabled(true);
             dcbTc->SetRootQueueDiscOnDevice(dcbDev, qDisc);
-            dcbDev->SetFcEnabled(true); // all NetDevices should support FC
+            dcbDev->SetFcEnabled(true); // all NetDevices should support FC;
         }
     }
     else
@@ -491,6 +492,7 @@ DcbSwitchStackHelper::InstallPortsProtos(Ptr<Node> node) const
         {
             Ptr<NetDevice> dev = node->GetDevice(i);
             Ptr<PausableQueueDisc> qDisc = qDiscFactory.Create<PausableQueueDisc>();
+            // XXX Have not set the queue size of the queue disc here
             qDisc->SetFCEnabled(false);
             tc->SetRootQueueDiscOnDevice(dev, qDisc);
             Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
