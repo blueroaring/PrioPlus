@@ -149,6 +149,7 @@ TraceApplication::SetInnerUdpProtocol(TypeId innerTid)
     Ptr<UdpBasedSocketFactory> socketFactory = node->GetObject<UdpBasedSocketFactory>();
     if (socketFactory)
     {
+        // Where set Rocev2Socket
         m_headerSize = socketFactory->AddUdpBasedProtocol(node, GetOutboundNetDevice(), innerTid);
     }
     else
@@ -247,8 +248,9 @@ TraceApplication::CreateNewSocket(uint32_t destNode)
 {
     NS_LOG_FUNCTION(this);
 
+    // The InstanceTyoeId of socket is RoCEv2Socket
     Ptr<Socket> socket = Socket::CreateSocket(GetNode(), m_socketTid);
-
+    std::clog << m_socketTid << " " << UdpBasedSocketFactory::GetTypeId();
     socket->BindToNetDevice(GetOutboundNetDevice());
 
     if (m_protoGroup == ProtocolGroup::TCP)

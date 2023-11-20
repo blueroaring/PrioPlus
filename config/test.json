@@ -8,7 +8,7 @@
         "debug": "output/debug.txt"
     },
     "runtimeConfig": {
-        "seed": 8259,
+        "seed": 1111,
         "runningTime": "1s",
         "stopTime": "10s"
     },
