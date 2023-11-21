@@ -260,9 +260,8 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     {
         flowInfoIter->second.nextPSN = (expectedPSN + 1) & 0xffffff;
         if (roce.GetAckQ())
-        {   // send ACK
-            // XXX Which priority should be used?
-            CheckControlQueueDiscAvaliable();
+        { // send ACK
+            // TODO No check of whether queue disc avaliable, as don't know how to hold the ACK packet at l4
             Ptr<Packet> ack = RoCEv2L4Protocol::GenerateACK(dstQP, srcQP, psn);
             m_innerProto->Send(ack, header.GetDestination(), header.GetSource(), dstQP, srcQP, 0);
         }
@@ -271,8 +270,7 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     { // packet out-of-order, send NACK
         NS_LOG_LOGIC("RoCEv2 receiver " << Simulator::GetContext() << "send NACK of flow " << srcQP
                                         << "->" << dstQP);
-        // XXX Which priority should be used?
-        CheckControlQueueDiscAvaliable();
+        // TODO No check of whether queue disc avaliable, as don't know how to hold the NACK packet at l4
         Ptr<Packet> nack = RoCEv2L4Protocol::GenerateNACK(dstQP, srcQP, expectedPSN);
         m_innerProto
             ->Send(nack, header.GetDestination(), header.GetSource(), dstQP, srcQP, nullptr);
@@ -366,6 +364,14 @@ RoCEv2Socket::BindToNetDevice(Ptr<NetDevice> netdevice)
         // m_ccOps->SetRateHyperAIRatio (10 * rai);
         m_ccOps->SetReady();
     }
+    else
+    {
+        // Set the data rate to the default value
+        // TODO Make it configurable
+        m_deviceRate = DataRate("100Gbps");
+        NS_LOG_WARN("RoCEv2Socket is not bound to a DcbNetDevice, use default rate 100Gbps");
+        m_ccOps->SetReady();
+    }
     // Get local ipv4 address
     m_localAddress = m_boundnetdevice->GetNode()
                          ->GetObject<Ipv4L3Protocol>()
@@ -424,8 +430,18 @@ RoCEv2Socket::CreateNextProtocolHeader()
 bool
 RoCEv2Socket::CheckQueueDiscAvaliable(uint8_t priority) const
 {
-    Ptr<PausableQueueDisc> qdisc =
-        DynamicCast<PausableQueueDisc>(DynamicCast<DcbNetDevice>(m_boundnetdevice)->GetQueueDisc());
+    Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(m_boundnetdevice);
+    if (dcbDev == nullptr)
+    {
+        return true;
+    }
+
+    Ptr<PausableQueueDisc> qdisc = DynamicCast<PausableQueueDisc>(dcbDev->GetQueueDisc());
+    if (qdisc == nullptr)
+    {
+        return true;
+    }
+
     QueueSize qsize = qdisc->GetInnerQueueSize(priority);
     // TODO Make the threshold clearer
     QueueSize threshold = QueueSize("10000B");
