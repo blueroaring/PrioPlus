@@ -403,6 +403,11 @@ BuildTopology(boost::json::object& configObj)
         {
             ConfigureSwitch(configObj, topology->GetNode(nodeIdx).nodePtr);
         }
+        else if (topology->IsHost(nodeIdx))
+        {
+            DcbHostStackHelper hostStack;
+            hostStack.InstallPortsProtos(topology->GetNode(nodeIdx).nodePtr);
+        }
     }
 
     // Calculate routing tables

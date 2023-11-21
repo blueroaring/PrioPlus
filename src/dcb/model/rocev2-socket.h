@@ -81,7 +81,7 @@ class DcbTxBuffer : public Object
 
   private:
     std::deque<DcbTxBufferItem> m_buffer;
-    uint32_t m_sentIdx;
+    uint32_t m_sentIdx; // Idx to send now, which is according to the buffer but not PSN
 
 }; // class DcbTxBuffer
 
@@ -144,8 +144,22 @@ class RoCEv2Socket : public UdpBasedSocket
   protected:
     virtual void DoSendTo(Ptr<Packet> p, Ipv4Address daddr, Ptr<Ipv4Route> route) override;
 
+    /**
+     * \brief Try to send a pending packet.
+     *
+     * Try to send a pending packet. Usually called when a new packet can be sent.
+     * The function will check if it is allowed to send a packet, and if so,
+     * call DoSendDataPacket to send a data packet.
+     */
     void SendPendingPacket();
-    void FinishSendPendingPacket();
+
+    /**
+     * \brief Actually send out a data packet.
+     *
+     * The packet to be sent is controled by m_buffer. This function just call m_buffer
+     * and send the packet out.
+     */
+    void DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item);
 
     virtual void ForwardUp(Ptr<Packet> packet,
                            Ipv4Header header,
@@ -180,6 +194,24 @@ class RoCEv2Socket : public UdpBasedSocket
     void GoBackN(uint32_t lostPSN) const;
     void ScheduleNextCNP(std::map<FlowIdentifier, FlowInfo>::iterator flowInfoIter,
                          Ipv4Header header);
+    /**
+     * \brief Check whether the given priority queue disc avaliable to buffer more packet.
+     *
+     * Get the size of the given priority queue disc, and check if it is lower than a threshold.
+     * If so, return true, otherwise return false. In this way, sockets can avoid to overwhelm
+     * the queue disc. As well as avoid to send too many uncontrolled packet in the queue disc.
+     * 
+     * This function only work with dcb dev and pausable queue disc, if not, it will always return true.
+     */
+    bool CheckQueueDiscAvaliable(uint8_t priority) const;
+    /**
+     * \brief Check whether the queue disc of control priority avaliable to buffer more packet.
+     * 
+     * Throw fatal error if it is inavaliable as control packet should always be sent.
+     * 
+     * This function only work with dcb dev and pausable queue disc, if not, it will always return true.
+     */
+    void CheckControlQueueDiscAvaliable() const;
 
     // Time CalcTxTime (uint32_t bytes);
 
@@ -187,7 +219,8 @@ class RoCEv2Socket : public UdpBasedSocket
     Ptr<RoCEv2SocketState> m_sockState; //!< DCQCN socket state
     DcbTxBuffer m_buffer;
     DataRate m_deviceRate;
-    bool m_isSending;
+    // bool m_isSending;
+    EventId m_sendEvent; //!< Event id of the next send event
 
     uint32_t m_senderNextPSN;
     std::map<FlowIdentifier, FlowInfo> m_receiverFlowInfo;

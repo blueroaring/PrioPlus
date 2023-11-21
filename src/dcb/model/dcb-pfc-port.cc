@@ -173,6 +173,7 @@ DcbPfcPort::CheckShouldSendPause(uint8_t priority, uint32_t packetSize) const
 {
     // TODO: add support for dynamic threshold
     const PortInfo::IngressQueueInfo& q = m_port.getQueue(priority);
+    // Why compare with reserve - packetSize?
     return !q.isPaused &&
            m_tc->CompareIngressQueueLength(m_port.m_index, priority, q.reserve - packetSize) > 0;
 }

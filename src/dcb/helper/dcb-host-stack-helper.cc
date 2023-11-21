@@ -24,6 +24,7 @@
 #include "ns3/callback.h"
 #include "ns3/config.h"
 #include "ns3/core-config.h"
+#include "ns3/dcb-net-device.h"
 #include "ns3/global-router-interface.h"
 #include "ns3/icmpv6-l4-protocol.h"
 #include "ns3/ipv4-global-routing-helper.h"
@@ -43,6 +44,7 @@
 #include "ns3/node.h"
 #include "ns3/object.h"
 #include "ns3/packet-socket-factory.h"
+#include "ns3/pausable-queue-disc.h"
 #include "ns3/simulator.h"
 #include "ns3/string.h"
 #include "ns3/traffic-control-layer.h"
@@ -351,6 +353,29 @@ DcbHostStackHelper::Install(Ptr<Node> node) const
         NS_ASSERT(arp);
         NS_ASSERT(tc);
         arp->SetTrafficControl(tc);
+    }
+}
+
+void
+DcbHostStackHelper::InstallPortsProtos(Ptr<Node> node) const
+{
+    // Install pausable queue disc
+    Ptr<TrafficControlLayer> tc = node->GetObject<TrafficControlLayer>();
+    NS_ASSERT(tc);
+    ObjectFactory qDiscFactory;
+    qDiscFactory.SetTypeId(PausableQueueDisc::GetTypeId());
+    const uint32_t devN = node->GetNDevices();
+    for (uint32_t i = 1; i < devN; i++)
+    {
+        Ptr<NetDevice> dev = node->GetDevice(i);
+        Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
+        Ptr<PausableQueueDisc> qDisc = qDiscFactory.Create<PausableQueueDisc>();
+        // Set the queue size to 100KB, which is not critical to performance
+        qDisc->SetQueueSize(QueueSize(QueueSizeUnit::BYTES, 1e5)); 
+        qDisc->SetFCEnabled(true);
+        dcbDev->SetQueueDisc(qDisc);
+        tc->SetRootQueueDiscOnDevice(dev, qDisc);
+        dcbDev->SetFcEnabled(true); // all NetDevices should support FC
     }
 }
 

@@ -102,6 +102,7 @@ TraceApplication::InitForRngs()
     m_flowArriveTimeRng->SetAntithetic(true);
 
     m_flowSizeRng = CreateObject<EmpiricalRandomVariable>();
+    // Enable interpolation from CDF
     m_flowSizeRng->SetAttribute("Interpolate", BooleanValue(true));
 
     m_socketLinkRate = GetOutboundNetDevice()->GetDataRate();
@@ -280,6 +281,8 @@ TraceApplication::CreateNewSocket(uint32_t destNode)
     InetSocketAddress destAddr = NodeIndexToAddr(destNode);
     if (m_ecnEnabled)
     {
+        // The low 2-bits of TOS field is ECN field.
+        // The Tos of a flow is setted here.
         destAddr.SetTos(Ipv4Header::EcnType::ECN_ECT1);
     }
     ret = socket->Connect(destAddr);
