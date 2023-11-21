@@ -260,9 +260,8 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     {
         flowInfoIter->second.nextPSN = (expectedPSN + 1) & 0xffffff;
         if (roce.GetAckQ())
-        {   // send ACK
-            // XXX Which priority should be used?
-            CheckControlQueueDiscAvaliable();
+        { // send ACK
+            // TODO No check of whether queue disc avaliable, as don't know how to hold the ACK packet at l4
             Ptr<Packet> ack = RoCEv2L4Protocol::GenerateACK(dstQP, srcQP, psn);
             m_innerProto->Send(ack, header.GetDestination(), header.GetSource(), dstQP, srcQP, 0);
         }
@@ -271,8 +270,7 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     { // packet out-of-order, send NACK
         NS_LOG_LOGIC("RoCEv2 receiver " << Simulator::GetContext() << "send NACK of flow " << srcQP
                                         << "->" << dstQP);
-        // XXX Which priority should be used?
-        CheckControlQueueDiscAvaliable();
+        // TODO No check of whether queue disc avaliable, as don't know how to hold the NACK packet at l4
         Ptr<Packet> nack = RoCEv2L4Protocol::GenerateNACK(dstQP, srcQP, expectedPSN);
         m_innerProto
             ->Send(nack, header.GetDestination(), header.GetSource(), dstQP, srcQP, nullptr);
@@ -438,13 +436,12 @@ RoCEv2Socket::CheckQueueDiscAvaliable(uint8_t priority) const
         return true;
     }
 
-    Ptr<PausableQueueDisc> qdisc =
-        DynamicCast<PausableQueueDisc>(dcbDev->GetQueueDisc());
+    Ptr<PausableQueueDisc> qdisc = DynamicCast<PausableQueueDisc>(dcbDev->GetQueueDisc());
     if (qdisc == nullptr)
     {
         return true;
     }
-    
+
     QueueSize qsize = qdisc->GetInnerQueueSize(priority);
     // TODO Make the threshold clearer
     QueueSize threshold = QueueSize("10000B");
