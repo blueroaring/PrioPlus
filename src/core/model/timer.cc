@@ -170,10 +170,10 @@ Timer::Schedule(Time delay)
 {
     NS_LOG_FUNCTION(this << delay);
     NS_ASSERT(m_impl != nullptr);
-    // if (m_event.IsRunning())
-    // {
-    //     NS_FATAL_ERROR("Event is still running while re-scheduling.");
-    // }
+    if (m_event.IsRunning())
+    {
+        NS_FATAL_ERROR("Event is still running while re-scheduling.");
+    }
     m_event = m_impl->Schedule(delay);
 }
 
