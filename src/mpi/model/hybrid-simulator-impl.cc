@@ -1,4 +1,28 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+/*
+ * Copyright (c) 2023 State Key Laboratory for Novel Software Technology
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * Author: Songyuan Bai <i@f5soft.site>
+ */
+
+/**
+ * \file
+ * \ingroup mtp
+ * \ingroup mpi
+ *  Implementation of classes ns3::HybridSimulatorImpl
+ */
 
 #include "hybrid-simulator-impl.h"
 
@@ -45,7 +69,7 @@ HybridSimulatorImpl::~HybridSimulatorImpl()
 }
 
 TypeId
-HybridSimulatorImpl::GetTypeId(void)
+HybridSimulatorImpl::GetTypeId()
 {
     static TypeId tid = TypeId("ns3::HybridSimulatorImpl")
                             .SetParent<SimulatorImpl>()
@@ -83,19 +107,19 @@ HybridSimulatorImpl::Destroy()
 }
 
 bool
-HybridSimulatorImpl::IsFinished(void) const
+HybridSimulatorImpl::IsFinished() const
 {
     return m_globalFinished;
 }
 
 bool
-HybridSimulatorImpl::IsLocalFinished(void) const
+HybridSimulatorImpl::IsLocalFinished() const
 {
     return MtpInterface::isFinished();
 }
 
 void
-HybridSimulatorImpl::Stop(void)
+HybridSimulatorImpl::Stop()
 {
     NS_LOG_FUNCTION(this);
     for (uint32_t i = 0; i < MtpInterface::GetSize(); i++)
@@ -161,8 +185,7 @@ HybridSimulatorImpl::Remove(const EventId& id)
     if (id.GetUid() == EventId::DESTROY)
     {
         // destroy events.
-        for (std::list<EventId>::iterator i = m_destroyEvents.begin(); i != m_destroyEvents.end();
-             i++)
+        for (auto i = m_destroyEvents.begin(); i != m_destroyEvents.end(); i++)
         {
             if (*i == id)
             {
@@ -192,13 +215,11 @@ HybridSimulatorImpl::IsExpired(const EventId& id) const
     if (id.GetUid() == EventId::DESTROY)
     {
         // destroy events.
-        if (id.PeekEventImpl() == 0 || id.PeekEventImpl()->IsCancelled())
+        if (id.PeekEventImpl() == nullptr || id.PeekEventImpl()->IsCancelled())
         {
             return true;
         }
-        for (std::list<EventId>::const_iterator i = m_destroyEvents.begin();
-             i != m_destroyEvents.end();
-             i++)
+        for (auto i = m_destroyEvents.begin(); i != m_destroyEvents.end(); i++)
         {
             if (*i == id)
             {
@@ -214,7 +235,7 @@ HybridSimulatorImpl::IsExpired(const EventId& id) const
 }
 
 void
-HybridSimulatorImpl::Run(void)
+HybridSimulatorImpl::Run()
 {
     NS_LOG_FUNCTION(this);
 
@@ -278,7 +299,7 @@ HybridSimulatorImpl::Run(void)
 }
 
 Time
-HybridSimulatorImpl::Now(void) const
+HybridSimulatorImpl::Now() const
 {
     // Do not add function logging here, to avoid stack overflow
     return MtpInterface::GetSystem()->Now();
@@ -298,7 +319,7 @@ HybridSimulatorImpl::GetDelayLeft(const EventId& id) const
 }
 
 Time
-HybridSimulatorImpl::GetMaximumSimulationTime(void) const
+HybridSimulatorImpl::GetMaximumSimulationTime() const
 {
     return Time::Max() / 2;
 }
@@ -321,13 +342,13 @@ HybridSimulatorImpl::GetSystemId() const
 }
 
 uint32_t
-HybridSimulatorImpl::GetContext(void) const
+HybridSimulatorImpl::GetContext() const
 {
     return MtpInterface::GetSystem()->GetContext();
 }
 
 uint64_t
-HybridSimulatorImpl::GetEventCount(void) const
+HybridSimulatorImpl::GetEventCount() const
 {
     uint64_t eventCount = 0;
     for (uint32_t i = 0; i < MtpInterface::GetSize(); i++)
@@ -338,7 +359,7 @@ HybridSimulatorImpl::GetEventCount(void) const
 }
 
 void
-HybridSimulatorImpl::DoDispose(void)
+HybridSimulatorImpl::DoDispose()
 {
     delete[] m_pLBTS;
     SimulatorImpl::DoDispose();
@@ -357,7 +378,7 @@ HybridSimulatorImpl::Partition()
     if (m_minLookahead == TimeStep(0))
     {
         std::vector<Time> delays;
-        for (NodeContainer::Iterator it = nodes.Begin(); it != nodes.End(); it++)
+        for (auto it = nodes.Begin(); it != nodes.End(); it++)
         {
             Ptr<Node> node = *it;
             if (node->GetSystemId() == m_myId)
@@ -381,7 +402,7 @@ HybridSimulatorImpl::Partition()
             }
         }
         std::sort(delays.begin(), delays.end());
-        if (delays.size() == 0)
+        if (delays.empty())
         {
             m_minLookahead = TimeStep(0);
         }
@@ -397,7 +418,7 @@ HybridSimulatorImpl::Partition()
     }
 
     // perform a BFS on the whole network topo to assign each node a localSystemId
-    for (NodeContainer::Iterator it = nodes.Begin(); it != nodes.End(); it++)
+    for (auto it = nodes.Begin(); it != nodes.End(); it++)
     {
         Ptr<Node> node = *it;
         if (!visited[node->GetId()] && node->GetSystemId() == m_myId)
@@ -457,22 +478,29 @@ HybridSimulatorImpl::Partition()
                                    << " threads");
 
     // create new LPs
-    const Ptr<Scheduler> events = MtpInterface::GetSystem()->GetPendingEvents();
-    MtpInterface::Disable();
-    MtpInterface::Enable(threadCount, systemCount);
+    MtpInterface::EnableNew(threadCount, systemCount);
 
     // set scheduler
     ObjectFactory schedulerFactory;
     schedulerFactory.SetTypeId(m_schedulerTypeId);
-    for (uint32_t i = 0; i <= systemCount; i++)
+    for (uint32_t i = 1; i <= systemCount; i++)
     {
         MtpInterface::GetSystem(i)->SetScheduler(schedulerFactory);
     }
 
-    // transfer events to new LPs
-    while (!events->IsEmpty())
+    // remove old events in public LP
+    const Ptr<Scheduler> oldEvents = MtpInterface::GetSystem()->GetPendingEvents();
+    const Ptr<Scheduler> eventsToBeTransferred = schedulerFactory.Create<Scheduler>();
+    while (!oldEvents->IsEmpty())
     {
-        Scheduler::Event ev = events->RemoveNext();
+        Scheduler::Event next = oldEvents->RemoveNext();
+        eventsToBeTransferred->Insert(next);
+    }
+
+    // transfer events to new LPs
+    while (!eventsToBeTransferred->IsEmpty())
+    {
+        Scheduler::Event ev = eventsToBeTransferred->RemoveNext();
         // invoke initialization events (at time 0) by their insertion order
         // since changing the execution order of these events may cause error,
         // they have to be invoked now rather than parallelly executed

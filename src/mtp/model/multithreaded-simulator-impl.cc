@@ -1,3 +1,28 @@
+/*
+ * Copyright (c) 2023 State Key Laboratory for Novel Software Technology
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * Author: Songyuan Bai <i@f5soft.site>
+ */
+
+/**
+ * \file
+ * \ingroup mtp
+ *  Implementation of classes ns3::MultithreadedSimulatorImpl
+ */
+
 #include "multithreaded-simulator-impl.h"
 
 #include "mtp-interface.h"
@@ -141,8 +166,7 @@ MultithreadedSimulatorImpl::Remove(const EventId& id)
     if (id.GetUid() == EventId::DESTROY)
     {
         // destroy events.
-        for (std::list<EventId>::iterator i = m_destroyEvents.begin(); i != m_destroyEvents.end();
-             i++)
+        for (auto i = m_destroyEvents.begin(); i != m_destroyEvents.end(); i++)
         {
             if (*i == id)
             {
@@ -176,9 +200,7 @@ MultithreadedSimulatorImpl::IsExpired(const EventId& id) const
         {
             return true;
         }
-        for (std::list<EventId>::const_iterator i = m_destroyEvents.begin();
-             i != m_destroyEvents.end();
-             i++)
+        for (auto i = m_destroyEvents.begin(); i != m_destroyEvents.end(); i++)
         {
             if (*i == id)
             {
@@ -206,7 +228,7 @@ MultithreadedSimulatorImpl::Run()
 }
 
 Time
-MultithreadedSimulatorImpl::Now(void) const
+MultithreadedSimulatorImpl::Now() const
 {
     // Do not add function logging here, to avoid stack overflow
     return MtpInterface::GetSystem()->Now();
@@ -226,7 +248,7 @@ MultithreadedSimulatorImpl::GetDelayLeft(const EventId& id) const
 }
 
 Time
-MultithreadedSimulatorImpl::GetMaximumSimulationTime(void) const
+MultithreadedSimulatorImpl::GetMaximumSimulationTime() const
 {
     return Time::Max() / 2;
 }
@@ -243,7 +265,7 @@ MultithreadedSimulatorImpl::SetScheduler(ObjectFactory schedulerFactory)
 }
 
 uint32_t
-MultithreadedSimulatorImpl::GetSystemId(void) const
+MultithreadedSimulatorImpl::GetSystemId() const
 {
     return MtpInterface::GetSystem()->GetSystemId();
 }
@@ -255,7 +277,7 @@ MultithreadedSimulatorImpl::GetContext() const
 }
 
 uint64_t
-MultithreadedSimulatorImpl::GetEventCount(void) const
+MultithreadedSimulatorImpl::GetEventCount() const
 {
     uint64_t eventCount = 0;
     for (uint32_t i = 0; i < MtpInterface::GetSize(); i++)
@@ -284,7 +306,7 @@ MultithreadedSimulatorImpl::Partition()
     if (m_minLookahead == TimeStep(0))
     {
         std::vector<Time> delays;
-        for (NodeContainer::Iterator it = nodes.Begin(); it != nodes.End(); it++)
+        for (auto it = nodes.Begin(); it != nodes.End(); it++)
         {
             Ptr<Node> node = *it;
             for (uint32_t i = 0; i < node->GetNDevices(); i++)
@@ -305,7 +327,7 @@ MultithreadedSimulatorImpl::Partition()
             }
         }
         std::sort(delays.begin(), delays.end());
-        if (delays.size() == 0)
+        if (delays.empty())
         {
             m_minLookahead = TimeStep(0);
         }
@@ -321,7 +343,7 @@ MultithreadedSimulatorImpl::Partition()
     }
 
     // perform a BFS on the whole network topo to assign each node a systemId
-    for (NodeContainer::Iterator it = nodes.Begin(); it != nodes.End(); it++)
+    for (auto it = nodes.Begin(); it != nodes.End(); it++)
     {
         Ptr<Node> node = *it;
         if (!visited[node->GetId()])
@@ -380,22 +402,29 @@ MultithreadedSimulatorImpl::Partition()
                                    << " threads");
 
     // create new LPs
-    const Ptr<Scheduler> events = MtpInterface::GetSystem()->GetPendingEvents();
-    MtpInterface::Disable();
-    MtpInterface::Enable(threadCount, systemCount);
+    MtpInterface::EnableNew(threadCount, systemCount);
 
     // set scheduler
     ObjectFactory schedulerFactory;
     schedulerFactory.SetTypeId(m_schedulerTypeId);
-    for (uint32_t i = 0; i <= systemCount; i++)
+    for (uint32_t i = 1; i <= systemCount; i++)
     {
         MtpInterface::GetSystem(i)->SetScheduler(schedulerFactory);
     }
 
-    // transfer events to new LPs
-    while (!events->IsEmpty())
+    // remove old events in public LP
+    const Ptr<Scheduler> oldEvents = MtpInterface::GetSystem()->GetPendingEvents();
+    const Ptr<Scheduler> eventsToBeTransferred = schedulerFactory.Create<Scheduler>();
+    while (!oldEvents->IsEmpty())
     {
-        Scheduler::Event ev = events->RemoveNext();
+        Scheduler::Event next = oldEvents->RemoveNext();
+        eventsToBeTransferred->Insert(next);
+    }
+
+    // transfer events to new LPs
+    while (!eventsToBeTransferred->IsEmpty())
+    {
+        Scheduler::Event ev = eventsToBeTransferred->RemoveNext();
         // invoke initialization events (at time 0) by their insertion order
         // since changing the execution order of these events may cause error,
         // they have to be invoked now rather than parallelly executed

@@ -1,3 +1,28 @@
+/*
+ * Copyright (c) 2023 State Key Laboratory for Novel Software Technology
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * Author: Songyuan Bai <i@f5soft.site>
+ */
+
+/**
+ * \file
+ * \ingroup mtp
+ *  Implementation of classes ns3::MtpInterface
+ */
+
 #include "mtp-interface.h"
 
 #include "ns3/assert.h"
@@ -113,6 +138,30 @@ MtpInterface::EnableNew(const uint32_t newSystemCount)
     {
         g_systems[i].Enable(i, g_systemCount + 1);
     }
+
+    UintegerValue ui;
+    g_sortPeriod.GetValue(ui);
+    if (ui.Get() == 0)
+    {
+        g_period = std::ceil(std::log2(g_systemCount) / 4 + 1);
+        NS_LOG_INFO("Secheduling period is automatically set to " << g_period);
+    }
+    else
+    {
+        g_period = ui.Get();
+    }
+
+    // create a thread local storage key
+    // so that we can access the currently assigned LP of each thread
+    pthread_key_create(&g_key, nullptr);
+    pthread_setspecific(g_key, &g_systems[0]);
+}
+
+void
+MtpInterface::EnableNew(const uint32_t threadCount, const uint32_t newSystemCount)
+{
+    g_threadCount = threadCount;
+    EnableNew(newSystemCount);
 }
 
 void
@@ -190,7 +239,8 @@ MtpInterface::ProcessOneRound()
 
     // logical process barriar synchronization
     while (g_finishedSystemCount.load(std::memory_order_acquire) != g_systemCount)
-        ;
+    {
+    };
 
     // stage 2: process the public LP
     g_systems[0].ProcessOneRound();
@@ -213,7 +263,8 @@ MtpInterface::ProcessOneRound()
 
     // logical process barriar synchronization
     while (g_finishedSystemCount.load(std::memory_order_acquire) != g_systemCount)
-        ;
+    {
+    };
 }
 
 void
@@ -281,7 +332,8 @@ MtpInterface::ThreadFunc(void* arg)
         if (index >= g_systemCount)
         {
             while (g_systemIndex.load(std::memory_order_acquire) >= g_systemCount)
-                ;
+            {
+            };
             continue;
         }
         LogicalProcess* system = &g_systems[g_sortedSystemIndices[index]];

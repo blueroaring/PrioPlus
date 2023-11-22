@@ -1,3 +1,28 @@
+/*
+ * Copyright (c) 2023 State Key Laboratory for Novel Software Technology
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * Author: Songyuan Bai <i@f5soft.site>
+ */
+
+/**
+ * \file
+ * \ingroup mtp
+ *  Implementation of classes ns3::LogicalProcess
+ */
+
 #include "logical-process.h"
 
 #include "mtp-interface.h"
@@ -14,18 +39,18 @@ namespace ns3
 NS_LOG_COMPONENT_DEFINE("LogicalProcess");
 
 LogicalProcess::LogicalProcess()
+    : m_systemId(0),
+      m_systemCount(0),
+      m_stop(false),
+      m_uid(EventId::UID::VALID),
+      m_currentContext(Simulator::NO_CONTEXT),
+      m_currentUid(0),
+      m_currentTs(0),
+      m_eventCount(0),
+      m_pendingEventCount(0),
+      m_events(nullptr),
+      m_lookAhead(TimeStep(0))
 {
-    m_systemId = 0;
-    m_systemCount = 0;
-    m_uid = EventId::UID::VALID;
-    m_stop = false;
-    m_currentContext = Simulator::NO_CONTEXT;
-    m_currentUid = 0;
-    m_currentTs = 0;
-    m_eventCount = 0;
-    m_pendingEventCount = 0;
-    m_events = 0;
-    m_lookAhead = TimeStep(0);
 }
 
 LogicalProcess::~LogicalProcess()
@@ -57,15 +82,17 @@ LogicalProcess::CalculateLookAhead()
 
     if (m_systemId == 0)
     {
-        m_lookAhead = TimeStep(0); // No lookahead for public LP
+        m_lookAhead = TimeStep(0); // No lookahead for the public LP
     }
     else
     {
         m_lookAhead = Time::Max() / 2 - TimeStep(1);
         NodeContainer c = NodeContainer::GetGlobal();
-        for (NodeContainer::Iterator iter = c.Begin(); iter != c.End(); ++iter)
+        for (auto iter = c.Begin(); iter != c.End(); ++iter)
         {
 #ifdef NS3_MPI
+            // for hybrid simulation, the left 16-bit indicates local system ID,
+            // and the right 16-bit indicates global system ID (MPI rank)
             if (((*iter)->GetSystemId() >> 16) != m_systemId)
             {
                 continue;
@@ -222,8 +249,7 @@ LogicalProcess::ScheduleWithContext(LogicalProcess* remote,
     else
     {
         ev.key.m_uid = EventId::UID::INVALID;
-        remote->m_mailbox[m_systemId].push_back(
-            std::make_tuple(m_currentTs, m_systemId, m_uid, ev));
+        remote->m_mailbox[m_systemId].emplace_back(m_currentTs, m_systemId, m_uid, ev);
     }
 }
 
@@ -269,16 +295,9 @@ LogicalProcess::Remove(const EventId& id)
 bool
 LogicalProcess::IsExpired(const EventId& id) const
 {
-    if (id.PeekEventImpl() == 0 || id.GetTs() < m_currentTs ||
-        (id.GetTs() == m_currentTs && id.GetUid() <= m_currentUid) ||
-        id.PeekEventImpl()->IsCancelled())
-    {
-        return true;
-    }
-    else
-    {
-        return false;
-    }
+    return id.PeekEventImpl() == nullptr || id.GetTs() < m_currentTs ||
+           (id.GetTs() == m_currentTs && id.GetUid() <= m_currentUid) ||
+           id.PeekEventImpl()->IsCancelled();
 }
 
 void
