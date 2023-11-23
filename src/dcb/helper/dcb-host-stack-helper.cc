@@ -380,6 +380,24 @@ DcbHostStackHelper::InstallPortsProtos(Ptr<Node> node) const
 }
 
 void
+DcbHostStackHelper::InstallRocev2L4(Ptr<Node> node) const
+{
+    if (m_ipv4Enabled || m_ipv6Enabled)
+    {
+        CreateAndAggregateObjectFromTypeId(node, "ns3::UdpBasedSocketFactory");
+    }
+}
+
+void
+DcbHostStackHelper::InstallRocev2L4(NodeContainer c) const
+{
+    for (NodeContainer::Iterator i = c.Begin(); i != c.End(); ++i)
+    {
+        InstallRocev2L4(*i);
+    }
+}
+
+void
 DcbHostStackHelper::Install(std::string nodeName) const
 {
     Ptr<Node> node = Names::Find<Node>(nodeName);

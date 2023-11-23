@@ -30,6 +30,7 @@
 #include "ns3/integer.h"
 #include "ns3/ipv4-address.h"
 #include "ns3/log-macros-enabled.h"
+#include "ns3/loopback-net-device.h"
 #include "ns3/node.h"
 #include "ns3/packet-socket-address.h"
 #include "ns3/ptr.h"
@@ -78,10 +79,12 @@ TraceApplication::TraceApplication(Ptr<DcTopology> topology,
       m_enableReceive(true),
       m_topology(topology),
       m_nodeIndex(nodeIndex),
+      m_node(topology->GetNode(nodeIndex).nodePtr),
       m_ecnEnabled(true),
       m_totBytes(0),
       m_headerSize(8 + 20 + 14 + 2),
-      m_destNode(destIndex)
+      m_destNode(destIndex),
+      m_destAddr(InetSocketAddress("0.0.0.0", 0))
 {
     NS_LOG_FUNCTION(this);
 
@@ -89,6 +92,26 @@ TraceApplication::TraceApplication(Ptr<DcTopology> topology,
     {
         m_hostIndexRng = topology->CreateRamdomHostChooser();
     }
+    // Time::SetResolution (Time::Unit::PS); // improve resolution
+    InitForRngs();
+}
+
+TraceApplication::TraceApplication(Ptr<DcTopology> topology,
+                                   Ptr<Node> node,
+                                   InetSocketAddress destAddr)
+    : m_enableSend(true),
+      m_enableReceive(true),
+      m_topology(topology),
+      m_nodeIndex(node->GetId()),
+      m_node(node),
+      m_ecnEnabled(true),
+      m_totBytes(0),
+      m_headerSize(8 + 20 + 14 + 2),
+      m_destNode(-1),
+      m_destAddr(destAddr)
+{
+    NS_LOG_FUNCTION(this);
+
     // Time::SetResolution (Time::Unit::PS); // improve resolution
     InitForRngs();
 }
@@ -105,7 +128,16 @@ TraceApplication::InitForRngs()
     // Enable interpolation from CDF
     m_flowSizeRng->SetAttribute("Interpolate", BooleanValue(true));
 
-    m_socketLinkRate = GetOutboundNetDevice()->GetDataRate();
+    if (DynamicCast<DcbNetDevice>(GetOutboundNetDevice()) != nullptr)
+    {
+        m_socketLinkRate = DynamicCast<DcbNetDevice>(GetOutboundNetDevice())->GetDataRate();
+    }
+    else
+    {
+        // Set to a fixed value
+        // This value could be large enough to avoid throughput loss
+        m_socketLinkRate = DataRate("100Gbps");
+    }
 }
 
 TraceApplication::~TraceApplication()
@@ -247,6 +279,14 @@ Ptr<Socket>
 TraceApplication::CreateNewSocket(uint32_t destNode)
 {
     NS_LOG_FUNCTION(this);
+    InetSocketAddress destAddr = NodeIndexToAddr(destNode);
+    return CreateNewSocket(destAddr);
+}
+
+Ptr<Socket>
+TraceApplication::CreateNewSocket(InetSocketAddress destAddr)
+{
+    NS_LOG_FUNCTION(this);
 
     Ptr<Socket> socket = Socket::CreateSocket(GetNode(), m_socketTid);
 
@@ -278,7 +318,6 @@ TraceApplication::CreateNewSocket(uint32_t destNode)
         NS_FATAL_ERROR("Failed to bind socket");
     }
 
-    InetSocketAddress destAddr = NodeIndexToAddr(destNode);
     if (m_ecnEnabled)
     {
         // The low 2-bits of TOS field is ECN field.
@@ -300,10 +339,23 @@ TraceApplication::CreateNewSocket(uint32_t destNode)
 void
 TraceApplication::ScheduleNextFlow(const Time& startTime)
 {
-    uint32_t destNode = GetDestinationNode();
-    Ptr<Socket> socket = CreateNewSocket(destNode);
+    uint32_t destNode = 0;
+    Ptr<Socket> socket;
+
+    if (m_destAddr.GetPort() == 0)
+    {
+        // The dest addr is not set, select a destination node
+        destNode = GetDestinationNode();
+        socket = CreateNewSocket(destNode);
+    }
+    else
+    {
+        socket = CreateNewSocket(m_destAddr);
+    }
+
     uint64_t size = GetNextFlowSize();
 
+    // XXX If use dest addr, the dest node is not set
     Flow* flow = new Flow(size, startTime, destNode, socket);
     m_flows.emplace(socket, flow); // used when flow completes
     Simulator::Schedule(startTime - Simulator::Now(),
@@ -393,6 +445,13 @@ TraceApplication::SetEcnEnabled(bool enabled)
 }
 
 void
+TraceApplication::SetDestAddr(InetSocketAddress destAddr)
+{
+    NS_LOG_FUNCTION(this << destAddr);
+    m_destAddr = destAddr;
+}
+
+void
 TraceApplication::ConnectionSucceeded(Ptr<Socket> socket)
 {
     NS_LOG_FUNCTION(this << socket);
@@ -464,16 +523,15 @@ TraceApplication::SetReceiveEnabled(bool enabled)
     m_enableReceive = enabled;
 }
 
-Ptr<DcbNetDevice>
+Ptr<NetDevice>
 TraceApplication::GetOutboundNetDevice()
 {
     // We do not use GetNode ()->GetDevice (0) as it is inavlid when the application is created
-    Ptr<DcbNetDevice> boundDev =
-        DynamicCast<DcbNetDevice>(m_topology->GetNetDeviceOfNode(m_nodeIndex, 0));
-    if (boundDev == nullptr)
+    Ptr<NetDevice> boundDev = m_node->GetDevice(0);
+    if (DynamicCast<LoopbackNetDevice>(boundDev) != nullptr)
     {
         // Try to get the second net device as the first one may be loopback
-        boundDev = DynamicCast<DcbNetDevice>(m_topology->GetNetDeviceOfNode(m_nodeIndex, 1));
+        boundDev = m_node->GetDevice(1);
     }
     return boundDev;
 }

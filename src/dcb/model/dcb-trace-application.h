@@ -62,6 +62,7 @@ class TraceApplication : public Application
      * destination.
      */
     TraceApplication(Ptr<DcTopology> topology, uint32_t nodeIndex, int32_t destIndex = -1);
+    TraceApplication(Ptr<DcTopology> topology, Ptr<Node> node, InetSocketAddress destAddr);
     virtual ~TraceApplication();
 
     enum ProtocolGroup
@@ -124,6 +125,8 @@ class TraceApplication : public Application
 
     void FlowCompletes(Ptr<UdpBasedSocket> socket);
 
+    void SetDestAddr(InetSocketAddress destAddr);
+
     constexpr static inline const uint64_t MSS = 1000; // bytes
 
     static inline TraceCdf TRACE_WEBSEARCH_CDF = {{0., 0.00},
@@ -161,9 +164,16 @@ class TraceApplication : public Application
     void ScheduleNextFlow(const Time& startTime);
 
     /**
-     * \brief Create new socket.
+     * \brief Create new socket to the destNode.
+     * 
+     * Call this function requires m_topology set.
      */
     Ptr<Socket> CreateNewSocket(uint32_t destNode);
+
+    /**
+     * \brief Create new socket send to the destAddr.
+     */
+    Ptr<Socket> CreateNewSocket(InetSocketAddress destAddr);
 
     /**
      * \brief Get destination node index of one flow.
@@ -221,9 +231,10 @@ class TraceApplication : public Application
 
     /**
      * \brief Find a outbound net device (i.e., not a loopback net device) for the application's
-     * node. \return a outbound net device (typically the only outbound net device).
+     * node. 
+     * \return a outbound net device (typically the only outbound net device).
      */
-    Ptr<DcbNetDevice> GetOutboundNetDevice();
+    Ptr<NetDevice> GetOutboundNetDevice();
 
     std::map<Ptr<Socket>, Flow*> m_flows;
 
@@ -231,6 +242,7 @@ class TraceApplication : public Application
     bool m_enableReceive;
     const Ptr<DcTopology> m_topology; //!< The topology
     const uint32_t m_nodeIndex;
+    Ptr<Node> m_node; //!< The node the application is installed on, used when dctopo is not set
     bool m_ecnEnabled;
     // bool                   m_connected;       //!< True if connected
     DataRate m_socketLinkRate;                          //!< Link rate of the deice
@@ -242,7 +254,8 @@ class TraceApplication : public Application
     Ptr<EmpiricalRandomVariable> m_flowSizeRng;         //!< Flow size random generator
     Ptr<ExponentialRandomVariable> m_flowArriveTimeRng; //!< Flow arrive time random generator
     Ptr<UniformRandomVariable> m_hostIndexRng;          //!< Host index random generator
-    int32_t m_destNode; //!< if not choosing random destination, store the destined address here
+    int32_t m_destNode; //!< if not choosing random destination, store the destined node index here
+    InetSocketAddress m_destAddr; //!< if not choosing random destination, store the destined address here
     Ptr<RoCEv2Socket> m_receiverSocket;
 
     /// traced Callback: transmitted packets.

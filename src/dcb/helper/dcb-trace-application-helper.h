@@ -42,7 +42,10 @@ class TraceApplicationHelper
     void SetProtocolGroup(TraceApplication::ProtocolGroup protoGroup);
     void SetCdf(const TraceApplication::TraceCdf& cdf);
     void SetLoad(Ptr<const DcbNetDevice> dev, double load);
+    void SetLoad(DataRate rate, double load);
     void SetDestination(int32_t dest);
+    void SetDestination(InetSocketAddress dest);
+    void SetSendEnabled(bool enabled);
 
     /**
      * Record an attribute to be set in each Application after it is is created.
@@ -68,7 +71,8 @@ class TraceApplicationHelper
     TraceApplication::ProtocolGroup m_protoGroup;
     TraceApplication::TraceCdf* m_cdf;
     double m_flowMeanInterval;
-    int32_t m_dest;
+    int32_t m_destNode;
+    InetSocketAddress m_destAddr;
     bool m_sendEnabled;
 
 }; // class TraceApplicationHelper

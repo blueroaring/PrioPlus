@@ -110,6 +110,21 @@ class DcbHostStackHelper : public PcapHelperForIpv4,
     void InstallAll(void) const;
 
     /**
+     * Aggregate implementations of the Rocev2L4Protocol.
+     *
+     * \param node The node on which to install the stack.
+     */
+    void InstallRocev2L4(Ptr<Node> node) const;
+
+    /**
+     * For each node in the input container, aggregate implementations of the Rocev2L4Protocol.
+     *
+     * \param c NodeContainer that holds the set of nodes on which to install the
+     * new stacks.
+     */
+    void InstallRocev2L4(NodeContainer c) const;
+
+    /**
      * \brief set the Tcp stack which will not need any other parameter.
      *
      * This function sets up the tcp stack to the given TypeId. It should not be

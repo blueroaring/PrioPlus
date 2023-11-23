@@ -65,7 +65,7 @@ class UdpBasedL4Protocol : public Object
     UdpBasedL4Protocol& operator=(const UdpBasedL4Protocol&) = delete;
 
     /**
-     * Set node, device, and udp protocol associated with this stack
+     * \brief Set node, device, and udp protocol associated with this stack
      */
     void Setup(Ptr<Node> node, Ptr<NetDevice> dev);
 

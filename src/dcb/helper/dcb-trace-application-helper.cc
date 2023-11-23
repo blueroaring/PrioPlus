@@ -33,7 +33,8 @@ TraceApplicationHelper::TraceApplicationHelper(Ptr<DcTopology> topo)
     : m_topology(topo),
       m_cdf(nullptr),
       m_flowMeanInterval(0.),
-      m_dest(-1),
+      m_destNode(-1),
+      m_destAddr(InetSocketAddress("0.0.0.0", 0)),
       m_sendEnabled(true)
 {
 }
@@ -53,6 +54,18 @@ TraceApplicationHelper::SetCdf(const TraceApplication::TraceCdf& cdf)
 void
 TraceApplicationHelper::SetLoad(Ptr<const DcbNetDevice> dev, double load)
 {
+    SetLoad(dev->GetDataRate(), load);
+}
+
+void
+TraceApplicationHelper::SetSendEnabled(bool enabled)
+{
+    m_sendEnabled = enabled;
+}
+
+void
+TraceApplicationHelper::SetLoad(DataRate rate, double load)
+{
     NS_ASSERT_MSG(m_cdf, "Must set CDF to TraceApplicationHelper before setting load.");
     NS_ASSERT_MSG(load >= 0. && load <= 1., "Load shoud be between 0 and 1.");
     double mean = CalculateCdfMeanSize(m_cdf);
@@ -63,20 +76,27 @@ TraceApplicationHelper::SetLoad(Ptr<const DcbNetDevice> dev, double load)
     else
     {
         m_sendEnabled = true;
-        m_flowMeanInterval = mean * 8 / (dev->GetDataRate().GetBitRate() * load) * 1e6; // us
+        m_flowMeanInterval = mean * 8 / (rate.GetBitRate() * load) * 1e6; // us
     }
 }
 
 void
 TraceApplicationHelper::SetDestination(int32_t dest)
 {
-    m_dest = dest;
+    m_destNode = dest;
+}
+
+void
+TraceApplicationHelper::SetDestination(InetSocketAddress dest)
+{
+    m_destAddr = dest;
 }
 
 ApplicationContainer
 TraceApplicationHelper::Install(Ptr<Node> node) const
 {
-    NS_ASSERT_MSG(m_cdf, "[TraceApplicationHelper] CDF not set, please call SetCdf ().");
+    // The cdf is not needed to set if the send is disabled.
+    NS_ASSERT_MSG(!m_sendEnabled || m_cdf, "[TraceApplicationHelper] CDF not set, please call SetCdf ().");
     NS_ASSERT_MSG(m_flowMeanInterval > 0 || !m_sendEnabled,
                   "[TraceApplicationHelper] Load not set, please call SetLoad ().");
     return ApplicationContainer(InstallPriv(node));
@@ -86,13 +106,19 @@ Ptr<Application>
 TraceApplicationHelper::InstallPriv(Ptr<Node> node) const
 {
     Ptr<TraceApplication> app;
-    if (m_dest < 0)
+    if (m_topology == nullptr)
+    { // the topo is not set
+        // The dest must be set in this case, unless the send is disabled.
+        NS_ASSERT(m_destAddr.GetPort() != 0 || !m_sendEnabled);
+        app = CreateObject<TraceApplication>(m_topology, node, m_destAddr);
+    }
+    else if (m_destNode < 0)
     { // random destination flows application
         app = CreateObject<TraceApplication>(m_topology, node->GetId());
     }
     else
     { // fixed destination flows application
-        app = CreateObject<TraceApplication>(m_topology, node->GetId(), m_dest);
+        app = CreateObject<TraceApplication>(m_topology, node->GetId(), m_destNode);
     }
 
     if (m_sendEnabled)
