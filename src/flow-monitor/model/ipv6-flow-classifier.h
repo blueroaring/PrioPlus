@@ -25,6 +25,7 @@
 
 #include "ns3/ipv6-header.h"
 
+#include <atomic>
 #include <map>
 #include <stdint.h>
 
@@ -100,6 +101,10 @@ class Ipv6FlowClassifier : public FlowClassifier
     std::map<FlowId, FlowPacketId> m_flowPktIdMap;
     /// Map FlowIds to (DSCP value, packet count) pairs
     std::map<FlowId, std::map<Ipv6Header::DscpType, uint32_t>> m_flowDscpMap;
+
+#ifdef NS3_MTP
+    std::atomic<bool> m_lock;
+#endif
 };
 
 /**

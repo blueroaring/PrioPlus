@@ -22,6 +22,7 @@
 #include "buffer.h"
 
 #include "ns3/assert.h"
+#include "ns3/atomic-counter.h"
 #include "ns3/callback.h"
 #include "ns3/type-id.h"
 
@@ -426,7 +427,11 @@ class PacketMetadata
     struct Data
     {
         /** number of references to this struct Data instance. */
+#ifdef NS3_MTP
+        AtomicCounter m_count;
+#else
         uint32_t m_count;
+#endif
         /** size (in bytes) of m_data buffer below */
         uint16_t m_size;
         /** max of the m_used field over all objects which reference this struct Data instance */
@@ -675,6 +680,9 @@ class PacketMetadata
      */
     static void Deallocate(PacketMetadata::Data* data);
 
+#ifdef NS3_MTP
+    static std::atomic<bool> m_freeListUsing;
+#endif
     static DataFreeList m_freeList; //!< the metadata data storage
     static bool m_enable;           //!< Enable the packet metadata
     static bool m_enableChecking;   //!< Enable the packet metadata checking
@@ -739,8 +747,7 @@ PacketMetadata::operator=(const PacketMetadata& o)
     {
         // not self assignment
         NS_ASSERT(m_data != nullptr);
-        m_data->m_count--;
-        if (m_data->m_count == 0)
+        if (m_data->m_count-- == 1)
         {
             PacketMetadata::Recycle(m_data);
         }
@@ -758,8 +765,7 @@ PacketMetadata::operator=(const PacketMetadata& o)
 PacketMetadata::~PacketMetadata()
 {
     NS_ASSERT(m_data != nullptr);
-    m_data->m_count--;
-    if (m_data->m_count == 0)
+    if (m_data->m_count-- == 1)
     {
         PacketMetadata::Recycle(m_data);
     }
