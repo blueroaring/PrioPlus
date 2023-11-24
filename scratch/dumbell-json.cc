@@ -68,6 +68,8 @@ int main (int argc, char *argv[])
     }
 
   LogComponentEnableAll (LOG_LEVEL_WARN);
+  // LogComponentEnable("RoCEv2Socket", LOG_LEVEL_FUNCTION);
+  // LogComponentEnable("RoCEv2Dcqcn", LOG_LEVEL_FUNCTION);
   // LogComponentEnable ("PausableQueueDisc", LOG_LEVEL_INFO);
   // LogComponentEnable ("FifoQueueDiscEcn", LOG_LEVEL_INFO);
 

@@ -20,7 +20,6 @@
 #include "rocev2-socket.h"
 
 #include "dcb-net-device.h"
-#include "dcqcn.h"
 #include "rocev2-l4-protocol.h"
 #include "udp-based-l4-protocol.h"
 #include "udp-based-socket.h"
@@ -58,11 +57,13 @@ RoCEv2Socket::GetTypeId()
 RoCEv2Socket::RoCEv2Socket()
     : UdpBasedSocket(),
       m_senderNextPSN(0),
-      m_psnEnd(0)
+      m_psnEnd(0),
+      m_CNPInterval(MicroSeconds(4))
 {
     NS_LOG_FUNCTION(this);
     m_sockState = CreateObject<RoCEv2SocketState>();
-    m_ccOps = CreateObject<DcqcnCongestionOps>(m_sockState);
+    // XXX is it OK that don't init?
+    //  m_ccOps = CreateObject<RoCEv2CongestionOps>(m_sockState);
     m_flowStartTime = Simulator::Now();
 }
 
@@ -311,7 +312,7 @@ RoCEv2Socket::ScheduleNextCNP(std::map<FlowIdentifier, FlowInfo>::iterator flowI
     m_innerProto
         ->Send(cnp, header.GetDestination(), header.GetSource(), flowInfo.dstQP, srcQP, nullptr);
     flowInfo.receivedECN = false;
-    flowInfo.lastCNPEvent = Simulator::Schedule(m_ccOps->GetCNPInterval(),
+    flowInfo.lastCNPEvent = Simulator::Schedule(GetCNPInterval(),
                                                 &RoCEv2Socket::ScheduleNextCNP,
                                                 this,
                                                 flowInfoIter,
@@ -403,6 +404,24 @@ void
 RoCEv2Socket::SetStopTime(Time stopTime)
 {
     m_ccOps->SetStopTime(stopTime);
+}
+
+void
+RoCEv2Socket::SetCcOps(TypeId congTypeId)
+{
+    NS_LOG_FUNCTION(this << congTypeId);
+
+    ObjectFactory congestionAlgorithmFactory;
+    congestionAlgorithmFactory.SetTypeId(congTypeId);
+    Ptr<RoCEv2CongestionOps> algo = congestionAlgorithmFactory.Create<RoCEv2CongestionOps>();
+    m_ccOps = algo;
+    m_ccOps->SetSockState(m_sockState);
+}
+
+Time
+RoCEv2Socket::GetCNPInterval() const
+{
+    return m_CNPInterval;
 }
 
 Time

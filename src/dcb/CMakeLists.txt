@@ -21,7 +21,8 @@ build_lib(
 	  model/udp-based-socket.cc
 	  model/rocev2-l4-protocol.cc
 	  model/rocev2-socket.cc
-	  model/dcqcn.cc
+	  model/rocev2-congestion-ops.cc
+	  model/rocev2-dcqcn.cc
 	  utils/pfc-frame.cc
   HEADER_FILES
       helper/dcb-net-device-helper.h
@@ -43,7 +44,8 @@ build_lib(
 	  model/udp-based-socket.h
 	  model/rocev2-l4-protocol.h
 	  model/rocev2-socket.h
-	  model/dcqcn.h
+	  model/rocev2-congestion-ops.h
+	  model/rocev2-dcqcn.h
 	  utils/pfc-frame.h
   LIBRARIES_TO_LINK
       ${libcore}

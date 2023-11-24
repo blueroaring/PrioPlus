@@ -20,7 +20,7 @@
 #ifndef ROCEV2_SOCKET_H
 #define ROCEV2_SOCKET_H
 
-#include "dcqcn.h"
+#include "rocev2-congestion-ops.h"
 #include "udp-based-socket.h"
 
 #include "ns3/ipv4-address.h"
@@ -30,7 +30,7 @@
 namespace ns3
 {
 
-class DcqcnCongestionOps;
+class RoCEv2CongestionOps;
 class RoCEv2SocketState;
 
 class DcbTxBuffer : public Object
@@ -137,7 +137,12 @@ class RoCEv2Socket : public UdpBasedSocket
 
     virtual void FinishSending() override;
 
-    void SetStopTime(Time stopTime); // for DCQCN
+    void SetStopTime(Time stopTime); // for RoCEv2 Congestion
+
+    // void SetCcOps(Ptr<RoCEv2CongestionOps> algo);
+    void SetCcOps(TypeId congTypeId);
+
+    Time GetCNPInterval() const;
 
     Time GetFlowStartTime() const;
 
@@ -215,7 +220,8 @@ class RoCEv2Socket : public UdpBasedSocket
 
     // Time CalcTxTime (uint32_t bytes);
 
-    Ptr<DcqcnCongestionOps> m_ccOps;    //!< DCQCN congestion control
+    Ptr<RoCEv2CongestionOps> m_ccOps; //!< RoCEv2 congestion control
+    // FIXME Now just used in DCQCN
     Ptr<RoCEv2SocketState> m_sockState; //!< DCQCN socket state
     DcbTxBuffer m_buffer;
     DataRate m_deviceRate;
@@ -226,6 +232,7 @@ class RoCEv2Socket : public UdpBasedSocket
     std::map<FlowIdentifier, FlowInfo> m_receiverFlowInfo;
     uint32_t m_psnEnd; //!< the last PSN + 1, used to check if flow completes
 
+    Time m_CNPInterval; //!< Interval to send CNP
     Time m_flowStartTime;
 
 }; // class RoCEv2Socket

@@ -20,6 +20,7 @@
 #include "dcb-trace-application.h"
 
 #include "dcb-net-device.h"
+#include "rocev2-dcqcn.h"
 #include "rocev2-l4-protocol.h"
 #include "rocev2-socket.h"
 #include "udp-based-socket.h"
@@ -64,6 +65,11 @@ TraceApplication::GetTypeId()
             //                MakeTypeIdAccessor (&TraceApplication::m_socketTid),
             //                // This should check for SocketFactory as a parent
             //                MakeTypeIdChecker ())
+            .AddAttribute("CongestionType",
+                          "Socket' congestion control type.",
+                          TypeIdValue(RoCEv2Dcqcn::GetTypeId()),
+                          MakeTypeIdAccessor(&TraceApplication::m_congestionTypeId),
+                          MakeTypeIdChecker())
             .AddTraceSource("FlowComplete",
                             "Trace when a flow completes.",
                             MakeTraceSourceAccessor(&TraceApplication::m_flowCompleteTrace),
@@ -171,6 +177,8 @@ TraceApplication::StartApplication(void)
             // crate a special socket to act as the receiver
             m_receiverSocket = DynamicCast<RoCEv2Socket>(
                 Socket::CreateSocket(GetNode(), UdpBasedSocketFactory::GetTypeId()));
+            // XXX is it OK that only using m_congestionTypeId?
+            m_receiverSocket->SetCcOps(m_congestionTypeId);
             m_receiverSocket->BindToNetDevice(GetOutboundNetDevice());
             m_receiverSocket->BindToLocalPort(RoCEv2L4Protocol::DefaultServicePort());
             m_receiverSocket->ShutdownSend();
@@ -246,11 +254,15 @@ TraceApplication::NodeIndexToAddr(uint32_t destNode) const
 Ptr<Socket>
 TraceApplication::CreateNewSocket(uint32_t destNode)
 {
+    return CreateNewSocket(destNode, m_congestionTypeId);
+}
+
+Ptr<Socket>
+TraceApplication::CreateNewSocket(uint32_t destNode, TypeId congestionTypeId)
+{
     NS_LOG_FUNCTION(this);
 
     Ptr<Socket> socket = Socket::CreateSocket(GetNode(), m_socketTid);
-
-    socket->BindToNetDevice(GetOutboundNetDevice());
 
     if (m_protoGroup == ProtocolGroup::TCP)
     {
@@ -267,10 +279,13 @@ TraceApplication::CreateNewSocket(uint32_t destNode)
             Ptr<RoCEv2Socket> roceSocket = DynamicCast<RoCEv2Socket>(udpBasedSocket);
             if (roceSocket)
             {
+                roceSocket->SetCcOps(congestionTypeId);
                 roceSocket->SetStopTime(m_stopTime);
             }
         }
     }
+    // XXX is it OK that moving binding here?
+    socket->BindToNetDevice(GetOutboundNetDevice());
 
     int ret = socket->Bind();
     if (ret == -1)
