@@ -112,7 +112,8 @@ class TraceApplication : public Application
         }
     };
 
-    typedef const std::vector<std::pair<double, double>> TraceCdf;
+    // The message size trace CDF in <size (in Byte), probility>
+    typedef const std::vector<std::pair<uint32_t, double>> TraceCdf;
 
     void SetFlowCdf(const TraceCdf& cdf);
 
@@ -165,7 +166,7 @@ class TraceApplication : public Application
 
     /**
      * \brief Create new socket to the destNode.
-     * 
+     *
      * Call this function requires m_topology set.
      */
     Ptr<Socket> CreateNewSocket(uint32_t destNode);
@@ -231,7 +232,7 @@ class TraceApplication : public Application
 
     /**
      * \brief Find a outbound net device (i.e., not a loopback net device) for the application's
-     * node. 
+     * node.
      * \return a outbound net device (typically the only outbound net device).
      */
     Ptr<NetDevice> GetOutboundNetDevice();
@@ -255,7 +256,8 @@ class TraceApplication : public Application
     Ptr<ExponentialRandomVariable> m_flowArriveTimeRng; //!< Flow arrive time random generator
     Ptr<UniformRandomVariable> m_hostIndexRng;          //!< Host index random generator
     int32_t m_destNode; //!< if not choosing random destination, store the destined node index here
-    InetSocketAddress m_destAddr; //!< if not choosing random destination, store the destined address here
+    InetSocketAddress
+        m_destAddr; //!< if not choosing random destination, store the destined address here
     Ptr<RoCEv2Socket> m_receiverSocket;
 
     /// traced Callback: transmitted packets.

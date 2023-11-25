@@ -1,7 +1,6 @@
 {
     "inputFile": {
-        "topo": "config/topo/dumbell.txt",
-        "sizeDist": "config/DCTCP-MsgSizeDist.txt"
+        "topo": "config/topo/dumbell.txt"
     },
     "outputFile": {
         "result": "output/output.json",
@@ -57,7 +56,11 @@
             "appName": "TraceApplication",
             "nodes": "all",
             "protocolGroup": "RoCEv2",
-            "Cdf": "WebSearch",
+            "cdf": {
+                "cdfFile": "config/trace/WebSearch_distribution.txt",
+                "avgSize": 0,
+                "scaleFactor": 1
+            },
             "load": 0.9,
             "startTime": "0.1s",
             "stopTime": "0.101s"

@@ -55,6 +55,21 @@ void SetRandomSeed(uint32_t seed);
 
 void InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology);
 
+/**
+ * \brief Constract the CDF from CDF config.
+ * 
+ * This function will call trace application helper to read the CDF.
+ * 
+ * \param conf The CDF config.
+ */
+std::unique_ptr<TraceApplication::TraceCdf> ConstructCdf(const boost::json::object& conf);
+
+// Convert boost::json::value to number.
+// To use these functions, make sure you know the type of the value.
+double ConvertToDouble(const boost::json::value& v);
+int64_t ConvertToInt(const boost::json::value& v);
+uint64_t ConvertToUint(const boost::json::value& v);
+
 } // namespace json_util
 
 } // namespace ns3

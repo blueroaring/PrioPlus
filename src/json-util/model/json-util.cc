@@ -290,17 +290,37 @@ InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> to
     appHelper.SetProtocolGroup(pProtocolGroup->second);
 
     // Set CDF
-    if (appConfig.find("Cdf") == appConfig.end())
+    if (appConfig.find("cdf") == appConfig.end())
     {
         NS_FATAL_ERROR("Using TraceApplication needs to specify \"Cdf\"");
     }
-    std::string sCdf = appConfig.find("Cdf")->value().as_string().c_str();
-    auto pCdf = appCdfMapper.find(sCdf);
-    if (pCdf == appCdfMapper.end())
+    if (appConfig.find("cdf")->value().is_string())
     {
-        NS_FATAL_ERROR("Cannot recognize CDF \"" << sCdf << "\".");
+        // Has CDF type specified
+        std::string sCdf = appConfig.find("cdf")->value().as_string().c_str();
+        auto pCdf = appCdfMapper.find(sCdf);
+        if (pCdf == appCdfMapper.end())
+        {
+            NS_FATAL_ERROR("Cannot recognize CDF \"" << sCdf << "\".");
+        }
+        // According to GPT, it will copy the CDF...
+        auto newCdf = std::make_unique<TraceApplication::TraceCdf>(*pCdf->second);
+        appHelper.SetCdf(std::move(newCdf));
+        // If pass the pointer directly, it will cause double free error
+        // appHelper.SetCdf(std::unique_ptr<TraceApplication::TraceCdf>(pCdf->second));
     }
-    appHelper.SetCdf(*(pCdf->second));
+    else if (appConfig.find("cdf")->value().is_object())
+    {
+        // No CDF type specified, use CDF Read from file
+        boost::json::object cdfConfig =
+            appConfig.find("cdf")->value().as_object();
+        auto cdf = ConstructCdf(cdfConfig);
+        appHelper.SetCdf(std::move(cdf));
+    }
+    else
+    {
+        NS_FATAL_ERROR("Cannot recognize CDF type");
+    }
 
     // Set dest if specified
     // If not specified, the application will randomly choose a node as destination
@@ -366,6 +386,101 @@ InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> to
     }
 }
 
+/***** Utilities about CDF *****/
+std::unique_ptr<TraceApplication::TraceCdf>
+ConstructCdf(const boost::json::object& conf)
+{
+    std::string cdfFile = conf.find("cdfFile")->value().as_string().c_str();
+    uint32_t avgSize = ConvertToUint(conf.find("avgSize")->value());
+    // The double value may be interpreted as int64_t
+    double scaleFactor = ConvertToDouble(conf.find("scaleFactor")->value());
+
+    // If avgSize is specified, use it to scale the CDF
+    if (avgSize != 0)
+    {
+        return TraceApplicationHelper::ConstructCdfFromFile(cdfFile, avgSize);
+    }
+    // If scaleFactor is specified, use it to scale the CDF
+    else if (scaleFactor != 0)
+    {
+        return TraceApplicationHelper::ConstructCdfFromFile(cdfFile, scaleFactor);
+    }
+    // If neither is specified, use the CDF directly
+    else
+    {
+        return TraceApplicationHelper::ConstructCdfFromFile(cdfFile);
+    }
+}
+
+double
+ConvertToDouble(const boost::json::value& v)
+{
+    switch (v.kind())
+    {
+    case boost::json::kind::uint64:
+        return v.get_uint64();
+    case boost::json::kind::int64:
+        return v.get_int64();
+    case boost::json::kind::double_:
+        return v.get_double();
+    default:
+        NS_FATAL_ERROR("Cannot convert to double");
+    }
+}
+
+int64_t
+ConvertToInt(const boost::json::value& v)
+{
+    switch (v.kind())
+    {
+    case boost::json::kind::uint64:
+        return v.get_uint64();
+    case boost::json::kind::int64:
+        return v.get_int64();
+    case boost::json::kind::double_:
+        // If the value is read as double, it may be like 0.999 which should be converted to 1
+        // To avoid this, we should convert the double to the nearest integer
+        // Note that we need to consider the negative value
+        if (v.get_double() < 0)
+        {
+            return (int64_t)(v.get_double() - 0.5);
+        }
+        else
+        {
+            return (int64_t)(v.get_double() + 0.5);
+        }
+    default:
+        NS_FATAL_ERROR("Cannot convert to uint64_t");
+    }
+}
+
+uint64_t
+ConvertToUint(const boost::json::value& v)
+{
+    switch (v.kind())
+    {
+    case boost::json::kind::uint64:
+        return v.get_uint64();
+    case boost::json::kind::int64:
+        // If the value is negative, we cannot convert it to uint64_t
+        if (v.get_int64() < 0)
+        {
+            NS_FATAL_ERROR("Cannot convert to uint64_t");
+        }
+        return v.get_int64();
+    case boost::json::kind::double_:
+        // If the value is negative, we cannot convert it to uint64_t
+        if (v.get_double() < 0)
+        {
+            NS_FATAL_ERROR("Cannot convert to uint64_t");
+        }
+        // If the value is read as double, it may be like 0.999 which should be converted to 1
+        // To avoid this, we should convert the double to the nearest integer
+        return (uint64_t)(v.get_double() + 0.5);
+    default:
+        NS_FATAL_ERROR("Cannot convert to uint64_t");
+    }
+}
 } // namespace json_util
 
 } // namespace ns3

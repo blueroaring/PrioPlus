@@ -40,7 +40,7 @@ class TraceApplicationHelper
     ApplicationContainer Install(Ptr<Node> node) const;
 
     void SetProtocolGroup(TraceApplication::ProtocolGroup protoGroup);
-    void SetCdf(const TraceApplication::TraceCdf& cdf);
+    void SetCdf(std::unique_ptr<TraceApplication::TraceCdf> cdf);
     void SetLoad(Ptr<const DcbNetDevice> dev, double load);
     void SetLoad(DataRate rate, double load);
     void SetDestination(int32_t dest);
@@ -54,6 +54,44 @@ class TraceApplicationHelper
      * \param value the value of the attribute to set
      */
     // void SetAttribute (std::string name, const AttributeValue &value);
+
+    /**
+     * \brief Read the CDF from a file.
+     *
+     * \param filename The name of the file to read.
+     * \returns A vector of pairs of doubles, representing the CDF.
+     */
+    static std::unique_ptr<std::vector<std::pair<uint32_t, double>>> ConstructCdfFromFile(
+        std::string filename);
+    /**
+     * \brief Read the CDF from a file and scale the size according to the scaleFactor.
+     *
+     * \param filename The name of the file to read.
+     * \param scaleFactor The scale factor to apply to the CDF.
+     * \returns A vector of pairs of doubles, representing the CDF.
+     */
+    static std::unique_ptr<std::vector<std::pair<uint32_t, double>>> ConstructCdfFromFile(
+        std::string filename,
+        double scaleFactor);
+    /**
+     * \brief Read the CDF from a file and scale the size according to the avgSize.
+     *
+     * \param filename The name of the file to read.
+     * \param avgSize The average size of the retruned CDF.
+     * \returns A vector of pairs of doubles, representing the CDF.
+     */
+    static std::unique_ptr<std::vector<std::pair<uint32_t, double>>> ConstructCdfFromFile(
+        std::string filename,
+        uint32_t avgSize);
+
+    /**
+     * \brief Normalize the CDF's probability.
+     *
+     * The maximum probability of CDF should be 1.
+     *
+     * \param cdf The CDF to normalize.
+     */
+    static void NormalizeCdf(std::vector<std::pair<uint32_t, double>>* cdf);
 
   private:
     /**
@@ -69,7 +107,7 @@ class TraceApplicationHelper
 
     Ptr<DcTopology> m_topology;
     TraceApplication::ProtocolGroup m_protoGroup;
-    TraceApplication::TraceCdf* m_cdf;
+    std::unique_ptr<TraceApplication::TraceCdf> m_cdf;
     double m_flowMeanInterval;
     int32_t m_destNode;
     InetSocketAddress m_destAddr;
