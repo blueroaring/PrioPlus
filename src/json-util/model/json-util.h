@@ -53,13 +53,16 @@ void SetRandomSeed(boost::json::object& configJsonObj);
 
 void SetRandomSeed(uint32_t seed);
 
+std::shared_ptr<TraceApplicationHelper> ConstructTraceAppHelper(const boost::json::object& conf,
+                                                                Ptr<DcTopology> topology);
+
 void InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology);
 
 /**
  * \brief Constract the CDF from CDF config.
- * 
+ *
  * This function will call trace application helper to read the CDF.
- * 
+ *
  * \param conf The CDF config.
  */
 std::unique_ptr<TraceApplication::TraceCdf> ConstructCdf(const boost::json::object& conf);

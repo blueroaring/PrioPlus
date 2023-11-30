@@ -37,7 +37,11 @@ TraceApplicationHelper::TraceApplicationHelper(Ptr<DcTopology> topo)
       m_flowMeanInterval(0.),
       m_destNode(-1),
       m_destAddr(InetSocketAddress("0.0.0.0", 0)),
-      m_sendEnabled(true)
+      m_sendEnabled(true),
+      m_load(0),
+      m_staticFlowInterval(false),
+      m_startTime(Time(0)),
+      m_stopTime(Time(0))
 {
 }
 
@@ -62,17 +66,30 @@ TraceApplicationHelper::SetLoad(Ptr<const DcbNetDevice> dev, double load)
 void
 TraceApplicationHelper::SetLoad(DataRate rate, double load)
 {
+    m_load = load;
+    CalcLoad(rate);
+}
+
+void
+TraceApplicationHelper::SetLoad(double load)
+{
+    m_load = load;
+}
+
+void
+TraceApplicationHelper::CalcLoad(DataRate rate)
+{
     NS_ASSERT_MSG(m_cdf, "Must set CDF to TraceApplicationHelper before setting load.");
-    NS_ASSERT_MSG(load >= 0. && load <= 1., "Load shoud be between 0 and 1.");
+    NS_ASSERT_MSG(m_load >= 0. && m_load <= 1., "Load shoud be between 0 and 1.");
     double mean = CalculateCdfMeanSize(m_cdf.get());
-    if (load <= 1e-6)
+    if (m_load <= 1e-6)
     {
         m_sendEnabled = false;
     }
     else
     {
         m_sendEnabled = true;
-        m_flowMeanInterval = mean * 8 / (rate.GetBitRate() * load) * 1e6; // us
+        m_flowMeanInterval = mean * 8 / (rate.GetBitRate() * m_load) * 1e6; // us
     }
 }
 
@@ -94,19 +111,51 @@ TraceApplicationHelper::SetDestination(InetSocketAddress dest)
     m_destAddr = dest;
 }
 
-ApplicationContainer
-TraceApplicationHelper::Install(Ptr<Node> node) const
+void
+TraceApplicationHelper::SetStaticFlowInterval(bool staticFlowInterval)
 {
+    m_staticFlowInterval = staticFlowInterval;
+}
+
+void
+TraceApplicationHelper::SetStartAndStopTime(Time start, Time stop)
+{
+    m_startTime = start;
+    m_stopTime = stop;
+}
+
+ApplicationContainer
+TraceApplicationHelper::Install(Ptr<Node> node)
+{
+    if (m_sendEnabled && m_flowMeanInterval == 0.)
+    {
+        // The flow interval is not set
+        // Here we assume the first device of the node is the host's DcbNetDevice
+        SetLoad(DynamicCast<DcbNetDevice>(node->GetDevice(1)), m_load);
+    }
+
     // The cdf is not needed to set if the send is disabled.
     NS_ASSERT_MSG(!m_sendEnabled || m_cdf,
                   "[TraceApplicationHelper] CDF not set, please call SetCdf ().");
     NS_ASSERT_MSG(m_flowMeanInterval > 0 || !m_sendEnabled,
                   "[TraceApplicationHelper] Load not set, please call SetLoad ().");
-    return ApplicationContainer(InstallPriv(node));
+
+    ApplicationContainer app = ApplicationContainer(InstallPriv(node));
+    // If start time and stop time has been specified, set them.
+    if (m_startTime != Time(0))
+    {
+        app.Start(m_startTime);
+    }
+    if (m_stopTime != Time(0))
+    {
+        app.Stop(m_stopTime);
+    }
+
+    return app;
 }
 
 Ptr<Application>
-TraceApplicationHelper::InstallPriv(Ptr<Node> node) const
+TraceApplicationHelper::InstallPriv(Ptr<Node> node)
 {
     Ptr<TraceApplication> app;
     if (m_topology == nullptr)
@@ -127,7 +176,7 @@ TraceApplicationHelper::InstallPriv(Ptr<Node> node) const
     if (m_sendEnabled)
     {
         app->SetFlowCdf(*m_cdf);
-        app->SetFlowMeanArriveInterval(m_flowMeanInterval);
+        app->SetFlowMeanArriveInterval(m_flowMeanInterval, m_staticFlowInterval);
     }
     else
     {
@@ -183,7 +232,7 @@ TraceApplicationHelper::ConstructCdfFromFile(std::string filename)
     auto cdf = std::make_unique<std::vector<std::pair<uint32_t, double>>>();
     uint32_t msgSizePkts;
     double prob;
-    
+
     while (getline(cdfFile, line))
     {
         lineBuffer.clear();
@@ -226,13 +275,13 @@ TraceApplicationHelper::ConstructCdfFromFile(std::string filename, uint32_t avgS
     return cdf;
 }
 
-// static 
+// static
 void
 TraceApplicationHelper::NormalizeCdf(std::vector<std::pair<uint32_t, double>>* cdf)
 {
     // The maximum probability of CDF should be 1.
     double max = cdf->back().second;
-    for(auto& [s, p] : *cdf)
+    for (auto& [s, p] : *cdf)
     {
         p /= max;
     }

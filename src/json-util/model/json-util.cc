@@ -271,10 +271,11 @@ InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology)
     }
 }
 
-static void
-InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> topology)
+std::shared_ptr<TraceApplicationHelper>
+ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> topology)
 {
-    TraceApplicationHelper appHelper(topology);
+    std::shared_ptr<TraceApplicationHelper> appHelper =
+        std::make_shared<TraceApplicationHelper>(topology);
 
     // Set protocol group
     std::string sProtocolGroup = appConfig.find("protocolGroup")->value().as_string().c_str();
@@ -287,7 +288,7 @@ InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> to
     {
         NS_FATAL_ERROR("Cannot recognize protocol group \"" << sProtocolGroup << "\"");
     }
-    appHelper.SetProtocolGroup(pProtocolGroup->second);
+    appHelper->SetProtocolGroup(pProtocolGroup->second);
 
     // Set CDF
     if (appConfig.find("cdf") == appConfig.end())
@@ -305,17 +306,16 @@ InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> to
         }
         // According to GPT, it will copy the CDF...
         auto newCdf = std::make_unique<TraceApplication::TraceCdf>(*pCdf->second);
-        appHelper.SetCdf(std::move(newCdf));
+        appHelper->SetCdf(std::move(newCdf));
         // If pass the pointer directly, it will cause double free error
         // appHelper.SetCdf(std::unique_ptr<TraceApplication::TraceCdf>(pCdf->second));
     }
     else if (appConfig.find("cdf")->value().is_object())
     {
         // No CDF type specified, use CDF Read from file
-        boost::json::object cdfConfig =
-            appConfig.find("cdf")->value().as_object();
+        boost::json::object cdfConfig = appConfig.find("cdf")->value().as_object();
         auto cdf = ConstructCdf(cdfConfig);
-        appHelper.SetCdf(std::move(cdf));
+        appHelper->SetCdf(std::move(cdf));
     }
     else
     {
@@ -339,18 +339,38 @@ InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> to
     {
         NS_FATAL_ERROR("Load should be in [0, 1]");
     }
+    appHelper->SetLoad(dLoad);
+
+    // Get if static flow interval is enabled, default is false
+    auto sfi = appConfig.find("staticFlowInterval");
+    if (sfi != appConfig.end())
+    {
+        appHelper->SetStaticFlowInterval(sfi->value().get_bool());
+    }
+
     // Get the start time of the application
     if (appConfig.find("startTime") == appConfig.end())
     {
         NS_FATAL_ERROR("Using TraceApplication needs to specify \"startTime\"");
     }
     Time startTime = Time(appConfig.find("startTime")->value().as_string().c_str());
+
     // Get the stop time of the application, if not specified, set to 0
     Time stopTime = Time(0);
     if (appConfig.find("stopTime") != appConfig.end())
     {
         stopTime = Time(appConfig.find("stopTime")->value().as_string().c_str());
     }
+    appHelper->SetStartAndStopTime(startTime, stopTime);
+
+    return appHelper;
+}
+
+static void
+InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> topology)
+{
+    std::shared_ptr<TraceApplicationHelper> appHelper =
+        ConstructTraceAppHelper(appConfig, topology);
 
     // Install the application on nodes specified in the config
     // TODO We just assume that the application is installed on all the hosts
@@ -370,14 +390,7 @@ InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> to
                                << " is not a host and thus could not install an application.");
             }
             Ptr<Node> node = hostIter->nodePtr;
-            // Here we assume the first device of the node is the host's DcbNetDevice
-            appHelper.SetLoad(DynamicCast<DcbNetDevice>(node->GetDevice(1)), dLoad);
-            ApplicationContainer app = appHelper.Install(node);
-            app.Start(startTime);
-            if (stopTime != Time(0))
-            {
-                app.Stop(stopTime);
-            }
+            appHelper->Install(node);
         }
     }
     else

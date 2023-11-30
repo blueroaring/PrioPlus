@@ -37,15 +37,23 @@ class TraceApplicationHelper
   public:
     TraceApplicationHelper(Ptr<DcTopology> topology);
 
-    ApplicationContainer Install(Ptr<Node> node) const;
+    ApplicationContainer Install(Ptr<Node> node);
 
     void SetProtocolGroup(TraceApplication::ProtocolGroup protoGroup);
     void SetCdf(std::unique_ptr<TraceApplication::TraceCdf> cdf);
     void SetLoad(Ptr<const DcbNetDevice> dev, double load);
     void SetLoad(DataRate rate, double load);
+    /**
+     * Set the load without calculating the flow interval, which will be
+     * calculated at install to node
+     */
+    void SetLoad(double load);
+    void CalcLoad(DataRate rate);
     void SetDestination(int32_t dest);
     void SetDestination(InetSocketAddress dest);
     void SetSendEnabled(bool enabled);
+    void SetStaticFlowInterval(bool staticFlowInterval);
+    void SetStartAndStopTime(Time start, Time stop);
 
     /**
      * Record an attribute to be set in each Application after it is is created.
@@ -101,7 +109,7 @@ class TraceApplicationHelper
      * \param node The node on which an UdpEchoClient will be installed.
      * \returns Ptr to the application installed.
      */
-    Ptr<Application> InstallPriv(Ptr<Node> node) const;
+    Ptr<Application> InstallPriv(Ptr<Node> node);
 
     static double CalculateCdfMeanSize(const TraceApplication::TraceCdf* const cdf);
 
@@ -112,7 +120,10 @@ class TraceApplicationHelper
     int32_t m_destNode;
     InetSocketAddress m_destAddr;
     bool m_sendEnabled;
-
+    double m_load;
+    bool m_staticFlowInterval;
+    Time m_startTime;
+    Time m_stopTime;
 }; // class TraceApplicationHelper
 
 } // namespace ns3

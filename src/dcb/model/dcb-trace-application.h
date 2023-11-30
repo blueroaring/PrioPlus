@@ -118,6 +118,13 @@ class TraceApplication : public Application
     void SetFlowCdf(const TraceCdf& cdf);
 
     void SetFlowMeanArriveInterval(double interval);
+    /**
+     * \brief Set mean arrive interval
+     * 
+     * \param iterval The mean interval in ms.
+     * \param staticFlowInterval Whether the flow interval is static.
+     */
+    void SetFlowMeanArriveInterval(double interval, bool staticFlowInterval);
 
     void SetEcnEnabled(bool enabled);
 
@@ -252,12 +259,15 @@ class TraceApplication : public Application
     ProtocolGroup m_protoGroup;                         //!< Protocol group
     TypeId m_innerUdpProtocol;                          //!< inner-UDP protocol type id
     uint32_t m_headerSize;                              //!< total header bytes of a packet
+
     Ptr<EmpiricalRandomVariable> m_flowSizeRng;         //!< Flow size random generator
+    Time m_staticFlowArriveInterval;                    //!< Static flow arrive interval
     Ptr<ExponentialRandomVariable> m_flowArriveTimeRng; //!< Flow arrive time random generator
     Ptr<UniformRandomVariable> m_hostIndexRng;          //!< Host index random generator
     int32_t m_destNode; //!< if not choosing random destination, store the destined node index here
     InetSocketAddress
         m_destAddr; //!< if not choosing random destination, store the destined address here
+
     Ptr<RoCEv2Socket> m_receiverSocket;
 
     /// traced Callback: transmitted packets.

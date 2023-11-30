@@ -83,6 +83,7 @@ TraceApplication::TraceApplication(Ptr<DcTopology> topology,
       m_ecnEnabled(true),
       m_totBytes(0),
       m_headerSize(8 + 20 + 14 + 2),
+      m_staticFlowArriveInterval(Time(0)),
       m_destNode(destIndex),
       m_destAddr(InetSocketAddress("0.0.0.0", 0))
 {
@@ -213,6 +214,7 @@ TraceApplication::StartApplication(void)
 
     if (m_enableSend)
     {
+        // Schedule all flows in the beginning
         for (Time t = Simulator::Now() + GetNextFlowArriveInterval(); t < m_stopTime;
              t += GetNextFlowArriveInterval())
         {
@@ -416,6 +418,22 @@ TraceApplication::SetFlowMeanArriveInterval(double interval)
 }
 
 void
+TraceApplication::SetFlowMeanArriveInterval(double interval, bool staticFlowInterval)
+{
+    NS_LOG_FUNCTION(this << interval);
+    if (staticFlowInterval)
+    {
+        m_staticFlowArriveInterval = Time(MicroSeconds(interval));
+        m_flowArriveTimeRng = nullptr;
+    }
+    else
+    {
+        m_staticFlowArriveInterval = Time(0);
+        SetFlowMeanArriveInterval(interval);
+    }
+}
+
+void
 TraceApplication::SetFlowCdf(const TraceCdf& cdf)
 {
     NS_LOG_FUNCTION(this);
@@ -428,7 +446,18 @@ TraceApplication::SetFlowCdf(const TraceCdf& cdf)
 inline Time
 TraceApplication::GetNextFlowArriveInterval() const
 {
-    return Time(MicroSeconds(m_flowArriveTimeRng->GetInteger()));
+    if (m_staticFlowArriveInterval != Time(0))
+    {
+        return m_staticFlowArriveInterval;
+    }
+    else if (m_flowArriveTimeRng != nullptr)
+    {
+        return Time(MicroSeconds(m_flowArriveTimeRng->GetInteger()));
+    }
+    else
+    {
+        NS_FATAL_ERROR("Flow arrival interval is not set");
+    }
 }
 
 inline uint32_t
