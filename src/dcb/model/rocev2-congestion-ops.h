@@ -91,7 +91,6 @@ class RoCEv2CongestionOps : public Object
      * \return true if current time is not over stopTime.
      */
     bool CheckStopCondition();
-    // XXX is it OK that delete 'const'?
     Ptr<RoCEv2SocketState> m_sockState;
     Time m_stopTime;
 };

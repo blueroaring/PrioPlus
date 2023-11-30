@@ -87,7 +87,6 @@ class RoCEv2Dcqcn : public RoCEv2CongestionOps
     uint32_t m_rateUpdateIter;
     uint32_t m_bytesUpdateIter;
     uint32_t m_F;
-    // XXX is it OK deleting const of m_g, m_bytesThreshold and m_F?
     double m_targetRateRatio;
     double m_curRateRatio;
     double m_minRateRatio;

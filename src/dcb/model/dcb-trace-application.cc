@@ -178,7 +178,6 @@ TraceApplication::StartApplication(void)
             // crate a special socket to act as the receiver
             m_receiverSocket = DynamicCast<RoCEv2Socket>(
                 Socket::CreateSocket(GetNode(), UdpBasedSocketFactory::GetTypeId()));
-            // XXX is it OK that only using m_congestionTypeId?
             m_receiverSocket->SetCcOps(m_congestionTypeId);
             m_receiverSocket->BindToNetDevice(GetOutboundNetDevice());
             m_receiverSocket->BindToLocalPort(RoCEv2L4Protocol::DefaultServicePort());
@@ -286,7 +285,6 @@ TraceApplication::CreateNewSocket(uint32_t destNode, TypeId congestionTypeId)
             }
         }
     }
-    // XXX is it OK that moving binding here?
     socket->BindToNetDevice(GetOutboundNetDevice());
 
     int ret = socket->Bind();
