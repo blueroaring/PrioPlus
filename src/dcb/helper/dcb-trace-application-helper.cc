@@ -146,8 +146,9 @@ TraceApplicationHelper::Install(Ptr<Node> node)
     {
         app.Start(m_startTime);
     }
-    if (m_stopTime != Time(0))
+    if (m_stopTime != Time(0) && m_sendEnabled)
     {
+        // Only stop the application if the send is enabled.
         app.Stop(m_stopTime);
     }
 
