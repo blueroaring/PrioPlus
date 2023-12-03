@@ -16,6 +16,7 @@ build_lib(
 	  model/dcb-traffic-control.cc
 	  model/dcb-trace-application.cc
 	  model/dcb-flow-control-port.cc
+	  model/dcb-hpcc-port.cc
 	  model/dcb-pfc-port.cc
 	  model/udp-based-l4-protocol.cc
 	  model/udp-based-socket.cc
@@ -40,6 +41,7 @@ build_lib(
 	  model/fifo-queue-disc-ecn.h
 	  model/dcb-trace-application.h
 	  model/dcb-flow-control-port.h
+	  model/dcb-hpcc-port.h
 	  model/dcb-pfc-port.h
 	  model/udp-based-l4-protocol.h
 	  model/udp-based-socket.h
