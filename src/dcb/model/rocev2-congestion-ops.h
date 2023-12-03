@@ -86,6 +86,14 @@ class RoCEv2CongestionOps : public Object
     {
     }
 
+    /**
+     * \brief Get headersize
+     */
+    virtual uint32_t GetHeaderSize()
+    {
+        return m_headerSize;
+    }
+
   protected:
     /**
      * \return true if current time is not over stopTime.
@@ -93,6 +101,7 @@ class RoCEv2CongestionOps : public Object
     bool CheckStopCondition();
     Ptr<RoCEv2SocketState> m_sockState;
     Time m_stopTime;
+    uint32_t m_headerSize;
 };
 } // namespace ns3
 

@@ -37,12 +37,14 @@ RoCEv2CongestionOps::GetTypeId(void)
 }
 
 RoCEv2CongestionOps::RoCEv2CongestionOps()
+    : m_headerSize(12 + 8 + 20 + 14) // Rocev2+UDP+IP+Eth
 {
     NS_LOG_FUNCTION(this);
 }
 
 RoCEv2CongestionOps::RoCEv2CongestionOps(Ptr<RoCEv2SocketState> sockState)
-    : m_sockState(sockState)
+    : m_sockState(sockState),
+      m_headerSize(12 + 8 + 20 + 14) // Rocev2+UDP+IP+Eth
 {
     NS_LOG_FUNCTION(this);
 }

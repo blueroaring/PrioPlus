@@ -48,7 +48,7 @@ class IntHop
             uint64_t m_TS : TSWidth;
             uint64_t m_txBytes : txBytesWidth;
             uint64_t m_qLen : qLenWidth;
-        };
+        } __attribute__((__packed__));
 
         uint64_t m_buf;
     };
@@ -173,7 +173,7 @@ class HpccHeader : public Header
         {
             uint16_t m_pathID : 12; // TODO Now we don't considering changing path
             uint16_t m_nHop : 4;
-        };
+        } __attribute__((__packed__));
     };
 };
 

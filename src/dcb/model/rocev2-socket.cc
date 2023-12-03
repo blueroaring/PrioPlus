@@ -131,7 +131,7 @@ RoCEv2Socket::SendPendingPacket()
         // [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] =
         //     m_buffer.GetNextShouldSent();
         const DcbTxBuffer::DcbTxBufferItem& item = m_buffer.GetNextShouldSent();
-        const uint32_t sz = item.m_payload->GetSize() + 8 + 20 + 14;
+        const uint32_t sz = item.m_payload->GetSize() + m_ccOps->GetHeaderSize();
         DoSendDataPacket(item);
 
         // Control the send rate by interval of sending packets.

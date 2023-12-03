@@ -32,6 +32,12 @@ HpccHeader::HpccHeader()
 void
 HpccHeader::PushHop(uint64_t time, uint64_t bytes, uint64_t qlen, DataRate rate)
 {
+    if (m_nHop >= MAX_HOP)
+    {
+        NS_FATAL_ERROR("Too many hops");
+    }
+    m_intHops[m_nHop].Set(time, bytes, qlen, rate);
+    m_nHop++;
 }
 
 TypeId
