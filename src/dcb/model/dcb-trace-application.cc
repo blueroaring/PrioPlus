@@ -27,6 +27,7 @@
 #include "ns3/boolean.h"
 #include "ns3/double.h"
 #include "ns3/fatal-error.h"
+#include "ns3/global-value.h"
 #include "ns3/integer.h"
 #include "ns3/ipv4-address.h"
 #include "ns3/log-macros-enabled.h"
@@ -89,6 +90,8 @@ TraceApplication::TraceApplication(Ptr<DcTopology> topology,
 {
     NS_LOG_FUNCTION(this);
 
+    m_stats = std::make_shared<Stats>();
+
     if (destIndex < 0)
     {
         m_hostIndexRng = topology->CreateRamdomHostChooser();
@@ -112,6 +115,8 @@ TraceApplication::TraceApplication(Ptr<DcTopology> topology,
       m_destAddr(destAddr)
 {
     NS_LOG_FUNCTION(this);
+
+    m_stats = std::make_shared<Stats>();
 
     // Time::SetResolution (Time::Unit::PS); // improve resolution
     InitForRngs();
@@ -376,7 +381,7 @@ TraceApplication::SendNextPacket(Flow* flow)
     {
         m_totBytes += packetSize;
         Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_headerSize);
-        if (Simulator::Now() + txTime < m_stopTime)
+        if (true)
         {
             if (flow->remainBytes > MSS)
             { // Schedule next packet
@@ -563,6 +568,66 @@ TraceApplication::GetOutboundNetDevice()
         boundDev = m_node->GetDevice(1);
     }
     return boundDev;
+}
+
+TraceApplication::Stats::Stats()
+    : nTotalSizePkts(0),
+      nTotalSizeBytes(0),
+      nTotalSentPkts(0),
+      nTotalSentBytes(0),
+      nTotalDeliverPkts(0),
+      nTotalDeliverBytes(0),
+      nTotalLossPkts(0),
+      nTotalLossBytes(0),
+      tStart(Time(0)),
+      tFinish(Time(0)),
+      overallRate(DataRate(0))
+{
+    BooleanValue bv;
+    if (GlobalValue::GetValueByNameFailSafe("details", bv))
+        bDetailedStats = bv.Get();
+    else
+        bDetailedStats = false;
+}
+
+std::shared_ptr<TraceApplication::Stats>
+TraceApplication::GetStats() const
+{
+    m_stats->CollectAndCheck(m_flows);
+    return m_stats;
+}
+
+void
+TraceApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
+{
+    // Collect the statistics
+    for (auto [socket, flow] : flows)
+    {
+        Ptr<RoCEv2Socket> roceSocket = DynamicCast<RoCEv2Socket>(socket);
+        if (roceSocket != nullptr)
+        {
+            auto roceStats = roceSocket->GetStats();
+            nTotalSizePkts += roceStats->nTotalSizePkts;
+            nTotalSizeBytes += roceStats->nTotalSizeBytes;
+            nTotalSentPkts += roceStats->nTotalSentPkts;
+            nTotalSentBytes += roceStats->nTotalSentBytes;
+            nTotalDeliverPkts += roceStats->nTotalDeliverPkts;
+            nTotalDeliverBytes += roceStats->nTotalDeliverBytes;
+            nTotalLossPkts += roceStats->nTotalLossPkts;
+            nTotalLossBytes += roceStats->nTotalLossBytes;
+            if (tStart == Time(0) || roceStats->tStart < tStart)
+            {
+                tStart = roceStats->tStart;
+            }
+            if (tFinish == Time(0) || roceStats->tFinish > tFinish)
+            {
+                tFinish = roceStats->tFinish;
+            }
+            vFlowStats.push_back(roceStats);
+        }
+    }
+    // Calculate the overall rate
+    overallRate = DataRate(nTotalSizeBytes * 8.0 / (tFinish - tStart).GetSeconds());
 }
 
 } // namespace ns3

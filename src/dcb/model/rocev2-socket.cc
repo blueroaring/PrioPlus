@@ -29,6 +29,7 @@
 #include "ns3/csv-writer.h"
 #include "ns3/data-rate.h"
 #include "ns3/fatal-error.h"
+#include "ns3/global-value.h"
 #include "ns3/ipv4-l3-protocol.h"
 #include "ns3/ipv4-route.h"
 #include "ns3/nstime.h"
@@ -61,6 +62,7 @@ RoCEv2Socket::RoCEv2Socket()
       m_psnEnd(0)
 {
     NS_LOG_FUNCTION(this);
+    m_stats = std::make_shared<Stats>();
     m_sockState = CreateObject<RoCEv2SocketState>();
     m_ccOps = CreateObject<DcqcnCongestionOps>(m_sockState);
     m_flowStartTime = Simulator::Now();
@@ -78,6 +80,15 @@ RoCEv2Socket::DoSendTo(Ptr<Packet> payload, Ipv4Address daddr, Ptr<Ipv4Route> ro
 
     RoCEv2Header rocev2Header = CreateNextProtocolHeader();
     m_buffer.Push(rocev2Header.GetPSN(), std::move(rocev2Header), payload, daddr, route);
+
+    // Record the statistics
+    if (m_stats->tStart == Time(0))
+    {
+        m_stats->tStart = Simulator::Now();
+    }
+    m_stats->nTotalSizePkts++;
+    m_stats->nTotalSizeBytes += payload->GetSize();
+
     SendPendingPacket();
 }
 
@@ -156,6 +167,10 @@ RoCEv2Socket::DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item)
                        m_endPoint->GetLocalPort(),
                        m_endPoint->GetPeerPort(),
                        route);
+
+    // Record the statistics
+    m_stats->nTotalSentPkts++;
+    m_stats->nTotalSentBytes += payload->GetSize();
 }
 
 void
@@ -174,11 +189,11 @@ RoCEv2Socket::ForwardUp(Ptr<Packet> packet,
         break;
     case RoCEv2Header::Opcode::CNP:
         m_ccOps->UpdateStateWithCNP();
-        NS_LOG_DEBUG("DCQCN: Received CNP and rate decreased to "
-                     << m_sockState->GetRateRatioPercent() << "% at time "
-                     << Simulator::Now().GetMicroSeconds() << "us. " << header.GetSource() << ":"
-                     << rocev2Header.GetSrcQP() << "->" << header.GetDestination() << ":"
-                     << rocev2Header.GetDestQP());
+        // NS_LOG_DEBUG("DCQCN: Received CNP and rate decreased to "
+        //              << m_sockState->GetRateRatioPercent() << "% at time "
+        //              << Simulator::Now().GetMicroSeconds() << "us. " << header.GetSource() << ":"
+        //              << rocev2Header.GetSrcQP() << "->" << header.GetDestination() << ":"
+        //              << rocev2Header.GetDestQP());
         break;
     default:
         HandleDataPacket(packet, header, port, incomingInterface, rocev2Header);
@@ -207,10 +222,15 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
             NotifyFlowCompletes();
             // a delay to handle remaining packets (e.g., CNP)
             // FIXME: do not use magic number
-            NS_LOG_DEBUG("RoCEv2Socket will close at "
-                         << (Simulator::Now() + MicroSeconds(50)).GetMicroSeconds() << "us node "
-                         << Simulator::GetContext() << " qp " << roce.GetDestQP());
+            // NS_LOG_DEBUG("RoCEv2Socket will close at "
+            //              << (Simulator::Now() + MicroSeconds(50)).GetMicroSeconds() << "us node "
+            //              << Simulator::GetContext() << " qp " << roce.GetDestQP());
             Simulator::Schedule(MicroSeconds(50), &RoCEv2Socket::Close, this);
+
+            // Record the statistics
+            m_stats->tFinish = Simulator::Now();
+            NS_LOG_DEBUG("Finish a flow at time " << Simulator::Now().GetNanoSeconds()
+                                          << "ns.");
         }
         break;
     }
@@ -265,6 +285,8 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
             Ptr<Packet> ack = RoCEv2L4Protocol::GenerateACK(dstQP, srcQP, psn);
             m_innerProto->Send(ack, header.GetDestination(), header.GetSource(), dstQP, srcQP, 0);
         }
+        NS_LOG_DEBUG("Send ACK with PSN " << psn << " at time " << Simulator::Now().GetNanoSeconds()
+                                          << "ns.");
     }
     else if (psn > expectedPSN)
     { // packet out-of-order, send NACK
@@ -290,6 +312,8 @@ RoCEv2Socket::GoBackN(uint32_t lostPSN) const
     NS_LOG_WARN("Go-back-N not implemented. Packet lost or out-of-order happens. Sender is node "
                 << Simulator::GetContext() << " at time " << Simulator::Now().GetNanoSeconds()
                 << "ns.");
+
+    // TODO Record the statistics
 }
 
 void
@@ -317,8 +341,8 @@ RoCEv2Socket::ScheduleNextCNP(std::map<FlowIdentifier, FlowInfo>::iterator flowI
                                                 flowInfoIter,
                                                 header);
 
-    NS_LOG_DEBUG("DCQCN: Receiver send CNP to " << srcIp << " qp " << srcQP << " at time "
-                                                << Simulator::Now().GetMicroSeconds());
+    // NS_LOG_DEBUG("DCQCN: Receiver send CNP to " << srcIp << " qp " << srcQP << " at time "
+    //                                             << Simulator::Now().GetMicroSeconds());
 }
 
 int
@@ -578,6 +602,48 @@ RoCEv2SocketState::GetTypeId()
 RoCEv2SocketState::RoCEv2SocketState()
     : m_rateRatio(100.)
 {
+}
+
+RoCEv2Socket::Stats::Stats()
+    : nTotalSizePkts(0),
+      nTotalSizeBytes(0),
+      nTotalSentPkts(0),
+      nTotalSentBytes(0),
+      nTotalDeliverPkts(0),
+      nTotalDeliverBytes(0),
+      nTotalLossPkts(0),
+      nTotalLossBytes(0),
+      tStart(Time(0)),
+      tFinish(Time(0)),
+      overallFlowRate(DataRate(0))
+{
+    BooleanValue bv;
+    if (GlobalValue::GetValueByNameFailSafe("details", bv))
+        bDetailedStats = bv.Get();
+    else
+        bDetailedStats = false;
+}
+
+std::shared_ptr<RoCEv2Socket::Stats>
+RoCEv2Socket::GetStats() const
+{
+    m_stats->CollectAndCheck();
+    return m_stats;
+}
+
+void
+RoCEv2Socket::Stats::CollectAndCheck()
+{
+    // Check the sanity of the statistics
+    NS_ASSERT_MSG(tStart != Time(0), "The flow has not started yet.");
+    NS_ASSERT_MSG(tStart <= tFinish, "The flow has not finished yet.");
+    // NS_ASSERT_MSG(nTotalSizeBytes == nTotalDeliverBytes,
+    //               "Total size bytes is not equal to total deliver bytes");
+    NS_ASSERT_MSG(nTotalSentBytes == nTotalSizeBytes + nTotalLossBytes,
+                  "Total sent bytes is not equal to total size bytes plus total loss bytes");
+
+    // Calculate the overallFlowRate
+    overallFlowRate = DataRate(nTotalDeliverBytes * 8.0 / (tFinish - tStart).GetSeconds());
 }
 
 } // namespace ns3

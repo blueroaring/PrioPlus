@@ -120,7 +120,7 @@ class TraceApplication : public Application
     void SetFlowMeanArriveInterval(double interval);
     /**
      * \brief Set mean arrive interval
-     * 
+     *
      * \param iterval The mean interval in ms.
      * \param staticFlowInterval Whether the flow interval is static.
      */
@@ -155,6 +155,38 @@ class TraceApplication : public Application
         {400., 0.20},    {500., 0.30},    {600., 0.40},      {700., 0.50},     {1000., 0.60},
         {2000., 0.67},   {7000., 0.70},   {30000., 0.72},    {50000., 0.82},   {80000., 0.87},
         {120000., 0.90}, {300000., 0.95}, {1000000., 0.975}, {2000000., 0.99}, {10000000., 1.00}};
+
+    class Stats
+    {
+      public:
+        // constructor
+        Stats();
+
+        uint32_t nTotalSizePkts;  //<! Data size scheduled by application
+        uint64_t nTotalSizeBytes; //<! Data size scheduled by application
+        uint32_t nTotalSentPkts;  //<! Data pkts sent to lower layer, including retransmission
+        uint64_t nTotalSentBytes;
+        uint32_t nTotalDeliverPkts; //<! Data pkts successfully delivered to peer upper layer
+        uint64_t nTotalDeliverBytes;
+        uint32_t nTotalLossPkts; //<! Data pkts lost and retxed
+        uint64_t nTotalLossBytes;
+        Time tStart;          //<! Time of the first flow start
+        Time tFinish;         //<! Time of the last flow finish
+        DataRate overallRate; //<! overall rate, calculate by total size / (first flow arrive -
+                              // last flow finish)
+
+        // Detailed statistics, only enabled if needed
+        bool bDetailedStats;
+        std::vector<std::shared_ptr<RoCEv2Socket::Stats>>
+            vFlowStats; //<! The statistics of each flow
+
+        // Collect the statistics and check if the statistics is correct
+        void CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows);
+
+        // No getter for simplicity
+    };
+
+    std::shared_ptr<Stats> GetStats() const;
 
   private:
     /**
@@ -245,6 +277,7 @@ class TraceApplication : public Application
     Ptr<NetDevice> GetOutboundNetDevice();
 
     std::map<Ptr<Socket>, Flow*> m_flows;
+    std::shared_ptr<Stats> m_stats;
 
     bool m_enableSend;
     bool m_enableReceive;
@@ -253,12 +286,12 @@ class TraceApplication : public Application
     Ptr<Node> m_node; //!< The node the application is installed on, used when dctopo is not set
     bool m_ecnEnabled;
     // bool                   m_connected;       //!< True if connected
-    DataRate m_socketLinkRate;                          //!< Link rate of the deice
-    uint64_t m_totBytes;                                //!< Total bytes sent so far
-    TypeId m_socketTid;                                 //!< Type of the socket used
-    ProtocolGroup m_protoGroup;                         //!< Protocol group
-    TypeId m_innerUdpProtocol;                          //!< inner-UDP protocol type id
-    uint32_t m_headerSize;                              //!< total header bytes of a packet
+    DataRate m_socketLinkRate;  //!< Link rate of the deice
+    uint64_t m_totBytes;        //!< Total bytes sent so far
+    TypeId m_socketTid;         //!< Type of the socket used
+    ProtocolGroup m_protoGroup; //!< Protocol group
+    TypeId m_innerUdpProtocol;  //!< inner-UDP protocol type id
+    uint32_t m_headerSize;      //!< total header bytes of a packet
 
     Ptr<EmpiricalRandomVariable> m_flowSizeRng;         //!< Flow size random generator
     Time m_staticFlowArriveInterval;                    //!< Static flow arrive interval

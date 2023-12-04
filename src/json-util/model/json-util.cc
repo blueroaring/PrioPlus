@@ -202,7 +202,6 @@ PrettyPrint(std::ostream& os, const boost::json::value& jv, std::string* indent)
 void
 SetRandomSeed(boost::json::object& configJsonObj)
 {
-    configJsonObj["runtimeConfig"].get_object();
     uint32_t seed = configJsonObj["runtimeConfig"].get_object().find("seed")->value().as_int64();
     if (seed == 0)
     {
@@ -493,6 +492,14 @@ ConvertToUint(const boost::json::value& v)
     default:
         NS_FATAL_ERROR("Cannot convert to uint64_t");
     }
+}
+
+void
+SetStopTime(boost::json::object& configJsonObj)
+{
+    Time stopTime = Time(
+        configJsonObj["runtimeConfig"].get_object().find("stopTime")->value().as_string().c_str());
+    Simulator::Stop(stopTime);
 }
 } // namespace json_util
 

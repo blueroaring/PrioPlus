@@ -141,6 +141,42 @@ class RoCEv2Socket : public UdpBasedSocket
 
     Time GetFlowStartTime() const;
 
+        // \brief Structure that keeps the IbcSendScheduler statistics
+    class Stats
+    {
+      public:
+        // constructor
+        Stats();
+
+        uint32_t nTotalSizePkts;  //<! Data size sent by upper layer
+        uint64_t nTotalSizeBytes;
+        uint32_t nTotalSentPkts; //<! Data pkts sent to lower layer, including retransmission
+        uint64_t nTotalSentBytes;
+        uint32_t nTotalDeliverPkts; //<! Data pkts successfully delivered to peer upper layer
+        uint64_t nTotalDeliverBytes;
+        uint32_t nTotalLossPkts; //<! Data pkts lost and retxed
+        uint64_t nTotalLossBytes;
+        Time tStart;
+        Time tFinish;
+        DataRate overallFlowRate; //<! overall rate, calculate by total size / (first msg arrive -
+                                  // last msg finish)
+
+        // Detailed statistics, only enabled if needed
+        bool bDetailedStats;
+        std::vector<std::pair<Time, DataRate>> vCcRate; //<! Record the rate when changed
+        std::vector<std::pair<Time, DataRate>> vCcCwnd; //<! Record the cwnd when changed
+        std::vector<std::pair<Time, uint32_t>>
+            vSentPkts; //<! Record the packets' send time and size
+        
+
+        // Collect the statistics and check if the statistics is correct
+        void CollectAndCheck();
+
+        // No getter for simplicity
+    };
+
+    std::shared_ptr<Stats> GetStats() const;
+
   protected:
     virtual void DoSendTo(Ptr<Packet> p, Ipv4Address daddr, Ptr<Ipv4Route> route) override;
 
@@ -200,20 +236,24 @@ class RoCEv2Socket : public UdpBasedSocket
      * Get the size of the given priority queue disc, and check if it is lower than a threshold.
      * If so, return true, otherwise return false. In this way, sockets can avoid to overwhelm
      * the queue disc. As well as avoid to send too many uncontrolled packet in the queue disc.
-     * 
-     * This function only work with dcb dev and pausable queue disc, if not, it will always return true.
+     *
+     * This function only work with dcb dev and pausable queue disc, if not, it will always return
+     * true.
      */
     bool CheckQueueDiscAvaliable(uint8_t priority) const;
     /**
      * \brief Check whether the queue disc of control priority avaliable to buffer more packet.
-     * 
+     *
      * Throw fatal error if it is inavaliable as control packet should always be sent.
-     * 
-     * This function only work with dcb dev and pausable queue disc, if not, it will always return true.
+     *
+     * This function only work with dcb dev and pausable queue disc, if not, it will always return
+     * true.
      */
     void CheckControlQueueDiscAvaliable() const;
 
     // Time CalcTxTime (uint32_t bytes);
+
+    std::shared_ptr<Stats> m_stats;
 
     Ptr<DcqcnCongestionOps> m_ccOps;    //!< DCQCN congestion control
     Ptr<RoCEv2SocketState> m_sockState; //!< DCQCN socket state

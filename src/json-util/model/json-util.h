@@ -53,6 +53,8 @@ void SetRandomSeed(boost::json::object& configJsonObj);
 
 void SetRandomSeed(uint32_t seed);
 
+void SetStopTime(boost::json::object& configJsonObj);
+
 std::shared_ptr<TraceApplicationHelper> ConstructTraceAppHelper(const boost::json::object& conf,
                                                                 Ptr<DcTopology> topology);
 
