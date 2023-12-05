@@ -50,7 +50,7 @@ ReadConfig(std::string config_file)
 }
 
 void
-SetDefault(boost::json::object defaultObj)
+SetDefault(boost::json::object& defaultObj)
 {
     for (auto kvPair : defaultObj)
     {
@@ -67,35 +67,73 @@ SetDefault(boost::json::object defaultObj)
             case boost::json::kind::string:
                 Config::SetDefault("ns3::" + className + "::" + attributeName,
                                    StringValue(value.get_string().c_str()));
-                // std::cout << "ns3::" + className + "::" + attributeName + "\t" <<
-                // value.get_string ().c_str () << std::endl;
                 break;
             case boost::json::kind::uint64:
                 Config::SetDefault("ns3::" + className + "::" + attributeName,
                                    UintegerValue(value.get_uint64()));
-                // std::cout << "ns3::" + className + "::" + attributeName + "\t" <<
-                // value.get_uint64 () << std::endl;
                 break;
             case boost::json::kind::int64:
                 Config::SetDefault("ns3::" + className + "::" + attributeName,
                                    UintegerValue(value.get_int64()));
-                // std::cout << "ns3::" + className + "::" + attributeName + "\t" << value.get_int64
-                // () << std::endl;
                 break;
             case boost::json::kind::bool_:
                 Config::SetDefault("ns3::" + className + "::" + attributeName,
                                    BooleanValue(value.get_bool()));
-                // std::cout << "ns3::" + className + "::" + attributeName + "\t" << value.get_bool
-                // () << std::endl;
                 break;
             case boost::json::kind::double_:
                 Config::SetDefault("ns3::" + className + "::" + attributeName,
                                    DoubleValue(value.get_double()));
-                // std::cout << "ns3::" + className + "::" + attributeName + "\t" <<
-                // value.get_double () << std::endl;
                 break;
             default:;
             }
+        }
+    }
+}
+
+void
+SetGlobal(boost::json::object& globalObj)
+{
+    // In this function, global value is allocated on heap without being freed
+    // See declaration of this function for more details and take care!!!
+    for (auto kvPair : globalObj)
+    {
+        // kvPair are {Name: Value}
+        std::string name = kvPair.key();
+        boost::json::value value = kvPair.value();
+        switch (value.kind())
+        {
+        case boost::json::kind::string:
+            new ns3::GlobalValue(name,
+                                 name,
+                                 ns3::StringValue(value.get_string().c_str()),
+                                 ns3::MakeStringChecker());
+            break;
+        case boost::json::kind::uint64:
+            new ns3::GlobalValue(name,
+                                 name,
+                                 ns3::UintegerValue(value.get_uint64()),
+                                 ns3::MakeUintegerChecker<uint64_t>());
+            break;
+        case boost::json::kind::int64:
+            // XXX All interger values are read as int64_t..
+            new ns3::GlobalValue(name,
+                                 name,
+                                 ns3::UintegerValue(value.get_int64()),
+                                 ns3::MakeUintegerChecker<uint64_t>());
+            break;
+        case boost::json::kind::bool_:
+            new ns3::GlobalValue(name,
+                                 name,
+                                 ns3::BooleanValue(value.get_bool()),
+                                 ns3::MakeBooleanChecker());
+            break;
+        case boost::json::kind::double_:
+            new ns3::GlobalValue(name,
+                                 name,
+                                 ns3::DoubleValue(value.get_double()),
+                                 ns3::MakeDoubleChecker<double>());
+            break;
+        default:;
         }
     }
 }

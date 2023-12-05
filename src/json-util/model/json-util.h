@@ -45,7 +45,17 @@ namespace json_util
 
 boost::json::object ReadConfig(std::string config_file);
 
-void SetDefault(boost::json::object defaultObj);
+void SetDefault(boost::json::object& defaultObj);
+
+/**
+ * \brief Automatically set the global value according to the global object.
+ * 
+ * In this function, global value is allocated on heap without being freed intentionally.
+ * As ns3 expected, the global should be static variable to keep it alive during the whole
+ * simulation. To make the global values automatically set, we allocate them on heap and
+ * never free them. Please take care of this and never overuse this function.
+ */
+void SetGlobal(boost::json::object& globalObj);
 
 void PrettyPrint(std::ostream& os, const boost::json::value& jv, std::string* indent = nullptr);
 

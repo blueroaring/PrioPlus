@@ -584,7 +584,7 @@ TraceApplication::Stats::Stats()
       overallRate(DataRate(0))
 {
     BooleanValue bv;
-    if (GlobalValue::GetValueByNameFailSafe("details", bv))
+    if (GlobalValue::GetValueByNameFailSafe("detailedStats", bv))
         bDetailedStats = bv.Get();
     else
         bDetailedStats = false;
