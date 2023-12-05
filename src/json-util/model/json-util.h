@@ -49,7 +49,7 @@ void SetDefault(boost::json::object& defaultObj);
 
 /**
  * \brief Automatically set the global value according to the global object.
- * 
+ *
  * In this function, global value is allocated on heap without being freed intentionally.
  * As ns3 expected, the global should be static variable to keep it alive during the whole
  * simulation. To make the global values automatically set, we allocate them on heap and
@@ -68,7 +68,7 @@ void SetStopTime(boost::json::object& configJsonObj);
 std::shared_ptr<TraceApplicationHelper> ConstructTraceAppHelper(const boost::json::object& conf,
                                                                 Ptr<DcTopology> topology);
 
-void InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology);
+ApplicationContainer InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology);
 
 /**
  * \brief Constract the CDF from CDF config.
@@ -84,6 +84,26 @@ std::unique_ptr<TraceApplication::TraceCdf> ConstructCdf(const boost::json::obje
 double ConvertToDouble(const boost::json::value& v);
 int64_t ConvertToInt(const boost::json::value& v);
 uint64_t ConvertToUint(const boost::json::value& v);
+
+/**
+ * \brief Write statistics to the file specified in the config.
+ * 
+ * This function will also write the config to the file to keep the mapping from config to stats.
+ * 
+ * \param conf The CDF config in a json object.
+ * \param apps The trace application container.
+ * \param topology The topology.
+ */
+void OutputStats(boost::json::object& conf,
+                 ApplicationContainer& apps,
+                 Ptr<DcTopology> topology);
+
+/**
+ * \brief Store the app stats into a json object and return it.
+ * 
+ * \return A json object containing the app stats, use shared_ptr as it is a heavy object.
+ */
+std::shared_ptr<boost::json::object> ConstructAppStatsObj(ApplicationContainer& apps);
 
 } // namespace json_util
 

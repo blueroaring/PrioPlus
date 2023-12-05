@@ -623,6 +623,7 @@ TraceApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
             {
                 tFinish = roceStats->tFinish;
             }
+
             vFlowStats.push_back(roceStats);
         }
     }

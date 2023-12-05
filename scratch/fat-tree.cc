@@ -91,13 +91,14 @@ main(int argc, char* argv[])
     Ptr<DcTopology> topology = json_util::BuildTopology(configObj);
 
     // Install applications
-    json_util::InstallApplications(configObj, topology);
+    ApplicationContainer apps =  json_util::InstallApplications(configObj, topology);
 
     tracer_extension::ConfigOutputDirectory("data");
     tracer_extension::ConfigTraceFCT(tracer_extension::Protocol::RoCEv2, "fct.csv");
 
-
     Simulator::Run();
+
+    json_util::OutputStats(configObj, apps, topology);
 
     endt = clock();
     std::cout << "Total used time: " << (double)(endt - begint) / CLOCKS_PER_SEC << "s"

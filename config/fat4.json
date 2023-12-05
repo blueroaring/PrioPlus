@@ -3,7 +3,7 @@
         "topo": "config/topo/fat4.txt"
     },
     "outputFile": {
-        "resultFile": "output/fat4.json"
+        "resultFile": "data/fat4.json"
     },
     "runtimeConfig": {
         "seed": 8259,
@@ -63,9 +63,9 @@
                 "avgSize": 0,
                 "scaleFactor": 1
             },
-            "load": 0.8,
+            "load": 0.5,
             "startTime": "0.1s",
-            "stopTime": "0.101s"
+            "stopTime": "0.1005s"
         }
     ]
 }

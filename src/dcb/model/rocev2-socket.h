@@ -164,11 +164,17 @@ class RoCEv2Socket : public UdpBasedSocket
         // Detailed statistics, only enabled if needed
         bool bDetailedStats;
         std::vector<std::pair<Time, DataRate>> vCcRate; //<! Record the rate when changed
-        std::vector<std::pair<Time, DataRate>> vCcCwnd; //<! Record the cwnd when changed
-        std::vector<std::pair<Time, DataRate>> vRecvEcn; //<! Record the cwnd when changed
+        std::vector<std::pair<Time, uint32_t>> vCcCwnd; //<! Record the cwnd when changed
+        std::vector<Time> vRecvEcn; //<! Record the time when received ECN
         std::vector<std::pair<Time, uint32_t>>
-            vSentPkts; //<! Record the packets' send time and size
+            vSentPkts; //<! Record the packets' send time and size XXX (only payload now)
         
+        // Recorder function of the detailed statistics
+        void RecordCcRate(DataRate rate);
+        void RecordCcCwnd(uint32_t cwnd);
+        void RecordRecvEcn();
+        void RecordSentPkt(uint32_t size);
+
 
         // Collect the statistics and check if the statistics is correct
         void CollectAndCheck();

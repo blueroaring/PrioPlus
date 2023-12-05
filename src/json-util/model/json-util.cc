@@ -22,6 +22,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <numeric>
 #include <time.h>
 
 namespace ns3
@@ -269,8 +270,10 @@ SetRandomSeed(uint32_t seed)
 }
 
 /***** Utilities about application *****/
-typedef std::function<void(const boost::json::object&, Ptr<DcTopology>)> AppInstallFunc;
-static void InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> topology);
+typedef std::function<ApplicationContainer(const boost::json::object&, Ptr<DcTopology>)>
+    AppInstallFunc;
+static ApplicationContainer InstallTraceApplication(const boost::json::object& appConfig,
+                                                    Ptr<DcTopology> topology);
 
 static std::map<std::string, AppInstallFunc> appInstallMapper = {
     {"TraceApplication", InstallTraceApplication},
@@ -288,10 +291,11 @@ static std::map<std::string, TraceApplication::TraceCdf*> appCdfMapper = {
     {"WebSearch", &TraceApplication::TRACE_WEBSEARCH_CDF},
     {"FdHadoop", &TraceApplication::TRACE_FDHADOOP_CDF}};
 
-void
+ApplicationContainer
 InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology)
 {
     boost::json::array appConfigs = conf.find("applicationConfig")->value().get_array();
+    ApplicationContainer apps;
     // This fucntion can be extended to install more sets of applications using this for loop
     for (const auto& appConfig : appConfigs)
     {
@@ -304,8 +308,9 @@ InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology)
                            << "\" installation logic has not been implemented");
         }
         AppInstallFunc appInstallLogic = it->second;
-        appInstallLogic(appConfig.as_object(), topology);
+        apps.Add(appInstallLogic(appConfig.as_object(), topology));
     }
+    return apps;
 }
 
 std::shared_ptr<TraceApplicationHelper>
@@ -403,11 +408,12 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
     return appHelper;
 }
 
-static void
+static ApplicationContainer
 InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> topology)
 {
     std::shared_ptr<TraceApplicationHelper> appHelper =
         ConstructTraceAppHelper(appConfig, topology);
+    ApplicationContainer apps;
 
     // Install the application on nodes specified in the config
     // TODO We just assume that the application is installed on all the hosts
@@ -427,13 +433,14 @@ InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> to
                                << " is not a host and thus could not install an application.");
             }
             Ptr<Node> node = hostIter->nodePtr;
-            appHelper->Install(node);
+            apps.Add(appHelper->Install(node));
         }
     }
     else
     {
         NS_FATAL_ERROR("Only \"all\" is supported for now");
     }
+    return apps;
 }
 
 /***** Utilities about CDF *****/
@@ -539,6 +546,103 @@ SetStopTime(boost::json::object& configJsonObj)
         configJsonObj["runtimeConfig"].get_object().find("stopTime")->value().as_string().c_str());
     Simulator::Stop(stopTime);
 }
+
+void
+OutputStats(boost::json::object& conf, ApplicationContainer& apps, Ptr<DcTopology> topology)
+{
+    std::string outputFile =
+        conf["outputFile"].get_object().find("resultFile")->value().as_string().c_str();
+    std::ofstream ofs(outputFile);
+    if (!ofs.is_open())
+    {
+        NS_FATAL_ERROR("Cannot open file " << outputFile);
+    }
+    boost::json::object outputObj;
+    outputObj["config"] = conf;
+    std::shared_ptr<boost::json::object> appStatsObj = ConstructAppStatsObj(apps);
+    outputObj["overallStatistics"] = appStatsObj->find("overallStatistics")->value();
+    outputObj["flowStatistics"] = appStatsObj->find("flowStatistics")->value();
+
+    // Write the output object to file
+    PrettyPrint(ofs, outputObj);
+}
+
+std::shared_ptr<boost::json::object>
+ConstructAppStatsObj(ApplicationContainer& apps)
+{
+    std::shared_ptr<boost::json::object> appStatsObj = std::make_shared<boost::json::object>();
+    boost::json::object overallStatsObj;
+    boost::json::array flowStatsArray;
+
+    // Variables used to calculate overall statistics
+    // The start time of the first flow and the end time of the last flow
+    Time startTime = Simulator::Now();
+    Time finishTime = Time(0);
+    // Total bytes of all flows, used to calculate the total throughput rate
+    uint32_t totalPkts = 0;
+    uint64_t totalBytes = 0;
+    uint32_t totalLossPkts = 0;
+    uint64_t totalLossBytes = 0;
+    // FCT of all flows, used to calculate the average and percentile FCT
+    std::vector<Time> vFct;
+
+    // Get statistics from apps
+    for (uint32_t i = 0; i < apps.GetN(); ++i)
+    {
+        Ptr<TraceApplication> app = DynamicCast<TraceApplication>(apps.Get(i));
+        if (app == nullptr)
+            continue;
+        auto appStats = app->GetStats();
+
+        // Get variables of the overall statistics
+        startTime = std::min(startTime, appStats->tStart);
+        finishTime = std::max(finishTime, appStats->tFinish);
+        totalPkts += appStats->nTotalSizePkts;
+        totalBytes += appStats->nTotalSizeBytes;
+        totalLossPkts += appStats->nTotalLossPkts;
+        totalLossBytes += appStats->nTotalLossBytes;
+
+        // Per flow statistics
+        std::vector<std::shared_ptr<ns3::RoCEv2Socket::Stats>> vFlowStats = appStats->vFlowStats;
+        for (auto flowStats : vFlowStats)
+        {
+            boost::json::object flowStatsObj;
+            flowStatsObj["totalSizePkts"] = flowStats->nTotalSizePkts;
+            flowStatsObj["totalSizeBytes"] = flowStats->nTotalSizeBytes;
+            flowStatsObj["totalLossPkts"] = flowStats->nTotalLossPkts;
+            flowStatsObj["totalLossBytes"] = flowStats->nTotalLossBytes;
+            Time fct = flowStats->tFinish - flowStats->tStart;
+            vFct.push_back(fct);
+            flowStatsObj["fct"] = fct.GetNanoSeconds();
+            flowStatsObj["overallFlowRate"] = flowStats->overallFlowRate.GetBitRate();
+
+            flowStatsArray.push_back(flowStatsObj);
+        }
+    }
+
+    // Calculate overall statistics
+    overallStatsObj["totalThroughputBps"] =
+        totalBytes * 8.0 / (finishTime - startTime).GetSeconds();
+    overallStatsObj["totalLossRatePkt"] = double(totalLossPkts) / totalPkts;
+    overallStatsObj["totalLossRateByte"] = double(totalLossBytes) / totalBytes;
+    // Calculate average and percentile FCT
+    std::sort(vFct.begin(), vFct.end());
+    uint32_t nFct = vFct.size();
+    // Average FCT is calculated by the total FCT / number of flows
+    Time avgFct = std::accumulate(vFct.begin(), vFct.end(), Time(0)) / nFct;
+    Time p95Fct = vFct[0.95 * nFct];
+    Time p99Fct = vFct[0.99 * nFct];
+    Time p999Fct = vFct[0.999 * nFct];
+    overallStatsObj["avgFctNs"] = avgFct.GetNanoSeconds();
+    overallStatsObj["p95FctNs"] = p95Fct.GetNanoSeconds();
+    overallStatsObj["p99FctNs"] = p99Fct.GetNanoSeconds();
+    overallStatsObj["p999FctNs"] = p999Fct.GetNanoSeconds();
+
+    appStatsObj->emplace("overallStatistics", overallStatsObj);
+    appStatsObj->emplace("flowStatistics", flowStatsArray);
+    return appStatsObj;
+}
+
 } // namespace json_util
 
 } // namespace ns3

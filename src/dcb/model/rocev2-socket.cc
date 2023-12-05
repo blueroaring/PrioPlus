@@ -133,6 +133,9 @@ RoCEv2Socket::SendPendingPacket()
     // rateRatio = sending rate calculated by CC / line rate, which is between [0.0., 100.0]
     const double rateRatio =
         m_sockState->GetRateRatioPercent(); // in percentage, i.e., maximum is 100.0
+    // Record the rate
+    DataRate rate = m_deviceRate * (rateRatio / 100.00);
+    m_stats->RecordCcRate(rate);
     // XXX Why? Do not have minimum rate ratio?
     // TODO Add minimum rate ratio
     // TODO Add window constraint
@@ -171,6 +174,8 @@ RoCEv2Socket::DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item)
     // Record the statistics
     m_stats->nTotalSentPkts++;
     m_stats->nTotalSentBytes += payload->GetSize();
+    // TODO Only payload size is recorded now
+    m_stats->RecordSentPkt(payload->GetSize());
 }
 
 void
@@ -189,6 +194,8 @@ RoCEv2Socket::ForwardUp(Ptr<Packet> packet,
         break;
     case RoCEv2Header::Opcode::CNP:
         m_ccOps->UpdateStateWithCNP();
+        // Record the CNP
+        m_stats->RecordRecvEcn();
         // NS_LOG_DEBUG("DCQCN: Received CNP and rate decreased to "
         //              << m_sockState->GetRateRatioPercent() << "% at time "
         //              << Simulator::Now().GetMicroSeconds() << "us. " << header.GetSource() << ":"
@@ -229,8 +236,7 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
 
             // Record the statistics
             m_stats->tFinish = Simulator::Now();
-            NS_LOG_DEBUG("Finish a flow at time " << Simulator::Now().GetNanoSeconds()
-                                          << "ns.");
+            NS_LOG_DEBUG("Finish a flow at time " << Simulator::Now().GetNanoSeconds() << "ns.");
         }
         break;
     }
@@ -281,7 +287,8 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
         flowInfoIter->second.nextPSN = (expectedPSN + 1) & 0xffffff;
         if (roce.GetAckQ())
         { // send ACK
-            // TODO No check of whether queue disc avaliable, as don't know how to hold the ACK packet at l4
+            // TODO No check of whether queue disc avaliable, as don't know how to hold the ACK
+            // packet at l4
             Ptr<Packet> ack = RoCEv2L4Protocol::GenerateACK(dstQP, srcQP, psn);
             m_innerProto->Send(ack, header.GetDestination(), header.GetSource(), dstQP, srcQP, 0);
         }
@@ -292,7 +299,8 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     { // packet out-of-order, send NACK
         NS_LOG_LOGIC("RoCEv2 receiver " << Simulator::GetContext() << "send NACK of flow " << srcQP
                                         << "->" << dstQP);
-        // TODO No check of whether queue disc avaliable, as don't know how to hold the NACK packet at l4
+        // TODO No check of whether queue disc avaliable, as don't know how to hold the NACK packet
+        // at l4
         Ptr<Packet> nack = RoCEv2L4Protocol::GenerateNACK(dstQP, srcQP, expectedPSN);
         m_innerProto
             ->Send(nack, header.GetDestination(), header.GetSource(), dstQP, srcQP, nullptr);
@@ -644,6 +652,52 @@ RoCEv2Socket::Stats::CollectAndCheck()
 
     // Calculate the overallFlowRate
     overallFlowRate = DataRate(nTotalDeliverBytes * 8.0 / (tFinish - tStart).GetSeconds());
+}
+
+void
+RoCEv2Socket::Stats::RecordCcRate(DataRate rate)
+{
+    if (bDetailedStats)
+    {
+        // Check if the rate is changed
+        if (vCcRate.size() > 0 && vCcRate.back().second == rate)
+        {
+            return;
+        }
+        vCcRate.push_back(std::make_pair(Simulator::Now(), rate));
+    }
+}
+
+void
+RoCEv2Socket::Stats::RecordCcCwnd(uint32_t cwnd)
+{
+    if (bDetailedStats)
+    {
+        // Check if the cwnd is changed
+        if (vCcCwnd.size() > 0 && vCcCwnd.back().second == cwnd)
+        {
+            return;
+        }
+        vCcCwnd.push_back(std::make_pair(Simulator::Now(), cwnd));
+    }
+}
+
+void
+RoCEv2Socket::Stats::RecordRecvEcn()
+{
+    if (bDetailedStats)
+    {
+        vRecvEcn.push_back(Simulator::Now());
+    }
+}
+
+void
+RoCEv2Socket::Stats::RecordSentPkt(uint32_t size)
+{
+    if (bDetailedStats)
+    {
+        vSentPkts.push_back(std::make_pair(Simulator::Now(), size));
+    }
 }
 
 } // namespace ns3

@@ -41,7 +41,7 @@ DcqcnCongestionOps::GetTypeId()
 DcqcnCongestionOps::DcqcnCongestionOps(Ptr<RoCEv2SocketState> sockState)
     : m_sockState(sockState),
       m_alpha(1.),     // larger alpha means more aggressive rate reduction
-      m_g(0.00390625), // 1 / 16.
+      m_g(1./16.), // 1 / 16.
       m_raiRatio(.5),
       m_hraiRatio(1.),
       m_alphaTimer(Timer::CANCEL_ON_DESTROY),
@@ -57,9 +57,9 @@ DcqcnCongestionOps::DcqcnCongestionOps(Ptr<RoCEv2SocketState> sockState)
 {
     NS_LOG_FUNCTION(this);
     m_alphaTimer.SetFunction(&DcqcnCongestionOps::UpdateAlpha, this);
-    m_alphaTimer.SetDelay(MicroSeconds(1)); // 55
+    m_alphaTimer.SetDelay(MicroSeconds(55)); // 55
     m_rateTimer.SetFunction(&DcqcnCongestionOps::RateTimerTriggered, this);
-    m_rateTimer.SetDelay(MicroSeconds(20)); // 1500
+    m_rateTimer.SetDelay(MicroSeconds(55)); // 1500
 }
 
 DcqcnCongestionOps::~DcqcnCongestionOps()
