@@ -1,0 +1,71 @@
+{
+    "inputFile": {
+        "topo": "config/topo/fat4.txt"
+    },
+    "outputFile": {
+        "resultFile": "output/fat4.json"
+    },
+    "runtimeConfig": {
+        "seed": 8259,
+        "runningTime": "1s",
+        "stopTime": "10s"
+    },
+    "defaultConfig": {
+        "TcpL4Protocol": {
+            "SocketType": "ns3::TcpNewReno"
+        },
+        "TcpSocket": {
+            "DelAckCount": 1,
+            "InitialCwnd": 1,
+            "SndBufSize": 1073741823,
+            "RcvBufSize": 1073741823,
+            "SegmentSize": 1500
+        },
+        "TcpSocketBase": {
+            "Timestamp": false
+        }
+    },
+    "globalConfig":{
+        "detailedStats": true
+    },
+    "topologyConfig": {
+        "hostPort": {
+            "pfcEnabled": false
+        },
+        "switch": {
+            "pfcDynamic": false,
+            "bufferSize": "13180KB"
+        },
+        "switchPort": {
+            "pfcEnabled": true,
+            "ecnEnabled": true,
+            "queues": 8
+        },
+        "switchPortQueue": {
+            "pfcReserve": "20KiB",
+            "pfcXon": "15KiB",
+            "ecnKMin": "200KiB",
+            "ecnKMax": "400KiB",
+            "ecnPMax": 0.4
+        },
+        "link": {
+            "rate": "100Gbps",
+            "delay": "1us"
+        }
+    },
+    "applicationConfig": [
+        {
+            "appName": "TraceApplication",
+            "nodes": "all",
+            "protocolGroup": "RoCEv2",
+            "cdf": {
+                "cdfFile": "config/trace/WebSearch_distribution.txt",
+                "avgSize": 0,
+                "scaleFactor": 1
+            },
+            "load": 0.8,
+            "startTime": "0.1s",
+            "stopTime": "0.101s"
+        }
+    ]
+}
