@@ -369,7 +369,7 @@ DcbHostStackHelper::InstallPortsProtos(Ptr<Node> node) const
     {
         Ptr<NetDevice> dev = node->GetDevice(i);
         Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
-        Ptr<PausableQueueDisc> qDisc = qDiscFactory.Create<PausableQueueDisc>();
+        Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(node, 0);
         // Set the queue size to 100KB, which is not critical to performance
         qDisc->SetQueueSize(QueueSize(QueueSizeUnit::BYTES, 1e5)); 
         qDisc->SetFCEnabled(true);

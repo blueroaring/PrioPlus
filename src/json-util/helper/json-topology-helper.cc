@@ -58,7 +58,8 @@ AddPortToHost(const Ptr<Node> host)
     queueFactory.SetTypeId(DropTailQueue<Packet>::GetTypeId());
     Ptr<Queue<Packet>> queue = queueFactory.Create<Queue<Packet>>();
     // TODO: Why so high??
-    queue->SetMaxSize({QueueSizeUnit::PACKETS, std::numeric_limits<uint32_t>::max()});
+    // queue->SetMaxSize({QueueSizeUnit::PACKETS, std::numeric_limits<uint32_t>::max()});
+    queue->SetMaxSize(QueueSize("10p"));
     dev->SetQueue(queue);
 
     host->AddDevice(dev);

@@ -46,10 +46,18 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("ScratchSimulator");
 
+/***** Debug Utilities *****/
+
+[[maybe_unused]] static void PhyTxBegin(Ptr<const Packet> pkt,
+                                        std::pair<uint32_t, uint32_t> nodeAndPortId);
+[[maybe_unused]] static void QdiscEnqueueWithId(Ptr<const QueueDiscItem> item,
+                                                std::pair<uint32_t, uint32_t> nodeAndPortId,
+                                                uint8_t prio);
+
 int
 main(int argc, char* argv[])
 {
-    NS_LOG_UNCOND("Scratch Simulator");
+    NS_LOG_UNCOND("ScratchSimulator");
 
     // Statistics about simulation running time
     clock_t begint, endt;
@@ -71,6 +79,7 @@ main(int argc, char* argv[])
     LogComponentEnableAll(LOG_LEVEL_WARN);
     // LogComponentEnable ("PausableQueueDisc", LOG_LEVEL_INFO);
     // LogComponentEnable ("FifoQueueDiscEcn", LOG_LEVEL_INFO);
+    LogComponentEnable("ScratchSimulator", LOG_LEVEL_DEBUG);
 
     // Read config in json from config file
     boost::json::object configObj = json_util::ReadConfig(config_file);
@@ -91,7 +100,26 @@ main(int argc, char* argv[])
     Ptr<DcTopology> topology = json_util::BuildTopology(configObj);
 
     // Install applications
-    ApplicationContainer apps =  json_util::InstallApplications(configObj, topology);
+    ApplicationContainer apps = json_util::InstallApplications(configObj, topology);
+
+    // Debug trace
+    Config::ConnectWithoutContext("/NodeList/*/DeviceList/*/PhyTxBeginWithId",
+                                  MakeCallback(&PhyTxBegin));
+    // Bind the callback to the pausable queue disc, no config system can be used
+    Config::MatchContainer devs = Config::LookupMatches("/NodeList/*/DeviceList/*");
+    for (auto& dev : devs)
+    {
+        Ptr<DcbNetDevice> device = DynamicCast<DcbNetDevice>(dev);
+        if (device == nullptr)
+        {
+            continue;
+        }
+        Ptr<PausableQueueDisc> qdisc = device->GetQueueDisc();
+        if (qdisc != nullptr)
+        {
+            qdisc->TraceConnectWithoutContext("EnqueueWithId", MakeCallback(&QdiscEnqueueWithId));
+        }
+    }
 
     tracer_extension::ConfigOutputDirectory("data");
     tracer_extension::ConfigTraceFCT(tracer_extension::Protocol::RoCEv2, "fct.csv");
@@ -104,4 +132,92 @@ main(int argc, char* argv[])
     std::cout << "Total used time: " << (double)(endt - begint) / CLOCKS_PER_SEC << "s"
               << std::endl;
     Simulator::Destroy();
+}
+
+// For debug
+// Variables used for track a packet
+const uint32_t dstAddr = 167772163;
+const uint32_t dstQp = 100;
+const uint32_t srcQp = 258;
+const uint32_t psn = 43;
+
+void
+PhyTxBegin(Ptr<const Packet> pkt, std::pair<uint32_t, uint32_t> nodeAndPortId)
+{
+    Ptr<Packet> copy = pkt->Copy();
+    EthernetHeader ethH;
+    copy->RemoveHeader(ethH);
+    if (ethH.GetLengthType() == PfcFrame::PROT_NUMBER)
+    {
+        return;
+    }
+    Ipv4Header ipv4Header;
+    copy->RemoveHeader(ipv4Header);
+
+    // Need to determine the protocol
+    const uint8_t TCP_PROT_NUMBER = 6;  //!< TCP Protocol number
+    const uint8_t UDP_PROT_NUMBER = 17; //!< UDP Protocol number
+    if (ipv4Header.GetProtocol() == TCP_PROT_NUMBER)
+    {
+    }
+    if (ipv4Header.GetProtocol() == UDP_PROT_NUMBER)
+    {
+        UdpHeader udpHeader;
+        copy->RemoveHeader(udpHeader);
+        if (udpHeader.GetDestinationPort() == RoCEv2L4Protocol::PROT_NUMBER)
+        {
+            RoCEv2Header rocev2Header;
+            copy->RemoveHeader(rocev2Header);
+            if (
+                // ipv4Header.GetSource().Get() == srcAddr &&
+                ipv4Header.GetDestination().Get() == dstAddr && rocev2Header.GetDestQP() == dstQp &&
+                rocev2Header.GetSrcQP() == srcQp && rocev2Header.GetPSN() == psn)
+            {
+                NS_LOG_DEBUG("Packet send out from node "
+                             << nodeAndPortId.first << " port " << nodeAndPortId.second << " at "
+                             << Simulator::Now().GetNanoSeconds() << "ns");
+            }
+        }
+    }
+}
+
+void
+QdiscEnqueueWithId(Ptr<const QueueDiscItem> item,
+                   std::pair<uint32_t, uint32_t> nodeAndPortId,
+                   uint8_t prio)
+{
+    Ptr<const Ipv4QueueDiscItem> ipv4Item = DynamicCast<const Ipv4QueueDiscItem>(item);
+    if (ipv4Item == nullptr)
+    {
+        return;
+    }
+    Ptr<Packet> copy = ipv4Item->GetPacket()->Copy();
+    Ipv4Header ipv4Header = ipv4Item->GetHeader();
+
+    // Need to determine the protocol
+    const uint8_t TCP_PROT_NUMBER = 6;  //!< TCP Protocol number
+    const uint8_t UDP_PROT_NUMBER = 17; //!< UDP Protocol number
+    if (ipv4Header.GetProtocol() == TCP_PROT_NUMBER)
+    {
+    }
+    if (ipv4Header.GetProtocol() == UDP_PROT_NUMBER)
+    {
+        UdpHeader udpHeader;
+        copy->RemoveHeader(udpHeader);
+        if (udpHeader.GetDestinationPort() == RoCEv2L4Protocol::PROT_NUMBER)
+        {
+            RoCEv2Header rocev2Header;
+            copy->RemoveHeader(rocev2Header);
+            if (
+                // ipv4Header.GetSource().Get() == srcAddr &&
+                ipv4Header.GetDestination().Get() == dstAddr && rocev2Header.GetDestQP() == dstQp &&
+                rocev2Header.GetSrcQP() == srcQp && rocev2Header.GetPSN() == psn)
+            {
+                NS_LOG_DEBUG("Packet enqueue at node "
+                             << nodeAndPortId.first << " port " << nodeAndPortId.second << "'s "
+                             << (uint8_t)prio << " priority "
+                             << " at " << Simulator::Now().GetNanoSeconds() << "ns");
+            }
+        }
+    }
 }

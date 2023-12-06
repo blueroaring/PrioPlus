@@ -282,6 +282,10 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     // Check PSN
     const uint32_t psn = roce.GetPSN();
     uint32_t expectedPSN = flowInfoIter->second.nextPSN;
+    if (roce.GetSrcQP()==258 && header.GetDestination().Get() == 167772163 && psn >= 42)
+    {
+        NS_LOG_DEBUG("Break point");
+    }
     if (psn == expectedPSN)
     {
         flowInfoIter->second.nextPSN = (expectedPSN + 1) & 0xffffff;

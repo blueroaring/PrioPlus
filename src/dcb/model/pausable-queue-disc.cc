@@ -63,12 +63,17 @@ PausableQueueDisc::GetTypeId()
                           "Callback when deque completed",
                           CallbackValue(MakeNullCallback<void, uint32_t, uint32_t, Ptr<Packet>>()),
                           MakeCallbackAccessor(&PausableQueueDisc::m_tcEgress),
-                          MakeCallbackChecker());
+                          MakeCallbackChecker())
+            .AddTraceSource("EnqueueWithId",
+                            "Enqueue a packet in the queue disc",
+                            MakeTraceSourceAccessor(&PausableQueueDisc::m_traceEnqueueWithId),
+                            "ns3::QueueDiscItem::TracedCallback");
     return tid;
 }
 
 PausableQueueDisc::PausableQueueDisc()
-    : m_fcEnabled(false),
+    : m_node(0),
+      m_fcEnabled(false),
       m_portIndex(0x7fffffff),
       m_queueSize("1000p")
 {
@@ -76,7 +81,17 @@ PausableQueueDisc::PausableQueueDisc()
 }
 
 PausableQueueDisc::PausableQueueDisc(uint32_t port)
-    : m_fcEnabled(false),
+    : m_node(0),
+      m_fcEnabled(false),
+      m_portIndex(port),
+      m_queueSize("1000p")
+{
+    NS_LOG_FUNCTION(this);
+}
+
+PausableQueueDisc::PausableQueueDisc(Ptr<Node> node, uint32_t port)
+    : m_node(node),
+      m_fcEnabled(false),
       m_portIndex(port),
       m_queueSize("1000p")
 {
@@ -142,6 +157,10 @@ PausableQueueDisc::SetPaused(uint8_t priority, bool paused)
 {
     NS_LOG_FUNCTION(this);
     GetQueueDiscClass(priority)->SetPaused(paused);
+    if (paused == false)
+    {
+        Run();
+    }
 }
 
 void
@@ -196,6 +215,7 @@ PausableQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
                     << Simulator::GetContext()
                     << ", queue size=" << qdiscClass->GetQueueDisc()->GetCurrentSize());
     }
+    m_traceEnqueueWithId(item, GetNodeAndPortId(), priority);
     return retval;
 }
 
@@ -277,6 +297,12 @@ PausableQueueDisc::CheckConfig(void)
         }
     }
     return true;
+}
+
+std::pair<uint32_t, uint32_t>
+PausableQueueDisc::GetNodeAndPortId() const
+{
+    return std::make_pair(m_node->GetId(), m_portIndex);
 }
 
 void
