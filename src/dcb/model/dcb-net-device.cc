@@ -375,9 +375,10 @@ DcbNetDevice::TransmitComplete(void)
             // Ask the egress buffer to pop next packet if there is any packet not paused.
             m_queueDisc->Run();
         }
-        else if (p == nullptr)
+        else if (m_queue->GetCurrentSize() >= QueueSize("2p"))
         {
-            NS_FATAL_ERROR("Deadlock");
+            NS_LOG_DEBUG("Device queue is not empty after transmitting a packet. Current size: "
+                         << m_queue->GetCurrentSize() << "");
         }
     }
     else
@@ -661,7 +662,7 @@ DcbNetDevice::SendFrom(Ptr<Packet> packet,
     return false;
 }
 
-std::pair<uint32_t, uint32_t> 
+std::pair<uint32_t, uint32_t>
 DcbNetDevice::GetNodeAndPortId() const
 {
     return std::make_pair(m_node->GetId(), m_ifIndex);

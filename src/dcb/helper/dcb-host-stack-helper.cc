@@ -362,8 +362,6 @@ DcbHostStackHelper::InstallPortsProtos(Ptr<Node> node) const
     // Install pausable queue disc
     Ptr<TrafficControlLayer> tc = node->GetObject<TrafficControlLayer>();
     NS_ASSERT(tc);
-    ObjectFactory qDiscFactory;
-    qDiscFactory.SetTypeId(PausableQueueDisc::GetTypeId());
     const uint32_t devN = node->GetNDevices();
     for (uint32_t i = 1; i < devN; i++)
     {

@@ -861,10 +861,6 @@ QueueDisc::Enqueue(Ptr<QueueDiscItem> item)
     {
         item->SetTimeStamp(Simulator::Now());
     }
-    else
-    {
-        NS_LOG_WARN("A packet was not enqueued at queue level");
-    }
 
     // DoEnqueue may return false because:
     // 1) the internal queue is full

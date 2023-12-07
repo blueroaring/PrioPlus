@@ -157,6 +157,8 @@ PausableQueueDisc::SetPaused(uint8_t priority, bool paused)
 {
     NS_LOG_FUNCTION(this);
     GetQueueDiscClass(priority)->SetPaused(paused);
+
+    // If the queue is resumed, we need to rerun the qdisc
     if (paused == false)
     {
         Run();
