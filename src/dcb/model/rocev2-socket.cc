@@ -236,6 +236,8 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
 
             // Record the statistics
             m_stats->tFinish = Simulator::Now();
+            // Set the stop time of CC's timer
+            m_ccOps->SetStopTime(Simulator::Now());
             NS_LOG_DEBUG("Finish a flow at time " << Simulator::Now().GetNanoSeconds() << "ns.");
         }
         break;
@@ -658,7 +660,7 @@ RoCEv2Socket::Stats::CollectAndCheck()
                   "Total sent bytes is not equal to total size bytes plus total loss bytes");
 
     // Calculate the overallFlowRate
-    overallFlowRate = DataRate(nTotalDeliverBytes * 8.0 / (tFinish - tStart).GetSeconds());
+    overallFlowRate = DataRate(nTotalSizeBytes * 8.0 / (tFinish - tStart).GetSeconds());
 }
 
 void
@@ -703,7 +705,7 @@ RoCEv2Socket::Stats::RecordSentPkt(uint32_t size)
 {
     if (bDetailedStats)
     {
-        vSentPkts.push_back(std::make_pair(Simulator::Now(), size));
+        vSentPkt.push_back(std::make_pair(Simulator::Now(), size));
     }
 }
 

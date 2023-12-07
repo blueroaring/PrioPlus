@@ -604,17 +604,57 @@ ConstructAppStatsObj(ApplicationContainer& apps)
 
         // Per flow statistics
         std::vector<std::shared_ptr<ns3::RoCEv2Socket::Stats>> vFlowStats = appStats->vFlowStats;
+        uint32_t flowId = 0;
         for (auto flowStats : vFlowStats)
         {
             boost::json::object flowStatsObj;
+            flowStatsObj["flowId"] = flowId++;
             flowStatsObj["totalSizePkts"] = flowStats->nTotalSizePkts;
             flowStatsObj["totalSizeBytes"] = flowStats->nTotalSizeBytes;
             flowStatsObj["totalLossPkts"] = flowStats->nTotalLossPkts;
             flowStatsObj["totalLossBytes"] = flowStats->nTotalLossBytes;
             Time fct = flowStats->tFinish - flowStats->tStart;
             vFct.push_back(fct);
-            flowStatsObj["fct"] = fct.GetNanoSeconds();
+            flowStatsObj["fctNs"] = fct.GetNanoSeconds();
             flowStatsObj["overallFlowRate"] = flowStats->overallFlowRate.GetBitRate();
+
+            // Detailed statistics
+            if (flowStats->bDetailedStats)
+            {
+                boost::json::array ccRateArray;
+                boost::json::array ccCwndArray;
+                boost::json::array recvEcnArray;
+                boost::json::array sentPktArray;
+
+                for (auto ccRate : flowStats->vCcRate)
+                {
+                    ccRateArray.emplace_back(
+                        boost::json::object{{"timeNs", ccRate.first.GetNanoSeconds()},
+                                            {"rateBps", ccRate.second.GetBitRate()}});
+                }
+                for (auto ccCwnd : flowStats->vCcCwnd)
+                {
+                    ccCwndArray.emplace_back(
+                        boost::json::object{{"timeNs", ccCwnd.first.GetNanoSeconds()},
+                                            {"cwndByte", ccCwnd.second}});
+                }
+                for (auto recvEcn : flowStats->vRecvEcn)
+                {
+                    recvEcnArray.emplace_back(
+                        boost::json::object{{"timeNs", recvEcn.GetNanoSeconds()}});
+                }
+                for (auto sentPkt : flowStats->vSentPkt)
+                {
+                    sentPktArray.emplace_back(
+                        boost::json::object{{"timeNs", sentPkt.first.GetNanoSeconds()},
+                                            {"sizeByte", sentPkt.second}});
+                }
+
+                flowStatsObj["ccRate"] = ccRateArray;
+                flowStatsObj["ccCwnd"] = ccCwndArray;
+                flowStatsObj["recvEcn"] = recvEcnArray;
+                flowStatsObj["sentPkt"] = sentPktArray;
+            }
 
             flowStatsArray.push_back(flowStatsObj);
         }

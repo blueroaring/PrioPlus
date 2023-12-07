@@ -167,7 +167,7 @@ class RoCEv2Socket : public UdpBasedSocket
         std::vector<std::pair<Time, uint32_t>> vCcCwnd; //<! Record the cwnd when changed
         std::vector<Time> vRecvEcn; //<! Record the time when received ECN
         std::vector<std::pair<Time, uint32_t>>
-            vSentPkts; //<! Record the packets' send time and size XXX (only payload now)
+            vSentPkt; //<! Record the packets' send time and size XXX (only payload now)
         
         // Recorder function of the detailed statistics
         void RecordCcRate(DataRate rate);

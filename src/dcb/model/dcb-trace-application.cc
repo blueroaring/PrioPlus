@@ -212,7 +212,8 @@ TraceApplication::StartApplication(void)
             m_receiverSocket->BindToNetDevice(GetOutboundNetDevice());
             m_receiverSocket->BindToLocalPort(RoCEv2L4Protocol::DefaultServicePort());
             m_receiverSocket->ShutdownSend();
-            m_receiverSocket->SetStopTime(m_stopTime);
+            // Set stop time to max to avoid receiver socket close
+            m_receiverSocket->SetStopTime(Time::Max());
             m_receiverSocket->SetRecvCallback(MakeCallback(&TraceApplication::HandleRead, this));
         }
     }
@@ -314,7 +315,8 @@ TraceApplication::CreateNewSocket(InetSocketAddress destAddr)
             Ptr<RoCEv2Socket> roceSocket = DynamicCast<RoCEv2Socket>(udpBasedSocket);
             if (roceSocket)
             {
-                roceSocket->SetStopTime(m_stopTime);
+                // Set stop time to max to avoid sender socket's timer close
+                roceSocket->SetStopTime(Time::Max());
             }
         }
     }
@@ -381,6 +383,7 @@ TraceApplication::SendNextPacket(Flow* flow)
     {
         m_totBytes += packetSize;
         Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_headerSize);
+        // XXX We do not need flow truncate!!! 
         if (true)
         {
             if (flow->remainBytes > MSS)
