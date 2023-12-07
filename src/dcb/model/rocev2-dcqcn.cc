@@ -49,8 +49,8 @@ RoCEv2Dcqcn::GetTypeId()
                           DoubleValue(0.00390625), // 1/16
                           MakeDoubleAccessor(&RoCEv2Dcqcn::m_g),
                           MakeDoubleChecker<double>())
-            .AddAttribute("RaiRatio",
-                          "DCQCN's rai ratio",
+            .AddAttribute("RateAIRatio",
+                          "DCQCN's RateAI ratio",
                           DoubleValue(.5),
                           MakeDoubleAccessor(&RoCEv2Dcqcn::m_raiRatio),
                           MakeDoubleChecker<double>())
@@ -64,58 +64,41 @@ RoCEv2Dcqcn::GetTypeId()
                           UintegerValue(150 * 1024),
                           MakeUintegerAccessor(&RoCEv2Dcqcn::m_bytesThreshold),
                           MakeUintegerChecker<uint32_t>())
-            .AddAttribute("BytesCounter",
-                          "DCQCN's BytesCounter",
-                          UintegerValue(0),
-                          MakeUintegerAccessor(&RoCEv2Dcqcn::m_bytesCounter),
-                          MakeUintegerChecker<uint32_t>())
-            .AddAttribute("RateUpdateIter",
-                          "DCQCN's rateUpdateIter",
-                          UintegerValue(0),
-                          MakeUintegerAccessor(&RoCEv2Dcqcn::m_rateUpdateIter),
-                          MakeUintegerChecker<uint32_t>())
-            .AddAttribute("BytesUpdateIter",
-                          "DCQCN's bytesUpdateIter",
-                          UintegerValue(0),
-                          MakeUintegerAccessor(&RoCEv2Dcqcn::m_bytesUpdateIter),
-                          MakeUintegerChecker<uint32_t>())
             .AddAttribute("F",
                           "DCQCN's F",
                           UintegerValue(5),
                           MakeUintegerAccessor(&RoCEv2Dcqcn::m_F),
                           MakeUintegerChecker<uint32_t>())
-            .AddAttribute("TargetRateRatio",
-                          "DCQCN's targetRateRatio",
-                          DoubleValue(100.),
-                          MakeDoubleAccessor(&RoCEv2Dcqcn::m_targetRateRatio),
-                          MakeDoubleChecker<double>())
-            .AddAttribute("CurRateRatio",
-                          "DCQCN's curRateRatio",
-                          DoubleValue(100.),
-                          MakeDoubleAccessor(&RoCEv2Dcqcn::m_curRateRatio),
-                          MakeDoubleChecker<double>())
             .AddAttribute("MinRateRatio",
                           "DCQCN's minRateRatio",
                           DoubleValue(1e-3),
                           MakeDoubleAccessor(&RoCEv2Dcqcn::m_minRateRatio),
-                          MakeDoubleChecker<double>());
+                          MakeDoubleChecker<double>())
+            .AddAttribute("AlphaTimerDelay",
+                          "DCQCN's alpha timer delay",
+                          TimeValue(MicroSeconds(1)),
+                          MakeTimeAccessor(&RoCEv2Dcqcn::m_alphaTimerDelay),
+                          MakeTimeChecker())
+            .AddAttribute("RateTimerDelay",
+                          "DCQCN's rate timer delay",
+                          TimeValue(MicroSeconds(20)),
+                          MakeTimeAccessor(&RoCEv2Dcqcn::m_rateTimerDelay),
+                          MakeTimeChecker());
     return tid;
 }
 
 RoCEv2Dcqcn::RoCEv2Dcqcn()
-    : RoCEv2CongestionOps(),
-      m_alphaTimer(Timer::CANCEL_ON_DESTROY)
+    : RoCEv2CongestionOps()
 {
     NS_LOG_FUNCTION(this);
-    InitTimer();
+    Init();
 }
 
 RoCEv2Dcqcn::RoCEv2Dcqcn(Ptr<RoCEv2SocketState> sockState)
-    : RoCEv2CongestionOps(sockState),
-      m_alphaTimer(Timer::CANCEL_ON_DESTROY)
+    : RoCEv2CongestionOps(sockState)
 {
     NS_LOG_FUNCTION(this);
-    InitTimer();
+    Init();
 }
 
 RoCEv2Dcqcn::~RoCEv2Dcqcn()
@@ -220,12 +203,20 @@ RoCEv2Dcqcn::UpdateRate()
 }
 
 void
-RoCEv2Dcqcn::InitTimer()
+RoCEv2Dcqcn::Init()
 {
+    // Init timer
+    m_alphaTimer = Timer(Timer::CANCEL_ON_DESTROY);
     m_alphaTimer.SetFunction(&RoCEv2Dcqcn::UpdateAlpha, this);
-    m_alphaTimer.SetDelay(MicroSeconds(1)); // 55
+    m_alphaTimer.SetDelay(m_alphaTimerDelay); // 55
     m_rateTimer.SetFunction(&RoCEv2Dcqcn::RateTimerTriggered, this);
-    m_rateTimer.SetDelay(MicroSeconds(20)); // 1500
+    m_rateTimer.SetDelay(m_rateTimerDelay); // 1500
+    // Init others
+    m_bytesCounter = 0;
+    m_rateUpdateIter = 0;
+    m_bytesUpdateIter = 0;
+    m_targetRateRatio = 100.;
+    m_curRateRatio = 100.;
 }
 
 void

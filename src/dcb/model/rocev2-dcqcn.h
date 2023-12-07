@@ -73,20 +73,25 @@ class RoCEv2Dcqcn : public RoCEv2CongestionOps
 
     void UpdateRate();
 
-    void InitTimer();
+    void Init();
 
     // const Ptr<RoCEv2SocketState> m_sockState;
     double m_alpha;
     double m_g;
     double m_raiRatio;  //!< RateAI / link rate for additive increase
     double m_hraiRatio; //!< Hyper rate AI / link rate for hyper additive increase
+
     Timer m_alphaTimer; //!< update alpha if haven't received CNP for a configured time
     Timer m_rateTimer;
+    Time m_alphaTimerDelay;
+    Time m_rateTimerDelay;
+
     uint32_t m_bytesThreshold;
     uint32_t m_bytesCounter;
     uint32_t m_rateUpdateIter;
     uint32_t m_bytesUpdateIter;
     uint32_t m_F;
+
     double m_targetRateRatio;
     double m_curRateRatio;
     double m_minRateRatio;
