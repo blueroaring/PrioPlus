@@ -43,6 +43,7 @@
 #include "ns3/udp-l4-protocol.h"
 #include "ns3/udp-socket-factory.h"
 #include "ns3/uinteger.h"
+#include "ns3/string.h"
 
 #include <cmath>
 
@@ -140,9 +141,12 @@ TraceApplication::InitForRngs()
     }
     else
     {
-        // Set to a fixed value
-        // This value could be large enough to avoid throughput loss
-        m_socketLinkRate = DataRate("100Gbps");
+        StringValue sdv;
+        if (GlobalValue::GetValueByNameFailSafe("defaultRate", sdv))
+            m_socketLinkRate = DataRate(sdv.Get());
+        else
+            NS_FATAL_ERROR("traceApp's socket is not bound to a DcbNetDevice and no default rate is "
+                           "set.");
     }
 }
 
@@ -383,7 +387,7 @@ TraceApplication::SendNextPacket(Flow* flow)
     {
         m_totBytes += packetSize;
         Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_headerSize);
-        // XXX We do not need flow truncate!!! 
+        // XXX We do not need flow truncate!!!
         if (true)
         {
             if (flow->remainBytes > MSS)

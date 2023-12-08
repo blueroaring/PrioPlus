@@ -35,6 +35,7 @@
 #include "ns3/nstime.h"
 #include "ns3/packet.h"
 #include "ns3/simulator.h"
+#include "ns3/string.h"
 
 #include <fstream>
 #include <tuple>
@@ -413,9 +414,12 @@ RoCEv2Socket::BindToNetDevice(Ptr<NetDevice> netdevice)
     else
     {
         // Set the data rate to the default value
-        // TODO Make it configurable
-        m_deviceRate = DataRate("100Gbps");
-        NS_LOG_WARN("RoCEv2Socket is not bound to a DcbNetDevice, use default rate 100Gbps");
+        StringValue sdv;
+        if (GlobalValue::GetValueByNameFailSafe("defaultRate", sdv))
+            m_deviceRate = DataRate(sdv.Get());
+        else
+            NS_FATAL_ERROR("RoCEv2Socket is not bound to a DcbNetDevice and no default rate is "
+                           "set.");
         m_ccOps->SetReady();
     }
     // Get local ipv4 address
