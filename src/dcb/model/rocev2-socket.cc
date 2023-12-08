@@ -228,11 +228,16 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
         { // last ACk received, flow finshed
             NotifyFlowCompletes();
             // a delay to handle remaining packets (e.g., CNP)
+
             // FIXME: do not use magic number
             // NS_LOG_DEBUG("RoCEv2Socket will close at "
             //              << (Simulator::Now() + MicroSeconds(50)).GetMicroSeconds() << "us node "
             //              << Simulator::GetContext() << " qp " << roce.GetDestQP());
-            Simulator::Schedule(MicroSeconds(50), &RoCEv2Socket::Close, this);
+            // Simulator::Schedule(MicroSeconds(50), &RoCEv2Socket::Close, this);
+
+            // Filter the orphan CNP packets at UdpBasedL4Protocol, thus the socket can be closed
+            // immediately
+            Close();
 
             // Record the statistics
             m_stats->tFinish = Simulator::Now();

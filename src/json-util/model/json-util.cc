@@ -587,6 +587,7 @@ ConstructAppStatsObj(ApplicationContainer& apps)
     std::vector<Time> vFct;
 
     // Get statistics from apps
+    uint32_t flowId = 0;
     for (uint32_t i = 0; i < apps.GetN(); ++i)
     {
         Ptr<TraceApplication> app = DynamicCast<TraceApplication>(apps.Get(i));
@@ -604,7 +605,6 @@ ConstructAppStatsObj(ApplicationContainer& apps)
 
         // Per flow statistics
         std::vector<std::shared_ptr<ns3::RoCEv2Socket::Stats>> vFlowStats = appStats->vFlowStats;
-        uint32_t flowId = 0;
         for (auto flowStats : vFlowStats)
         {
             boost::json::object flowStatsObj;

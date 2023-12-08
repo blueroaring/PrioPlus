@@ -126,6 +126,7 @@ class DcbPfcPort : public DcbFlowControlPort
     bool CheckEnableVec(uint8_t cls);
 
     bool CheckShouldSendPause(uint8_t priority, uint32_t packetSize) const;
+    void DoSendPause(uint8_t priority, const Address& from);
     bool CheckShouldSendResume(uint8_t priority) const;
 
     void SetUpstreamPaused(uint8_t priority, bool paused);

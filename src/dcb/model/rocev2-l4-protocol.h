@@ -62,6 +62,8 @@ class RoCEv2L4Protocol : public UdpBasedL4Protocol
     static Ptr<Packet> GenerateACK(uint32_t srcQP, uint32_t dstQP, uint32_t expectedPSN);
     static Ptr<Packet> GenerateNACK(uint32_t srcQP, uint32_t dstQP, uint32_t expectedPSN);
 
+    static bool IsCNP(Ptr<Packet> packet);
+
     // protected:
     // void ServerReceive (Ptr<Packet> packet, Ipv4Header header, uint32_t port,
     //                     Ptr<Ipv4Interface> incommingInterface);

@@ -46,15 +46,15 @@ DcqcnCongestionOps::DcqcnCongestionOps(Ptr<RoCEv2SocketState> sockState)
       m_raiRatio(.5),
       m_hraiRatio(1.),
       m_alphaTimer(Timer::CANCEL_ON_DESTROY),
-      m_bytesThreshold(150 * 1024),
+      m_bytesThreshold(10 * 1024 * 1024),
       m_bytesCounter(0),
       m_rateUpdateIter(0),
       m_bytesUpdateIter(0),
       m_F(5),
       m_targetRateRatio(100.),
       m_curRateRatio(100.),
-      m_CNPInterval(MicroSeconds(4)),
-      m_minRateRatio(1e-3)
+      m_CNPInterval(MicroSeconds(50)),
+      m_minRateRatio(0.05)
 {
     NS_LOG_FUNCTION(this);
     m_alphaTimer.SetFunction(&DcqcnCongestionOps::UpdateAlpha, this);

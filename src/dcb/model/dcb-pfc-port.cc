@@ -70,32 +70,41 @@ DcbPfcPort::DoIngressProcess(Ptr<const Packet> packet,
     {
         if (CheckShouldSendPause(priority, packet->GetSize()))
         {
-            NS_LOG_DEBUG("PFC: Send pause frame from node " << Simulator::GetContext() << " port "
-                                                            << m_dev->GetIfIndex());
-            Ptr<Packet> pfcFrame = PfcFrame::GeneratePauseFrame(priority);
-            // pause frames are sent directly to device without queueing in egress QueueDisc
-            m_dev->Send(pfcFrame, from, PfcFrame::PROT_NUMBER);
-            SetUpstreamPaused(priority, true); // mark this ingress queue as paused
-
-            // Schedule a recheck event when the pause frame up to expire
-            Ptr<DcbNetDevice> device = DynamicCast<DcbNetDevice>(m_dev);
-            Ptr<DcbChannel> channel = DynamicCast<DcbChannel>(device->GetChannel());
-            Time delay = channel->GetDelay();
-            Time pauseTime =
-                PauseDuration(0xffff, device->GetDataRate()); // XXX Only static quanta for now
-            // Consider the one-hop delay and a (possibly) sending packet, we schedule the
-            // recheck event at pauseTime - 2 * delay (delay is often large than MTU/linerate)
-            EventId event = Simulator::Schedule(pauseTime - 2 * delay, 
-                                                &DcbPfcPort::UpstreamPauseExpired,
-                                                this,
-                                                priority,
-                                                from);
-            IngressPortInfo::IngressQueueInfo& q = m_port.getQueue(priority);
-            if (q.pauseEvent.IsRunning())
-                q.pauseEvent.Cancel();
-            q.pauseEvent = event;
+            DoSendPause(priority, from);
         }
     }
+}
+
+void
+DcbPfcPort::DoSendPause(uint8_t priority, const Address& from)
+{
+    NS_LOG_DEBUG("PFC: Send pause frame from node " << Simulator::GetContext() << " port "
+                                                    << m_dev->GetIfIndex());
+    Ptr<Packet> pfcFrame = PfcFrame::GeneratePauseFrame(priority);
+    // pause frames are sent directly to device without queueing in egress QueueDisc
+    m_dev->Send(pfcFrame, from, PfcFrame::PROT_NUMBER);
+    SetUpstreamPaused(priority, true); // mark this ingress queue as paused
+
+    // Schedule a recheck event when the pause frame up to expire
+    Ptr<DcbNetDevice> device = DynamicCast<DcbNetDevice>(m_dev);
+    Ptr<DcbChannel> channel = DynamicCast<DcbChannel>(device->GetChannel());
+    Time delay = channel->GetDelay();
+    Time pauseTime = PauseDuration(0xffff, device->GetDataRate()); // XXX Only static quanta for now
+    
+    /* XXX IT ISN'T ACTUALLY THE WAY PFC WORKS.
+     * Consider the one-hop delay and a (possibly) sending packet, we schedule the
+     * recheck event at pauseTime - 2 * delay (delay is often large than MTU/linerate).
+     * However, the previous pause frame is also delayed by the one-hop delay...
+     */
+    EventId event = Simulator::Schedule(pauseTime - 2 * delay,
+                                        &DcbPfcPort::UpstreamPauseExpired,
+                                        this,
+                                        priority,
+                                        from);
+    IngressPortInfo::IngressQueueInfo& q = m_port.getQueue(priority);
+    if (q.pauseEvent.IsRunning())
+        q.pauseEvent.Cancel();
+    q.pauseEvent = event;
 }
 
 void
@@ -234,12 +243,7 @@ DcbPfcPort::UpstreamPauseExpired(uint8_t priority, Address from)
     // Check the queue length again
     if (CheckShouldSendPause(priority, 0))
     {
-        NS_LOG_DEBUG("PFC: Send pause frame from node " << Simulator::GetContext() << " port "
-                                                        << m_dev->GetIfIndex());
-        Ptr<Packet> pfcFrame = PfcFrame::GeneratePauseFrame(priority);
-        // pause frames are sent directly to device without queueing in egress QueueDisc
-        m_dev->Send(pfcFrame, from, PfcFrame::PROT_NUMBER);
-        SetUpstreamPaused(priority, true); // mark this ingress queue as paused again
+        DoSendPause (priority, from);
     }
 }
 
