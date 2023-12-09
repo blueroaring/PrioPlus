@@ -216,6 +216,12 @@ class DcbTrafficControl : public TrafficControlLayer
         std::vector<std::pair<uint32_t, FCPacketOutCb>> m_fcPacketOutPipeline; 
     }; // class PortInfo
 
+    // Used to bind traces
+    inline std::vector<PortInfo>& GetPorts()
+    {
+        return m_buffer.GetPorts();
+    }
+
   private:
     class Buffer
     {

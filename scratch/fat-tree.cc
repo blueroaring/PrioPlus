@@ -53,6 +53,12 @@ NS_LOG_COMPONENT_DEFINE("ScratchSimulator");
 [[maybe_unused]] static void QdiscEnqueueWithId(Ptr<const QueueDiscItem> item,
                                                 std::pair<uint32_t, uint32_t> nodeAndPortId,
                                                 uint8_t prio);
+[[maybe_unused]] static void PfcSent(std::pair<uint32_t, uint32_t> nodeAndPortId,
+                                     uint8_t prio,
+                                     bool isPause);
+[[maybe_unused]] static void PfcReceived(std::pair<uint32_t, uint32_t> nodeAndPortId,
+                                         uint8_t prio,
+                                         bool isPause);
 
 int
 main(int argc, char* argv[])
@@ -121,6 +127,25 @@ main(int argc, char* argv[])
             qdisc->TraceConnectWithoutContext("EnqueueWithId", MakeCallback(&QdiscEnqueueWithId));
         }
     }
+    // Bind the PFC traces
+    Config::MatchContainer tcs = Config::LookupMatches("/NodeList/*/$ns3::DcbTrafficControl");
+    for (auto& tc : tcs)
+    {
+        Ptr<DcbTrafficControl> trafficControl = DynamicCast<DcbTrafficControl>(tc);
+        if (trafficControl == nullptr)
+        {
+            continue;
+        }
+        std::vector<DcbTrafficControl::PortInfo> ports = trafficControl->GetPorts();
+        for (auto& port : ports)
+        {
+            Ptr<ns3::DcbPfcPort> fc = DynamicCast<ns3::DcbPfcPort>(port.GetFC());
+            if (fc == nullptr)
+                continue;
+            port.GetFC()->TraceConnectWithoutContext("PfcSent", MakeCallback(&PfcSent));
+            port.GetFC()->TraceConnectWithoutContext("PfcReceived", MakeCallback(&PfcReceived));
+        }
+    }
 
     tracer_extension::ConfigOutputDirectory("data");
     tracer_extension::ConfigTraceFCT(tracer_extension::Protocol::RoCEv2, "fct.csv");
@@ -136,11 +161,22 @@ main(int argc, char* argv[])
 }
 
 // For debug
+enum debugType
+{
+    TRACK_PACKET,
+    TRACK_PORT
+};
+
+const debugType debugT = TRACK_PORT;
 // Variables used for track a packet
 const uint32_t dstAddr = 167772163;
 const uint32_t dstQp = 100;
 const uint32_t srcQp = 258;
 const uint32_t psn = 43;
+// Variables used for track a port's behavior
+const Time debugFrom = NanoSeconds(115486788) + MicroSeconds(2);
+const uint32_t nodeId = 10;
+const uint32_t portId = 1;
 
 void
 PhyTxBegin(Ptr<const Packet> pkt, std::pair<uint32_t, uint32_t> nodeAndPortId)
@@ -152,6 +188,19 @@ PhyTxBegin(Ptr<const Packet> pkt, std::pair<uint32_t, uint32_t> nodeAndPortId)
     {
         return;
     }
+
+    if (debugT == TRACK_PORT)
+    {
+        if (nodeAndPortId.first == nodeId && nodeAndPortId.second == portId &&
+            Simulator::Now() >= debugFrom)
+        {
+            NS_LOG_DEBUG("Packet send out from node " << nodeAndPortId.first << " port "
+                                                      << nodeAndPortId.second << " at "
+                                                      << Simulator::Now().GetNanoSeconds() << "ns");
+        }
+        return;
+    }
+
     Ipv4Header ipv4Header;
     copy->RemoveHeader(ipv4Header);
 
@@ -192,6 +241,19 @@ QdiscEnqueueWithId(Ptr<const QueueDiscItem> item,
     {
         return;
     }
+
+    if (debugT == TRACK_PORT)
+    {
+        if (nodeAndPortId.first == nodeId && nodeAndPortId.second == portId &&
+            Simulator::Now() >= debugFrom)
+        {
+            NS_LOG_DEBUG("Packet enqueue at node " << nodeAndPortId.first << " port "
+                                                   << nodeAndPortId.second << " at "
+                                                   << Simulator::Now().GetNanoSeconds() << "ns");
+        }
+        return;
+    }
+
     Ptr<Packet> copy = ipv4Item->GetPacket()->Copy();
     Ipv4Header ipv4Header = ipv4Item->GetHeader();
 
@@ -221,4 +283,22 @@ QdiscEnqueueWithId(Ptr<const QueueDiscItem> item,
             }
         }
     }
+}
+
+void
+PfcSent(std::pair<uint32_t, uint32_t> nodeAndPortId, uint8_t prio, bool isPause)
+{
+    std::string pfcType = isPause ? "PAUSE" : "RESUME";
+    NS_LOG_DEBUG("PFC " << pfcType << " sent at node " << nodeAndPortId.first << " port "
+                        << nodeAndPortId.second << "'s " << (uint8_t)prio << " priority "
+                        << " at " << Simulator::Now().GetNanoSeconds() << "ns");
+}
+
+void
+PfcReceived(std::pair<uint32_t, uint32_t> nodeAndPortId, uint8_t prio, bool isPause)
+{
+    std::string pfcType = isPause ? "PAUSE" : "RESUME";
+    NS_LOG_DEBUG("PFC " << pfcType << " received at node " << nodeAndPortId.first << " port "
+                        << nodeAndPortId.second << "'s " << (uint8_t)prio << " priority "
+                        << " at " << Simulator::Now().GetNanoSeconds() << "ns");
 }

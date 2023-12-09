@@ -197,6 +197,40 @@ ConfigureSwitch(boost::json::object& configObj, Ptr<Node> sw)
     }
 }
 
+/**
+ * Install flow control protocols for the ports of this host.
+ */
+void
+ConfigureHost(boost::json::object& configObj, Ptr<Node> h)
+{
+    // Install pausable queue disc
+    Ptr<TrafficControlLayer> tc = h->GetObject<TrafficControlLayer>();
+    NS_ASSERT(tc);
+    const uint32_t devN = h->GetNDevices();
+    for (uint32_t i = 1; i < devN; i++)
+    {
+        Ptr<NetDevice> dev = h->GetDevice(i);
+        Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
+        Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(h, 0);
+        // Set the queue size to 100KB, which is not critical to performance
+        qDisc->SetQueueSize(QueueSize(QueueSizeUnit::BYTES, 1e5));
+        qDisc->SetFCEnabled(true);
+        dcbDev->SetQueueDisc(qDisc);
+        tc->SetRootQueueDiscOnDevice(dev, qDisc);
+        dcbDev->SetFcEnabled(true); // all NetDevices should support FC
+    }
+
+    // Install PFC
+    boost::json::object hostConfigObj =
+        configObj["topologyConfig"].get_object().find("hostPort")->value().get_object();
+    bool pfcEnabled = hostConfigObj.find("pfcEnabled")->value().as_bool();
+    uint8_t enableVec = hostConfigObj.find("enableVec")->value().as_int64();
+    if (pfcEnabled)
+    {
+        DcbFcHelper::InstallPFCtoHostPort(h, 1, enableVec);
+    }
+}
+
 static void
 InstallLink(boost::json::object& configObj, Ptr<DcbNetDevice> dev1, Ptr<DcbNetDevice> dev2)
 {
@@ -406,8 +440,7 @@ BuildTopology(boost::json::object& configObj)
         }
         else if (topology->IsHost(nodeIdx))
         {
-            DcbHostStackHelper hostStack;
-            hostStack.InstallPortsProtos(topology->GetNode(nodeIdx).nodePtr);
+            ConfigureHost(configObj, topology->GetNode(nodeIdx).nodePtr);
         }
     }
 

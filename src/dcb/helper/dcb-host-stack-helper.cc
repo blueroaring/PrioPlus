@@ -357,27 +357,6 @@ DcbHostStackHelper::Install(Ptr<Node> node) const
 }
 
 void
-DcbHostStackHelper::InstallPortsProtos(Ptr<Node> node) const
-{
-    // Install pausable queue disc
-    Ptr<TrafficControlLayer> tc = node->GetObject<TrafficControlLayer>();
-    NS_ASSERT(tc);
-    const uint32_t devN = node->GetNDevices();
-    for (uint32_t i = 1; i < devN; i++)
-    {
-        Ptr<NetDevice> dev = node->GetDevice(i);
-        Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
-        Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(node, 0);
-        // Set the queue size to 100KB, which is not critical to performance
-        qDisc->SetQueueSize(QueueSize(QueueSizeUnit::BYTES, 1e5)); 
-        qDisc->SetFCEnabled(true);
-        dcbDev->SetQueueDisc(qDisc);
-        tc->SetRootQueueDiscOnDevice(dev, qDisc);
-        dcbDev->SetFcEnabled(true); // all NetDevices should support FC
-    }
-}
-
-void
 DcbHostStackHelper::InstallRocev2L4(Ptr<Node> node) const
 {
     if (m_ipv4Enabled || m_ipv6Enabled)

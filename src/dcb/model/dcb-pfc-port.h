@@ -133,7 +133,7 @@ class DcbPfcPort : public DcbFlowControlPort
 
     /**
      * \brief Called when a sent pause frame coming to expires.
-     * 
+     *
      * In this function, we check the ingress queue length, if it still exceeds
      * the threshold, we send another pause frame. By doing this, we can make
      * sure that the upstream will not send any packet to us.
@@ -145,9 +145,26 @@ class DcbPfcPort : public DcbFlowControlPort
     Time PauseDuration(uint16_t quanta, DataRate lineRate) const;
 
   private:
+    std::pair<uint32_t, uint32_t> GetNodeAndPortId() const;
+
     IngressPortInfo m_port;
 
     std::vector<EventId> m_egressResumeEvents;
+
+    enum PFCExpireReactionType
+    {
+        RESEND_PAUSE,
+        RESET_UPSTREAM_PAUSED,
+        NEVER_EXPIRE
+    }; // enum PFCExpireReactionType
+    const enum PFCExpireReactionType m_reactionType = NEVER_EXPIRE;
+
+    /// Traced callback: fired a PFC frame is sent, trace with node and port id, priority, pause or
+    /// resume
+    TracedCallback<std::pair<uint32_t, uint32_t>, uint8_t, bool> m_tracePfcSent;
+    /// Traced callback: fired when a pause frame is received, trace with node and port id,
+    /// priority, pause or resume
+    TracedCallback<std::pair<uint32_t, uint32_t>, uint8_t, bool> m_tracePfcReceived;
 
 }; // class DcbPfcPort
 

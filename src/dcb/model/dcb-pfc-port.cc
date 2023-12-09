@@ -36,7 +36,17 @@ TypeId
 DcbPfcPort::GetTypeId()
 {
     static TypeId tid =
-        TypeId("ns3::DcbPfcPort").SetParent<DcbFlowControlPort>().SetGroupName("Dcb");
+        TypeId("ns3::DcbPfcPort")
+            .SetParent<DcbFlowControlPort>()
+            .SetGroupName("Dcb")
+            .AddTraceSource("PfcSent",
+                            "PFC pause frame sent",
+                            MakeTraceSourceAccessor(&DcbPfcPort::m_tracePfcSent),
+                            "ns3::Packet::TracedCallback")
+            .AddTraceSource("PfcReceived",
+                            "PFC pause frame received",
+                            MakeTraceSourceAccessor(&DcbPfcPort::m_tracePfcReceived),
+                            "ns3::Packet::TracedCallback");
     return tid;
 }
 
@@ -84,27 +94,57 @@ DcbPfcPort::DoSendPause(uint8_t priority, const Address& from)
     // pause frames are sent directly to device without queueing in egress QueueDisc
     m_dev->Send(pfcFrame, from, PfcFrame::PROT_NUMBER);
     SetUpstreamPaused(priority, true); // mark this ingress queue as paused
+    m_tracePfcSent(GetNodeAndPortId(), priority, true);
 
-    // Schedule a recheck event when the pause frame up to expire
     Ptr<DcbNetDevice> device = DynamicCast<DcbNetDevice>(m_dev);
     Ptr<DcbChannel> channel = DynamicCast<DcbChannel>(device->GetChannel());
     Time delay = channel->GetDelay();
-    Time pauseTime = PauseDuration(0xffff, device->GetDataRate()); // XXX Only static quanta for now
-    
-    /* XXX IT ISN'T ACTUALLY THE WAY PFC WORKS.
-     * Consider the one-hop delay and a (possibly) sending packet, we schedule the
-     * recheck event at pauseTime - 2 * delay (delay is often large than MTU/linerate).
-     * However, the previous pause frame is also delayed by the one-hop delay...
-     */
-    EventId event = Simulator::Schedule(pauseTime - 2 * delay,
-                                        &DcbPfcPort::UpstreamPauseExpired,
-                                        this,
-                                        priority,
-                                        from);
+    EventId event;
     IngressPortInfo::IngressQueueInfo& q = m_port.getQueue(priority);
+    if (m_reactionType == RESEND_PAUSE)
+    {
+        /* XXX IT ISN'T ACTUALLY THE WAY PFC WORKS.
+         * Schedule a recheck event when the pause frame up to expire
+         */
+        Time pauseTime =
+            PauseDuration(0xffff, device->GetDataRate()); // XXX Only static quanta for now
+        /* Consider the one-hop delay and a (possibly) sending packet, we schedule the
+         * recheck event at pauseTime - 2 * delay (delay is often large than MTU/linerate).
+         * However, the previous pause frame is also delayed by the one-hop delay...
+         */
+        event = Simulator::Schedule(pauseTime - 2 * delay,
+                                    &DcbPfcPort::UpstreamPauseExpired,
+                                    this,
+                                    priority,
+                                    from);
+    }
+    else if (m_reactionType == RESET_UPSTREAM_PAUSED)
+    {
+        event =
+            Simulator::Schedule(3 * delay, &DcbPfcPort::SetUpstreamPaused, this, priority, false);
+    }
+    // Update pause event
     if (q.pauseEvent.IsRunning())
         q.pauseEvent.Cancel();
     q.pauseEvent = event;
+}
+
+void
+DcbPfcPort::UpstreamPauseExpired(uint8_t priority, Address from)
+{
+    NS_LOG_FUNCTION(this << (uint32_t)priority << from);
+
+    // The pervious pause frame has expired
+    SetUpstreamPaused(priority, false);
+
+    // Check the queue length again
+    if (CheckEnableVec(priority))
+    {
+        if (CheckShouldSendPause(priority, 0))
+        {
+            DoSendPause(priority, from);
+        }
+    }
 }
 
 void
@@ -119,6 +159,7 @@ DcbPfcPort::DoPacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet)
         Ptr<Packet> pfcFrame = PfcFrame::GeneratePauseFrame(priority, (uint16_t)0);
         m_dev->Send(pfcFrame, Address(), PfcFrame::PROT_NUMBER);
         SetUpstreamPaused(priority, false);
+        m_tracePfcSent(GetNodeAndPortId(), priority, false);
 
         // Cancel the pause recheck event
         IngressPortInfo::IngressQueueInfo& q = m_port.getQueue(priority);
@@ -157,27 +198,39 @@ DcbPfcPort::ReceivePfc(Ptr<NetDevice> dev,
             if (quanta > 0)
             {
                 qDisc->SetPaused(priority, true);
-                Time pauseTime = PauseDuration(quanta, device->GetDataRate());
-                EventId event =
-                    Simulator::Schedule(pauseTime,
-                                        &PausableQueueDisc::SetPaused,
-                                        qDisc,
-                                        priority,
-                                        false); // resume the queue after the pause time.
-                // Update egress resume event
-                if (m_egressResumeEvents[priority].IsRunning())
-                    m_egressResumeEvents[priority].Cancel();
-                m_egressResumeEvents[priority] = event;
+
+                if (m_reactionType != NEVER_EXPIRE)
+                {
+                    Time pauseTime = PauseDuration(quanta, device->GetDataRate());
+                    EventId event =
+                        Simulator::Schedule(pauseTime,
+                                            &PausableQueueDisc::SetPaused,
+                                            qDisc,
+                                            priority,
+                                            false); // resume the queue after the pause time.
+                    // Update egress resume event
+                    if (m_egressResumeEvents[priority].IsRunning())
+                        m_egressResumeEvents[priority].Cancel();
+                    m_egressResumeEvents[priority] = event;
+                }
+
+                m_tracePfcReceived(GetNodeAndPortId(), priority, true);
                 NS_LOG_DEBUG("PFC: node " << Simulator::GetContext() << " port " << index
                                           << " priority " << (uint32_t)priority << " is paused");
             }
             else
             {
                 qDisc->SetPaused(priority, false);
-                // Cancel egress resume event
-                if (m_egressResumeEvents[priority].IsRunning())
-                    m_egressResumeEvents[priority].Cancel();
-                // CancelPauseEvent(priority);
+                
+                if (m_reactionType != NEVER_EXPIRE)
+                {
+                    // Cancel egress resume event
+                    if (m_egressResumeEvents[priority].IsRunning())
+                        m_egressResumeEvents[priority].Cancel();
+                    // CancelPauseEvent(priority);
+                }
+
+                m_tracePfcReceived(GetNodeAndPortId(), priority, false);
                 NS_LOG_DEBUG("PFC: node " << Simulator::GetContext() << " port " << index
                                           << " priority " << (uint32_t)priority << " is resumed");
             }
@@ -212,7 +265,7 @@ DcbPfcPort::CheckShouldSendPause(uint8_t priority, uint32_t packetSize) const
 {
     // TODO: add support for dynamic threshold
     const IngressPortInfo::IngressQueueInfo& q = m_port.getQueue(priority);
-    // Why compare with reserve - packetSize?
+    // XXX Why compare with reserve - packetSize?
     return !q.isUpstreamPaused &&
            m_tc->CompareIngressQueueLength(m_port.m_index, priority, q.reserve - packetSize) > 0;
 }
@@ -232,25 +285,16 @@ DcbPfcPort::SetUpstreamPaused(uint8_t priority, bool paused)
     m_port.getQueue(priority).isUpstreamPaused = paused;
 }
 
-void
-DcbPfcPort::UpstreamPauseExpired(uint8_t priority, Address from)
-{
-    NS_LOG_FUNCTION(this << (uint32_t)priority << from);
-
-    // The pervious pause frame has expired
-    SetUpstreamPaused(priority, false);
-
-    // Check the queue length again
-    if (CheckShouldSendPause(priority, 0))
-    {
-        DoSendPause (priority, from);
-    }
-}
-
 Time
 DcbPfcPort::PauseDuration(uint16_t quanta, DataRate lineRate) const
 {
     return NanoSeconds(1e9 * quanta * PfcFrame::QUANTUM_BIT / lineRate.GetBitRate());
+}
+
+std::pair<uint32_t, uint32_t>
+DcbPfcPort::GetNodeAndPortId() const
+{
+    return std::make_pair(m_dev->GetNode()->GetId(), m_dev->GetIfIndex());
 }
 
 /**

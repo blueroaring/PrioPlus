@@ -30,7 +30,8 @@
     },
     "topologyConfig": {
         "hostPort": {
-            "pfcEnabled": false
+            "pfcEnabled": true,
+            "enableVec": 255
         },
         "switch": {
             "pfcDynamic": false,

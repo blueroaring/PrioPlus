@@ -174,13 +174,6 @@ class DcbHostStackHelper : public PcapHelperForIpv4,
      */
     int64_t AssignStreams(NodeContainer c, int64_t stream);
 
-    /**
-     * Install flow control protocols for the ports of this host.
-     *
-     * \param node The node on which to install the stack.
-     */
-    void InstallPortsProtos(Ptr<Node> node) const;
-
   private:
     /**
      * @brief Enable pcap output the indicated Ipv4 and interface pair.
