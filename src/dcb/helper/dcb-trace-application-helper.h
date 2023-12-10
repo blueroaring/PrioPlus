@@ -54,6 +54,12 @@ class TraceApplicationHelper
     void SetSendEnabled(bool enabled);
     void SetStaticFlowInterval(bool staticFlowInterval);
     void SetStartAndStopTime(Time start, Time stop);
+    void SetRealTimeApp(bool realTimeApp);
+
+    /**
+     * \brief Create an application according to the configuration.
+     */
+    Ptr<TraceApplication> CreateApplication(Ptr<Node> node);
 
     /**
      * Record an attribute to be set in each Application after it is is created.
@@ -124,6 +130,7 @@ class TraceApplicationHelper
     bool m_staticFlowInterval;
     Time m_startTime;
     Time m_stopTime;
+    bool m_realTimeApp;
 }; // class TraceApplicationHelper
 
 } // namespace ns3

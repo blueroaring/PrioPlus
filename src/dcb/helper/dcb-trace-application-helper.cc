@@ -24,6 +24,7 @@
 #include "ns3/dcb-trace-application.h"
 #include "ns3/node.h"
 #include "ns3/nstime.h"
+#include "ns3/real-time-application.h"
 #include "ns3/rocev2-l4-protocol.h"
 
 #include <fstream>
@@ -41,7 +42,8 @@ TraceApplicationHelper::TraceApplicationHelper(Ptr<DcTopology> topo)
       m_load(0),
       m_staticFlowInterval(false),
       m_startTime(Time(0)),
-      m_stopTime(Time(0))
+      m_stopTime(Time(0)),
+      m_realTimeApp(false)
 {
 }
 
@@ -124,6 +126,12 @@ TraceApplicationHelper::SetStartAndStopTime(Time start, Time stop)
     m_stopTime = stop;
 }
 
+void
+TraceApplicationHelper::SetRealTimeApp(bool realTimeApp)
+{
+    m_realTimeApp = realTimeApp;
+}
+
 ApplicationContainer
 TraceApplicationHelper::Install(Ptr<Node> node)
 {
@@ -158,21 +166,7 @@ TraceApplicationHelper::Install(Ptr<Node> node)
 Ptr<Application>
 TraceApplicationHelper::InstallPriv(Ptr<Node> node)
 {
-    Ptr<TraceApplication> app;
-    if (m_topology == nullptr)
-    { // the topo is not set
-        // The dest must be set in this case, unless the send is disabled.
-        NS_ASSERT(m_destAddr.GetPort() != 0 || !m_sendEnabled);
-        app = CreateObject<TraceApplication>(m_topology, node, m_destAddr);
-    }
-    else if (m_destNode < 0)
-    { // random destination flows application
-        app = CreateObject<TraceApplication>(m_topology, node->GetId());
-    }
-    else
-    { // fixed destination flows application
-        app = CreateObject<TraceApplication>(m_topology, node->GetId(), m_destNode);
-    }
+    Ptr<TraceApplication> app = CreateApplication(node);
 
     if (m_sendEnabled)
     {
@@ -201,6 +195,48 @@ TraceApplicationHelper::InstallPriv(Ptr<Node> node)
         // must be called after node->AddApplication () becasue it needs to know the node
         app->SetInnerUdpProtocol(RoCEv2L4Protocol::GetTypeId());
     };
+    return app;
+}
+
+Ptr<TraceApplication>
+TraceApplicationHelper::CreateApplication(Ptr<Node> node)
+{
+    Ptr<TraceApplication> app;
+    if (m_topology == nullptr)
+    { // the topo is not set
+        // The dest must be set in this case, unless the send is disabled.
+        NS_ASSERT(m_destAddr.GetPort() != 0 || !m_sendEnabled);
+        if (m_realTimeApp)
+        {
+            app = CreateObject<RealTimeApplication>(m_topology, node, m_destAddr);
+        }
+        else
+        {
+            app = CreateObject<TraceApplication>(m_topology, node, m_destAddr);
+        }
+    }
+    else if (m_destNode < 0)
+    { // random destination flows application
+        if (m_realTimeApp)
+        {
+            app = CreateObject<RealTimeApplication>(m_topology, node->GetId());
+        }
+        else
+        {
+            app = CreateObject<TraceApplication>(m_topology, node->GetId());
+        }
+    }
+    else
+    { // fixed destination flows application
+        if (m_realTimeApp)
+        {
+            app = CreateObject<RealTimeApplication>(m_topology, node->GetId(), m_destNode);
+        }
+        else
+        {
+            app = CreateObject<TraceApplication>(m_topology, node->GetId(), m_destNode);
+        }
+    }
     return app;
 }
 

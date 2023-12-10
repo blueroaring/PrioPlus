@@ -15,6 +15,7 @@ build_lib(
 	  model/fifo-queue-disc-ecn.cc
 	  model/dcb-traffic-control.cc
 	  model/dcb-trace-application.cc
+	  model/real-time-application.cc
 	  model/dcb-flow-control-port.cc
 	  model/dcb-pfc-port.cc
 	  model/udp-based-l4-protocol.cc
@@ -23,6 +24,7 @@ build_lib(
 	  model/rocev2-socket.cc
 	  model/dcqcn.cc
 	  utils/pfc-frame.cc
+	  utils/real-time-stats-tag.cc
   HEADER_FILES
       helper/dcb-net-device-helper.h
       helper/dcb-host-stack-helper.h
@@ -37,6 +39,7 @@ build_lib(
 	  model/pausable-queue-disc.h
 	  model/fifo-queue-disc-ecn.h
 	  model/dcb-trace-application.h
+	  model/real-time-application.h
 	  model/dcb-flow-control-port.h
 	  model/dcb-pfc-port.h
 	  model/udp-based-l4-protocol.h
@@ -45,6 +48,7 @@ build_lib(
 	  model/rocev2-socket.h
 	  model/dcqcn.h
 	  utils/pfc-frame.h
+	  utils/real-time-stats-tag.h
   LIBRARIES_TO_LINK
       ${libcore}
 	  ${libnetwork}

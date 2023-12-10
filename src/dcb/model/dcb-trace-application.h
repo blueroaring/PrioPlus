@@ -186,7 +186,13 @@ class TraceApplication : public Application
         // No getter for simplicity
     };
 
-    std::shared_ptr<Stats> GetStats() const;
+    virtual std::shared_ptr<Stats> GetStats() const;
+
+  protected:
+    DataRate m_socketLinkRate; //!< Link rate of the deice
+    uint64_t m_totBytes;       //!< Total bytes sent so far
+    uint32_t m_headerSize;     //!< total header bytes of a packet
+    std::map<Ptr<Socket>, Flow*> m_flows;
 
   private:
     /**
@@ -231,7 +237,7 @@ class TraceApplication : public Application
      * Raise error if packet does not sent successfully.
      * \param socket the socket to send packet.
      */
-    void SendNextPacket(Flow* flow);
+    virtual void SendNextPacket(Flow* flow);
 
     /**
      * \brief Get next random flow start time.
@@ -267,7 +273,7 @@ class TraceApplication : public Application
      *
      * \param socket the socket the packet was received to.
      */
-    void HandleRead(Ptr<Socket> socket);
+    virtual void HandleRead(Ptr<Socket> socket);
 
     /**
      * \brief Find a outbound net device (i.e., not a loopback net device) for the application's
@@ -276,7 +282,6 @@ class TraceApplication : public Application
      */
     Ptr<NetDevice> GetOutboundNetDevice();
 
-    std::map<Ptr<Socket>, Flow*> m_flows;
     std::shared_ptr<Stats> m_stats;
 
     bool m_enableSend;
@@ -286,12 +291,9 @@ class TraceApplication : public Application
     Ptr<Node> m_node; //!< The node the application is installed on, used when dctopo is not set
     bool m_ecnEnabled;
     // bool                   m_connected;       //!< True if connected
-    DataRate m_socketLinkRate;  //!< Link rate of the deice
-    uint64_t m_totBytes;        //!< Total bytes sent so far
     TypeId m_socketTid;         //!< Type of the socket used
     ProtocolGroup m_protoGroup; //!< Protocol group
     TypeId m_innerUdpProtocol;  //!< inner-UDP protocol type id
-    uint32_t m_headerSize;      //!< total header bytes of a packet
 
     Ptr<EmpiricalRandomVariable> m_flowSizeRng;         //!< Flow size random generator
     Time m_staticFlowArriveInterval;                    //!< Static flow arrive interval

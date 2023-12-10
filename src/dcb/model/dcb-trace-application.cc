@@ -37,13 +37,13 @@
 #include "ns3/ptr.h"
 #include "ns3/simulator.h"
 #include "ns3/socket.h"
+#include "ns3/string.h"
 #include "ns3/tcp-socket-factory.h"
 #include "ns3/tracer-extension.h"
 #include "ns3/type-id.h"
 #include "ns3/udp-l4-protocol.h"
 #include "ns3/udp-socket-factory.h"
 #include "ns3/uinteger.h"
-#include "ns3/string.h"
 
 #include <cmath>
 
@@ -77,14 +77,14 @@ TraceApplication::GetTypeId()
 TraceApplication::TraceApplication(Ptr<DcTopology> topology,
                                    uint32_t nodeIndex,
                                    int32_t destIndex /* = -1 */)
-    : m_enableSend(true),
+    : m_totBytes(0),
+      m_headerSize(8 + 20 + 14 + 2),
+      m_enableSend(true),
       m_enableReceive(true),
       m_topology(topology),
       m_nodeIndex(nodeIndex),
       m_node(topology->GetNode(nodeIndex).nodePtr),
       m_ecnEnabled(true),
-      m_totBytes(0),
-      m_headerSize(8 + 20 + 14 + 2),
       m_staticFlowArriveInterval(Time(0)),
       m_destNode(destIndex),
       m_destAddr(InetSocketAddress("0.0.0.0", 0))
@@ -104,14 +104,14 @@ TraceApplication::TraceApplication(Ptr<DcTopology> topology,
 TraceApplication::TraceApplication(Ptr<DcTopology> topology,
                                    Ptr<Node> node,
                                    InetSocketAddress destAddr)
-    : m_enableSend(true),
+    : m_totBytes(0),
+      m_headerSize(8 + 20 + 14 + 2),
+      m_enableSend(true),
       m_enableReceive(true),
       m_topology(topology),
       m_nodeIndex(node->GetId()),
       m_node(node),
       m_ecnEnabled(true),
-      m_totBytes(0),
-      m_headerSize(8 + 20 + 14 + 2),
       m_destNode(-1),
       m_destAddr(destAddr)
 {
@@ -145,8 +145,9 @@ TraceApplication::InitForRngs()
         if (GlobalValue::GetValueByNameFailSafe("defaultRate", sdv))
             m_socketLinkRate = DataRate(sdv.Get());
         else
-            NS_FATAL_ERROR("traceApp's socket is not bound to a DcbNetDevice and no default rate is "
-                           "set.");
+            NS_FATAL_ERROR(
+                "traceApp's socket is not bound to a DcbNetDevice and no default rate is "
+                "set.");
     }
 }
 
