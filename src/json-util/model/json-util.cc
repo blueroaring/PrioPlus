@@ -568,7 +568,6 @@ OutputStats(boost::json::object& conf, ApplicationContainer& apps, Ptr<DcTopolog
     ConstructRealTimeFlowStats(apps, mFlowStatsObjs);
     boost::json::array flowStatsArray;
     uint32_t flowId = 0;
-    std::cout << mFlowStatsObjs.size() << std::endl;
     for (auto kvPair : mFlowStatsObjs)
     {
         // Replace the flow id at the beginning of the object

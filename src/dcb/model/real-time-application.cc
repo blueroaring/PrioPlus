@@ -231,6 +231,11 @@ RealTimeApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
         return;
     }
     isCollected = true;
+
+    for (auto& it : mflowStats)
+    {
+        it.second->CollectAndCheck();
+    }
 }
 
 void

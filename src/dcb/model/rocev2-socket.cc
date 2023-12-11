@@ -34,6 +34,7 @@
 #include "ns3/ipv4-route.h"
 #include "ns3/nstime.h"
 #include "ns3/packet.h"
+#include "ns3/real-time-stats-tag.h"
 #include "ns3/simulator.h"
 #include "ns3/string.h"
 
@@ -165,6 +166,15 @@ RoCEv2Socket::DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item)
     m_ccOps->UpdateStateSend(payload);
     Ptr<Packet> packet = payload->Copy(); // do not modify the payload in the buffer
     packet->AddHeader(rocev2Header);
+
+    // Before send, check if it has RealTimeStatsTag, if so, record the tx time
+    RealTimeStatsTag tag;
+    if (packet->RemovePacketTag(tag))
+    {
+        tag.SetTTxNs(Simulator::Now().GetNanoSeconds());
+        packet->AddPacketTag(tag);
+    }
+
     m_innerProto->Send(packet,
                        route->GetSource(),
                        daddr,
