@@ -25,6 +25,7 @@ build_lib(
 	  model/dcqcn.cc
 	  utils/pfc-frame.cc
 	  utils/real-time-stats-tag.cc
+	  utils/flow-identifier.cc
   HEADER_FILES
       helper/dcb-net-device-helper.h
       helper/dcb-host-stack-helper.h
@@ -49,6 +50,7 @@ build_lib(
 	  model/dcqcn.h
 	  utils/pfc-frame.h
 	  utils/real-time-stats-tag.h
+	  utils/flow-identifier.h
   LIBRARIES_TO_LINK
       ${libcore}
 	  ${libnetwork}

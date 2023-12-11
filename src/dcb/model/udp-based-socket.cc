@@ -31,6 +31,7 @@
 #include "ns3/object-base.h"
 #include "ns3/object-factory.h"
 #include "ns3/simulator.h"
+#include "ns3/udp-header.h"
 
 namespace ns3
 {
@@ -544,6 +545,27 @@ UdpBasedSocket::SetFlowCompleteCallback(Callback<void, Ptr<UdpBasedSocket>> cb)
 {
     NS_LOG_FUNCTION(this);
     m_flowCompleteCallback = cb;
+}
+
+void
+UdpBasedSocket::SetLocalAddress(Ipv4Address local)
+{
+    NS_LOG_FUNCTION(this);
+    m_localAddress = local;
+}
+
+Ipv4Address
+UdpBasedSocket::GetLocalAddress() const
+{
+    NS_LOG_FUNCTION(this);
+    return m_localAddress;
+}
+
+Ipv4Address
+UdpBasedSocket::GetPeerAddress() const
+{
+    NS_LOG_FUNCTION(this);
+    return Ipv4Address::ConvertFrom(m_defaultAddress);
 }
 
 uint32_t

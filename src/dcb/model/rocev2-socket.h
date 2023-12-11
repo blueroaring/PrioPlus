@@ -141,14 +141,15 @@ class RoCEv2Socket : public UdpBasedSocket
 
     Time GetFlowStartTime() const;
 
-        // \brief Structure that keeps the IbcSendScheduler statistics
+    // \brief Structure that keeps the IbcSendScheduler statistics
     class Stats
+
     {
       public:
         // constructor
         Stats();
 
-        uint32_t nTotalSizePkts;  //<! Data size sent by upper layer
+        uint32_t nTotalSizePkts; //<! Data size sent by upper layer
         uint64_t nTotalSizeBytes;
         uint32_t nTotalSentPkts; //<! Data pkts sent to lower layer, including retransmission
         uint64_t nTotalSentBytes;
@@ -158,6 +159,7 @@ class RoCEv2Socket : public UdpBasedSocket
         uint64_t nTotalLossBytes;
         Time tStart;
         Time tFinish;
+        Time tFct;                //<! Flow completion time
         DataRate overallFlowRate; //<! overall rate, calculate by total size / (first msg arrive -
                                   // last msg finish)
 
@@ -165,16 +167,15 @@ class RoCEv2Socket : public UdpBasedSocket
         bool bDetailedStats;
         std::vector<std::pair<Time, DataRate>> vCcRate; //<! Record the rate when changed
         std::vector<std::pair<Time, uint32_t>> vCcCwnd; //<! Record the cwnd when changed
-        std::vector<Time> vRecvEcn; //<! Record the time when received ECN
+        std::vector<Time> vRecvEcn;                     //<! Record the time when received ECN
         std::vector<std::pair<Time, uint32_t>>
             vSentPkt; //<! Record the packets' send time and size XXX (only payload now)
-        
+
         // Recorder function of the detailed statistics
         void RecordCcRate(DataRate rate);
         void RecordCcCwnd(uint32_t cwnd);
         void RecordRecvEcn();
         void RecordSentPkt(uint32_t size);
-
 
         // Collect the statistics and check if the statistics is correct
         void CollectAndCheck();

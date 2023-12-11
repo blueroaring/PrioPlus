@@ -19,6 +19,8 @@
 
 #include "real-time-application.h"
 
+#include "ns3/global-value.h"
+
 namespace ns3
 {
 
@@ -145,21 +147,42 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
         RealTimeStatsTag tag;
         if (packet->PeekPacketTag(tag))
         {
-            uint32_t pktSeq = tag.GetPktSeq();
-            m_stats->nMaxRecvSeq = std::max(m_stats->nMaxRecvSeq, pktSeq);
+            // Construct the flow identifier
+            InetSocketAddress inetFrom = InetSocketAddress::ConvertFrom(from);
+            Ipv4Address srcAddr = inetFrom.GetIpv4();
+            uint32_t srcPort = inetFrom.GetPort();
+            Ipv4Address dstAddr = m_receiverSocket->GetLocalAddress();
+            uint32_t dstPort = 100; // XXX Static for now
+            FlowIdentifier flowId(srcAddr, dstAddr, srcPort, dstPort);
 
-            m_stats->vArriveDelay.push_back(Simulator::Now() - Time(tag.GetTArriveNs()));
-            m_stats->vTxDelay.push_back(Simulator::Now() - Time(tag.GetTTxNs()));
-
-            m_stats->nTotalRecvBytes += packet->GetSize();
-            m_stats->nTotalRecvPkts++;
-            m_stats->tFirstPktArrive = std::min(m_stats->tFirstPktArrive, Time(tag.GetTArriveNs()));
-            m_stats->tFirstPktRecv = std::min(m_stats->tFirstPktRecv, Simulator::Now());
-            m_stats->tLastPktRecv = std::max(m_stats->tLastPktRecv, Simulator::Now());
-
-            if (m_stats->bDetailedStats)
+            // Get the flow stats, if not exist, create one
+            std::shared_ptr<Stats::FlowStats> flowStats;
+            auto it = m_stats->mflowStats.find(flowId);
+            if (it == m_stats->mflowStats.end())
             {
-                m_stats->vRecvPkt.push_back(std::make_pair(Simulator::Now(), packet->GetSize()));
+                flowStats = std::make_shared<Stats::FlowStats>();
+                m_stats->mflowStats[flowId] = flowStats;
+            }
+            else
+            {
+                flowStats = it->second;
+            }
+
+            uint32_t pktSeq = tag.GetPktSeq();
+            flowStats->nMaxRecvSeq = std::max(flowStats->nMaxRecvSeq, pktSeq);
+
+            flowStats->vArriveDelay.push_back(Simulator::Now() - Time(tag.GetTArriveNs()));
+            flowStats->vTxDelay.push_back(Simulator::Now() - Time(tag.GetTTxNs()));
+
+            flowStats->nTotalRecvBytes += packet->GetSize();
+            flowStats->nTotalRecvPkts++;
+            flowStats->tFirstPktArrive = std::min(flowStats->tFirstPktArrive, Time(tag.GetTArriveNs()));
+            flowStats->tFirstPktRecv = std::min(flowStats->tFirstPktRecv, Simulator::Now());
+            flowStats->tLastPktRecv = std::max(flowStats->tLastPktRecv, Simulator::Now());
+
+            if (flowStats->bDetailedStats)
+            {
+                flowStats->vRecvPkt.push_back(std::make_pair(Simulator::Now(), packet->GetSize()));
             }
         }
     }
@@ -173,14 +196,27 @@ RealTimeApplication::GetStats() const
 }
 
 RealTimeApplication::Stats::Stats()
+    : isCollected(false)
+{
+}
+
+RealTimeApplication::Stats::FlowStats::FlowStats()
     : nMaxRecvSeq(0),
       nPktLoss(0),
       nTotalRecvPkts(0),
       nTotalRecvBytes(0),
       tFirstPktArrive(Time::Max()),
       tFirstPktRecv(Time::Max()),
-      tLastPktRecv(Time::Min())
+      tLastPktRecv(Time::Min()),
+      rAvgRateFromArrive(0),
+      rAvgRateFromRecv(0),
+      bDetailedStats(false)
 {
+    BooleanValue bv;
+    if (GlobalValue::GetValueByNameFailSafe("detailedStats", bv))
+        bDetailedStats = bv.Get();
+    else
+        bDetailedStats = false;
 }
 
 void
@@ -189,11 +225,17 @@ RealTimeApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
     // Call the base class's CollectAndCheck
     TraceApplication::Stats::CollectAndCheck(flows);
 
-    // Check the packet loss
-    if (flows.size() != 1)
+    // Check if the stats is collected
+    if (isCollected)
     {
-        NS_FATAL_ERROR("RealTimeApplication only support one flow now");
+        return;
     }
+    isCollected = true;
+}
+
+void
+RealTimeApplication::Stats::FlowStats::CollectAndCheck()
+{
     /* XXX
      * The packet loss is calculated as the difference between the max sequence number and the
      * total number of received packets. However, the max sequence number is not the total number
@@ -203,8 +245,10 @@ RealTimeApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
     nPktLoss = (nMaxRecvSeq + 1) - nTotalRecvPkts;
 
     // Calculate the average rate
-    rAvgRateFromArrive = DataRate(nTotalRecvBytes * 8.0 / (tLastPktRecv - tFirstPktArrive).GetSeconds());
-    rAvgRateFromRecv = DataRate(nTotalRecvBytes * 8.0 / (tLastPktRecv - tFirstPktRecv).GetSeconds());
+    rAvgRateFromArrive =
+        DataRate(nTotalRecvBytes * 8.0 / (tLastPktRecv - tFirstPktArrive).GetSeconds());
+    rAvgRateFromRecv =
+        DataRate(nTotalRecvBytes * 8.0 / (tLastPktRecv - tFirstPktRecv).GetSeconds());
 }
 
 } // namespace ns3

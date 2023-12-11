@@ -103,6 +103,11 @@ class UdpBasedL4Protocol : public Object
 
     Ipv4Address GetLocalAddress() const;
 
+    virtual uint32_t ParseInnerPort(Ptr<Packet> packet,
+                                    Ipv4Header header,
+                                    uint16_t port,
+                                    Ptr<Ipv4Interface> incomingIntf) = 0;
+
   protected:
     virtual void DoDispose(void) override;
 
@@ -127,11 +132,6 @@ class UdpBasedL4Protocol : public Object
                    Ipv4Header header,
                    uint16_t port,
                    Ptr<Ipv4Interface> incomingIntf);
-
-    virtual uint32_t ParseInnerPort(Ptr<Packet> packet,
-                                    Ipv4Header header,
-                                    uint16_t port,
-                                    Ptr<Ipv4Interface> incomingIntf) = 0;
 
     virtual void Destroy();
 

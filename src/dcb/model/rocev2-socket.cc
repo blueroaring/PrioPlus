@@ -325,7 +325,9 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
         NS_LOG_WARN("RoCEv2 socket receives smaller PSN than expected, something wrong");
     }
 
-    UdpBasedSocket::ForwardUp(packet, header, port, incomingInterface);
+    // Zhaochen: The ForwardUp should hand over the src port, not the dst port
+    // The L4 layer has been written wrongly. We pass the src port to the L4 layer in this function
+    UdpBasedSocket::ForwardUp(packet, header, srcQP, incomingInterface);
 }
 
 void
@@ -423,10 +425,10 @@ RoCEv2Socket::BindToNetDevice(Ptr<NetDevice> netdevice)
         m_ccOps->SetReady();
     }
     // Get local ipv4 address
-    m_localAddress = m_boundnetdevice->GetNode()
-                         ->GetObject<Ipv4L3Protocol>()
-                         ->GetAddress(m_boundnetdevice->GetIfIndex(), 0)
-                         .GetAddress();
+    Ptr<Ipv4> ipv4 = GetNode()->GetObject<Ipv4>();
+    NS_ASSERT(ipv4 != nullptr);
+    uint32_t ifn = ipv4->GetInterfaceForDevice(netdevice);
+    m_localAddress = ipv4->GetAddress(ifn, 0).GetLocal();
 }
 
 int
@@ -641,6 +643,7 @@ RoCEv2Socket::Stats::Stats()
       nTotalLossBytes(0),
       tStart(Time(0)),
       tFinish(Time(0)),
+      tFct(Time(0)),
       overallFlowRate(DataRate(0))
 {
     BooleanValue bv;
@@ -668,8 +671,9 @@ RoCEv2Socket::Stats::CollectAndCheck()
     NS_ASSERT_MSG(nTotalSentBytes == nTotalSizeBytes + nTotalLossBytes,
                   "Total sent bytes is not equal to total size bytes plus total loss bytes");
 
+    tFct = tFinish - tStart;
     // Calculate the overallFlowRate
-    overallFlowRate = DataRate(nTotalSizeBytes * 8.0 / (tFinish - tStart).GetSeconds());
+    overallFlowRate = DataRate(nTotalSizeBytes * 8.0 / tFct.GetSeconds());
 }
 
 void

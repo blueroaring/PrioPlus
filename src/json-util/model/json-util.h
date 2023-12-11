@@ -25,6 +25,7 @@
 #include "ns3/dcb-trace-application-helper.h"
 #include "ns3/dcb-trace-application.h"
 #include "ns3/error-model.h"
+#include "ns3/flow-identifier.h"
 #include "ns3/global-route-manager.h"
 #include "ns3/global-value.h"
 #include "ns3/internet-module.h"
@@ -33,6 +34,7 @@
 #include "ns3/packet.h"
 #include "ns3/point-to-point-helper.h"
 #include "ns3/point-to-point-module.h"
+#include "ns3/real-time-application.h"
 #include "ns3/traffic-control-module.h"
 
 #include <boost/json.hpp>
@@ -87,23 +89,38 @@ uint64_t ConvertToUint(const boost::json::value& v);
 
 /**
  * \brief Write statistics to the file specified in the config.
- * 
+ *
  * This function will also write the config to the file to keep the mapping from config to stats.
- * 
+ *
  * \param conf The CDF config in a json object.
  * \param apps The trace application container.
  * \param topology The topology.
  */
-void OutputStats(boost::json::object& conf,
-                 ApplicationContainer& apps,
-                 Ptr<DcTopology> topology);
+void OutputStats(boost::json::object& conf, ApplicationContainer& apps, Ptr<DcTopology> topology);
 
 /**
  * \brief Store the app stats into a json object and return it.
- * 
+ *
  * \return A json object containing the app stats, use shared_ptr as it is a heavy object.
  */
 std::shared_ptr<boost::json::object> ConstructAppStatsObj(ApplicationContainer& apps);
+
+typedef std::map<FlowIdentifier, std::shared_ptr<boost::json::object>>
+    FlowStatsObjMap;
+
+/**
+ * \brief Construct flow stats from sender side.
+ * \param apps The trace application container.
+ * \param mFlowStatsObjs The map to store the flow stats.
+ */
+void ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStatsObjs);
+
+/**
+ * \brief Construct flow stats from receiver side.
+ * \param apps The trace application container.
+ * \param mFlowStatsObjs The map to store the flow stats.
+ */
+void ConstructRealTimeFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStatsObjs);
 
 } // namespace json_util
 

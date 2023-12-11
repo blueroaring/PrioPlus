@@ -32,6 +32,7 @@
 #include "ns3/rocev2-header.h"
 #include "ns3/seq-ts-size-header.h"
 #include "ns3/traced-callback.h"
+#include "ns3/flow-identifier.h"
 
 #include <map>
 
@@ -94,6 +95,7 @@ class TraceApplication : public Application
         uint64_t remainBytes;
         uint32_t destNode;
         const Ptr<Socket> socket;
+        FlowIdentifier flowIdentifier;
 
         Flow(uint64_t s, Time t, uint32_t dest, Ptr<Socket> sock)
             : startTime(t),
@@ -161,6 +163,9 @@ class TraceApplication : public Application
       public:
         // constructor
         Stats();
+        virtual ~Stats() {} // Make the base class polymorphic
+
+        bool isCollected; //<! Whether the stats is collected
 
         uint32_t nTotalSizePkts;  //<! Data size scheduled by application
         uint64_t nTotalSizeBytes; //<! Data size scheduled by application
@@ -177,6 +182,7 @@ class TraceApplication : public Application
 
         // Detailed statistics, only enabled if needed
         bool bDetailedStats;
+        std::map<FlowIdentifier, std::shared_ptr<RoCEv2Socket::Stats>> mFlowStats;
         std::vector<std::shared_ptr<RoCEv2Socket::Stats>>
             vFlowStats; //<! The statistics of each flow
 
@@ -193,6 +199,7 @@ class TraceApplication : public Application
     uint64_t m_totBytes;       //!< Total bytes sent so far
     uint32_t m_headerSize;     //!< total header bytes of a packet
     std::map<Ptr<Socket>, Flow*> m_flows;
+    Ptr<RoCEv2Socket> m_receiverSocket;
 
   private:
     /**
@@ -282,6 +289,8 @@ class TraceApplication : public Application
      */
     Ptr<NetDevice> GetOutboundNetDevice();
 
+    void SetFlowIdentifier(Flow* flow, Ptr<Socket> socket);
+
     std::shared_ptr<Stats> m_stats;
 
     bool m_enableSend;
@@ -302,8 +311,6 @@ class TraceApplication : public Application
     int32_t m_destNode; //!< if not choosing random destination, store the destined node index here
     InetSocketAddress
         m_destAddr; //!< if not choosing random destination, store the destined address here
-
-    Ptr<RoCEv2Socket> m_receiverSocket;
 
     /// traced Callback: transmitted packets.
     TracedCallback<Ptr<const Packet>> m_txTrace;

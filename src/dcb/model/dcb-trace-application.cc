@@ -44,6 +44,7 @@
 #include "ns3/udp-l4-protocol.h"
 #include "ns3/udp-socket-factory.h"
 #include "ns3/uinteger.h"
+#include "ns3/ipv4.h"
 
 #include <cmath>
 
@@ -371,6 +372,7 @@ TraceApplication::ScheduleNextFlow(const Time& startTime)
 
     // XXX If use dest addr, the dest node is not set
     Flow* flow = new Flow(size, startTime, destNode, socket);
+    SetFlowIdentifier(flow, socket);
     m_flows.emplace(socket, flow); // used when flow completes
     Simulator::Schedule(startTime - Simulator::Now(),
                         &TraceApplication::SendNextPacket,
@@ -578,8 +580,34 @@ TraceApplication::GetOutboundNetDevice()
     return boundDev;
 }
 
+void
+TraceApplication::SetFlowIdentifier(Flow* flow, Ptr<Socket> socket)
+{
+    if (m_protoGroup == ProtocolGroup::RoCEv2)
+    {
+        Ptr<RoCEv2Socket> roceSocket = DynamicCast<RoCEv2Socket>(socket);
+        if (roceSocket != nullptr)
+        {
+            Ipv4Address srcAddr = roceSocket->GetLocalAddress();
+            Ipv4Address dstAddr = roceSocket->GetPeerAddress();
+            uint32_t srcQP = roceSocket->GetSrcPort();
+            uint32_t dstQP = roceSocket->GetDstPort();
+            flow->flowIdentifier = FlowIdentifier(srcAddr, dstAddr, srcQP, dstQP);
+        }
+        else
+        {
+            NS_FATAL_ERROR("Socket is not a RoCEv2 socket");
+        }
+    }
+    else
+    {
+        NS_FATAL_ERROR("Flow identifier is not supported for this protocol group");
+    }
+}
+
 TraceApplication::Stats::Stats()
-    : nTotalSizePkts(0),
+    : isCollected(false),
+      nTotalSizePkts(0),
       nTotalSizeBytes(0),
       nTotalSentPkts(0),
       nTotalSentBytes(0),
@@ -587,8 +615,8 @@ TraceApplication::Stats::Stats()
       nTotalDeliverBytes(0),
       nTotalLossPkts(0),
       nTotalLossBytes(0),
-      tStart(Time(0)),
-      tFinish(Time(0)),
+      tStart(Time::Max()),
+      tFinish(Time::Min()),
       overallRate(DataRate(0))
 {
     BooleanValue bv;
@@ -608,6 +636,13 @@ TraceApplication::GetStats() const
 void
 TraceApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
 {
+    // Avoid collecting stats twice
+    if (isCollected)
+    {
+        return;
+    }
+    isCollected = true;
+
     // Collect the statistics
     for (auto [socket, flow] : flows)
     {
@@ -623,15 +658,10 @@ TraceApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
             nTotalDeliverBytes += roceStats->nTotalDeliverBytes;
             nTotalLossPkts += roceStats->nTotalLossPkts;
             nTotalLossBytes += roceStats->nTotalLossBytes;
-            if (tStart == Time(0) || roceStats->tStart < tStart)
-            {
-                tStart = roceStats->tStart;
-            }
-            if (tFinish == Time(0) || roceStats->tFinish > tFinish)
-            {
-                tFinish = roceStats->tFinish;
-            }
+            tStart = std::min(tStart, roceStats->tStart);
+            tFinish = std::max(tFinish, roceStats->tFinish);
 
+            mFlowStats[flow->flowIdentifier] = roceStats;
             vFlowStats.push_back(roceStats);
         }
     }

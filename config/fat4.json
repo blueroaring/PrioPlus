@@ -3,7 +3,7 @@
         "topo": "config/topo/fat4.txt"
     },
     "outputFile": {
-        "resultFile": "data/fat4-goodsetting-25ms.json"
+        "resultFile": "data/fat4-goodsetting-30load-1ms.json"
     },
     "runtimeConfig": {
         "seed": 8259,
@@ -43,9 +43,9 @@
             "queues": 8
         },
         "switchPortQueue": {
-            "pfcReserve": "60KiB",
-            "pfcXon": "50KiB",
-            "ecnKMin": "5KiB",
+            "pfcReserve": "500KiB",
+            "pfcXon": "450KiB",
+            "ecnKMin": "20KiB",
             "ecnKMax": "200KiB",
             "ecnPMax": 0.01
         },
@@ -64,9 +64,9 @@
                 "avgSize": 0,
                 "scaleFactor": 1
             },
-            "load": 0.6,
+            "load": 0.3,
             "startTime": "0.1s",
-            "stopTime": "0.125s"
+            "stopTime": "0.101s"
         }
     ]
 }

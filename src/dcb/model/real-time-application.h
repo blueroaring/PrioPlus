@@ -62,23 +62,38 @@ class RealTimeApplication : public TraceApplication
         // constructor
         Stats();
 
-        // XXX Only support one flow now
-        uint32_t nMaxRecvSeq;          //<! Max sequence number of the received packet
-        uint32_t nPktLoss;              // number of packet loss
-        std::vector<Time> vArriveDelay; // delay from packet arrive to packet received
-        std::vector<Time> vTxDelay;     // delay from packet sent to packet received
+        bool isCollected; //<! Whether the stats is collected
 
-        // Variables used to calculate the average rate of real time flow
-        uint32_t nTotalRecvPkts;     // total bytes of the flow
-        uint64_t nTotalRecvBytes;    // total bytes of the flow
-        Time tFirstPktArrive;        // time of first packet arrived
-        Time tFirstPktRecv;          // time of first packet received
-        Time tLastPktRecv;           // time of last packet received
-        DataRate rAvgRateFromArrive; // average rate from first packet arrive
-        DataRate rAvgRateFromRecv;   // average rate from first packet received
+        class FlowStats
+        {
+          public:
+            FlowStats();
 
-        // Detailed statistics, only enabled if needed
-        std::vector<std::pair<Time, uint32_t>> vRecvPkt;
+            uint32_t nMaxRecvSeq;           //<! Max sequence number of the received packet
+            uint32_t nPktLoss;              // number of packet loss
+            std::vector<Time> vArriveDelay; // delay from packet arrive to packet received
+            std::vector<Time> vTxDelay;     // delay from packet sent to packet received
+
+            // Variables used to calculate the average rate of real time flow
+            uint32_t nTotalRecvPkts;     // total bytes of the flow
+            uint64_t nTotalRecvBytes;    // total bytes of the flow
+            Time tFirstPktArrive;        // time of first packet arrived
+            Time tFirstPktRecv;          // time of first packet received
+            Time tLastPktRecv;           // time of last packet received
+            DataRate rAvgRateFromArrive; // average rate from first packet arrive
+            DataRate rAvgRateFromRecv;   // average rate from first packet received
+
+            // Detailed statistics, only enabled if needed
+            bool bDetailedStats;
+            std::vector<std::pair<Time, uint32_t>> vRecvPkt;
+
+            // Collect the statistics and check if the statistics is correct
+            void CollectAndCheck();
+
+            // No getter for simplicity
+        };
+
+        std::map<FlowIdentifier, std::shared_ptr<FlowStats>> mflowStats;
 
         // Collect the statistics and check if the statistics is correct
         void CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows);

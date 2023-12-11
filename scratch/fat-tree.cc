@@ -109,43 +109,43 @@ main(int argc, char* argv[])
     // Install applications
     ApplicationContainer apps = json_util::InstallApplications(configObj, topology);
 
-    // Debug trace
-    Config::ConnectWithoutContext("/NodeList/*/DeviceList/*/PhyTxBeginWithId",
-                                  MakeCallback(&PhyTxBegin));
-    // Bind the callback to the pausable queue disc, no config system can be used
-    Config::MatchContainer devs = Config::LookupMatches("/NodeList/*/DeviceList/*");
-    for (auto& dev : devs)
-    {
-        Ptr<DcbNetDevice> device = DynamicCast<DcbNetDevice>(dev);
-        if (device == nullptr)
-        {
-            continue;
-        }
-        Ptr<PausableQueueDisc> qdisc = device->GetQueueDisc();
-        if (qdisc != nullptr)
-        {
-            qdisc->TraceConnectWithoutContext("EnqueueWithId", MakeCallback(&QdiscEnqueueWithId));
-        }
-    }
-    // Bind the PFC traces
-    Config::MatchContainer tcs = Config::LookupMatches("/NodeList/*/$ns3::DcbTrafficControl");
-    for (auto& tc : tcs)
-    {
-        Ptr<DcbTrafficControl> trafficControl = DynamicCast<DcbTrafficControl>(tc);
-        if (trafficControl == nullptr)
-        {
-            continue;
-        }
-        std::vector<DcbTrafficControl::PortInfo> ports = trafficControl->GetPorts();
-        for (auto& port : ports)
-        {
-            Ptr<ns3::DcbPfcPort> fc = DynamicCast<ns3::DcbPfcPort>(port.GetFC());
-            if (fc == nullptr)
-                continue;
-            port.GetFC()->TraceConnectWithoutContext("PfcSent", MakeCallback(&PfcSent));
-            port.GetFC()->TraceConnectWithoutContext("PfcReceived", MakeCallback(&PfcReceived));
-        }
-    }
+    // // Debug trace
+    // Config::ConnectWithoutContext("/NodeList/*/DeviceList/*/PhyTxBeginWithId",
+    //                               MakeCallback(&PhyTxBegin));
+    // // Bind the callback to the pausable queue disc, no config system can be used
+    // Config::MatchContainer devs = Config::LookupMatches("/NodeList/*/DeviceList/*");
+    // for (auto& dev : devs)
+    // {
+    //     Ptr<DcbNetDevice> device = DynamicCast<DcbNetDevice>(dev);
+    //     if (device == nullptr)
+    //     {
+    //         continue;
+    //     }
+    //     Ptr<PausableQueueDisc> qdisc = device->GetQueueDisc();
+    //     if (qdisc != nullptr)
+    //     {
+    //         qdisc->TraceConnectWithoutContext("EnqueueWithId", MakeCallback(&QdiscEnqueueWithId));
+    //     }
+    // }
+    // // Bind the PFC traces
+    // Config::MatchContainer tcs = Config::LookupMatches("/NodeList/*/$ns3::DcbTrafficControl");
+    // for (auto& tc : tcs)
+    // {
+    //     Ptr<DcbTrafficControl> trafficControl = DynamicCast<DcbTrafficControl>(tc);
+    //     if (trafficControl == nullptr)
+    //     {
+    //         continue;
+    //     }
+    //     std::vector<DcbTrafficControl::PortInfo> ports = trafficControl->GetPorts();
+    //     for (auto& port : ports)
+    //     {
+    //         Ptr<ns3::DcbPfcPort> fc = DynamicCast<ns3::DcbPfcPort>(port.GetFC());
+    //         if (fc == nullptr)
+    //             continue;
+    //         port.GetFC()->TraceConnectWithoutContext("PfcSent", MakeCallback(&PfcSent));
+    //         port.GetFC()->TraceConnectWithoutContext("PfcReceived", MakeCallback(&PfcReceived));
+    //     }
+    // }
 
     tracer_extension::ConfigOutputDirectory("data");
     tracer_extension::ConfigTraceFCT(tracer_extension::Protocol::RoCEv2, "fct.csv");

@@ -561,7 +561,22 @@ OutputStats(boost::json::object& conf, ApplicationContainer& apps, Ptr<DcTopolog
     outputObj["config"] = conf;
     std::shared_ptr<boost::json::object> appStatsObj = ConstructAppStatsObj(apps);
     outputObj["overallStatistics"] = appStatsObj->find("overallStatistics")->value();
-    outputObj["flowStatistics"] = appStatsObj->find("flowStatistics")->value();
+    
+    // Construct flow statistics
+    FlowStatsObjMap mFlowStatsObjs;
+    ConstructSenderFlowStats(apps, mFlowStatsObjs);
+    ConstructRealTimeFlowStats(apps, mFlowStatsObjs);
+    boost::json::array flowStatsArray;
+    uint32_t flowId = 0;
+    std::cout << mFlowStatsObjs.size() << std::endl;
+    for (auto kvPair : mFlowStatsObjs)
+    {
+        // Replace the flow id at the beginning of the object
+        kvPair.second->find("flowId")->value() = flowId++;
+        flowStatsArray.emplace_back(*kvPair.second);
+        // std::cout << "Flow " << flowId << " statistics" << std::endl;
+    }
+    outputObj["flowStatistics"] = flowStatsArray;
 
     // Write the output object to file
     PrettyPrint(ofs, outputObj);
@@ -572,7 +587,6 @@ ConstructAppStatsObj(ApplicationContainer& apps)
 {
     std::shared_ptr<boost::json::object> appStatsObj = std::make_shared<boost::json::object>();
     boost::json::object overallStatsObj;
-    boost::json::array flowStatsArray;
 
     // Variables used to calculate overall statistics
     // The start time of the first flow and the end time of the last flow
@@ -586,8 +600,6 @@ ConstructAppStatsObj(ApplicationContainer& apps)
     // FCT of all flows, used to calculate the average and percentile FCT
     std::vector<Time> vFct;
 
-    // Get statistics from apps
-    uint32_t flowId = 0;
     for (uint32_t i = 0; i < apps.GetN(); ++i)
     {
         Ptr<TraceApplication> app = DynamicCast<TraceApplication>(apps.Get(i));
@@ -604,19 +616,69 @@ ConstructAppStatsObj(ApplicationContainer& apps)
         totalLossBytes += appStats->nTotalLossBytes;
 
         // Per flow statistics
-        std::vector<std::shared_ptr<ns3::RoCEv2Socket::Stats>> vFlowStats = appStats->vFlowStats;
-        for (auto flowStats : vFlowStats)
+        auto mFlowStats = appStats->mFlowStats;
+        for (auto pFlowStats : mFlowStats)
         {
-            boost::json::object flowStatsObj;
-            flowStatsObj["flowId"] = flowId++;
-            flowStatsObj["totalSizePkts"] = flowStats->nTotalSizePkts;
-            flowStatsObj["totalSizeBytes"] = flowStats->nTotalSizeBytes;
-            flowStatsObj["totalLossPkts"] = flowStats->nTotalLossPkts;
-            flowStatsObj["totalLossBytes"] = flowStats->nTotalLossBytes;
-            Time fct = flowStats->tFinish - flowStats->tStart;
-            vFct.push_back(fct);
-            flowStatsObj["fctNs"] = fct.GetNanoSeconds();
-            flowStatsObj["overallFlowRate"] = flowStats->overallFlowRate.GetBitRate();
+            vFct.push_back(pFlowStats.second->tFct);
+        }
+    }
+
+    // Calculate overall statistics
+    overallStatsObj["totalThroughputBps"] =
+        totalBytes * 8.0 / (finishTime - startTime).GetSeconds();
+    overallStatsObj["totalLossRatePkt"] = double(totalLossPkts) / totalPkts;
+    overallStatsObj["totalLossRateByte"] = double(totalLossBytes) / totalBytes;
+    // Calculate average and percentile FCT
+    std::sort(vFct.begin(), vFct.end());
+    uint32_t nFct = vFct.size();
+    // Average FCT is calculated by the total FCT / number of flows
+    Time avgFct = std::accumulate(vFct.begin(), vFct.end(), Time(0)) / nFct;
+    Time p95Fct = vFct[0.95 * nFct];
+    Time p99Fct = vFct[0.99 * nFct];
+    Time p999Fct = vFct[0.999 * nFct];
+    overallStatsObj["avgFctNs"] = avgFct.GetNanoSeconds();
+    overallStatsObj["p95FctNs"] = p95Fct.GetNanoSeconds();
+    overallStatsObj["p99FctNs"] = p99Fct.GetNanoSeconds();
+    overallStatsObj["p999FctNs"] = p999Fct.GetNanoSeconds();
+
+    appStatsObj->emplace("overallStatistics", overallStatsObj);
+    return appStatsObj;
+}
+
+void
+ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStatsObjs)
+{
+    for (uint32_t i = 0; i < apps.GetN(); ++i)
+    {
+        Ptr<TraceApplication> app = DynamicCast<TraceApplication>(apps.Get(i));
+        if (app == nullptr)
+            continue;
+        auto appStats = app->GetStats();
+
+        // Per flow statistics
+        auto mFlowStats = appStats->mFlowStats;
+        for (auto pFlowStats : mFlowStats)
+        {
+            FlowIdentifier flowIdentifier = pFlowStats.first;
+            auto flowStats = pFlowStats.second;
+            // In this function, we will create a new json object for each flow
+            // and store it in the map
+            auto flowStatsObj = std::make_shared<boost::json::object>();
+            mFlowStatsObjs.insert(std::make_pair(flowIdentifier, flowStatsObj));
+            // mFlowStatsObjs[flowIdentifier] = flowStatsObj;
+
+            (*flowStatsObj)["flowId"] = 0; // This will be filled later
+            (*flowStatsObj)["flowIdentifier"] =
+                boost::json::object{{"srcAddr", flowIdentifier.GetSrcAddrString()},
+                                    {"srcPort", flowIdentifier.srcPort},
+                                    {"dstAddr", flowIdentifier.GetDstAddrString()},
+                                    {"dstPort", flowIdentifier.dstPort}};
+            (*flowStatsObj)["totalSizePkts"] = flowStats->nTotalSizePkts;
+            (*flowStatsObj)["totalSizeBytes"] = flowStats->nTotalSizeBytes;
+            (*flowStatsObj)["totalLossPkts"] = flowStats->nTotalLossPkts;
+            (*flowStatsObj)["totalLossBytes"] = flowStats->nTotalLossBytes;
+            (*flowStatsObj)["fctNs"] = flowStats->tFct.GetNanoSeconds();
+            (*flowStatsObj)["overallFlowRate"] = flowStats->overallFlowRate.GetBitRate();
 
             // Detailed statistics
             if (flowStats->bDetailedStats)
@@ -650,37 +712,77 @@ ConstructAppStatsObj(ApplicationContainer& apps)
                                             {"sizeByte", sentPkt.second}});
                 }
 
-                flowStatsObj["ccRate"] = ccRateArray;
-                flowStatsObj["ccCwnd"] = ccCwndArray;
-                flowStatsObj["recvEcn"] = recvEcnArray;
-                flowStatsObj["sentPkt"] = sentPktArray;
+                (*flowStatsObj)["ccRate"] = ccRateArray;
+                (*flowStatsObj)["ccCwnd"] = ccCwndArray;
+                (*flowStatsObj)["recvEcn"] = recvEcnArray;
+                (*flowStatsObj)["sentPkt"] = sentPktArray;
             }
-
-            flowStatsArray.push_back(flowStatsObj);
         }
     }
+}
 
-    // Calculate overall statistics
-    overallStatsObj["totalThroughputBps"] =
-        totalBytes * 8.0 / (finishTime - startTime).GetSeconds();
-    overallStatsObj["totalLossRatePkt"] = double(totalLossPkts) / totalPkts;
-    overallStatsObj["totalLossRateByte"] = double(totalLossBytes) / totalBytes;
-    // Calculate average and percentile FCT
-    std::sort(vFct.begin(), vFct.end());
-    uint32_t nFct = vFct.size();
-    // Average FCT is calculated by the total FCT / number of flows
-    Time avgFct = std::accumulate(vFct.begin(), vFct.end(), Time(0)) / nFct;
-    Time p95Fct = vFct[0.95 * nFct];
-    Time p99Fct = vFct[0.99 * nFct];
-    Time p999Fct = vFct[0.999 * nFct];
-    overallStatsObj["avgFctNs"] = avgFct.GetNanoSeconds();
-    overallStatsObj["p95FctNs"] = p95Fct.GetNanoSeconds();
-    overallStatsObj["p99FctNs"] = p99Fct.GetNanoSeconds();
-    overallStatsObj["p999FctNs"] = p999Fct.GetNanoSeconds();
+void
+ConstructRealTimeFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStatsObjs)
+{
+    for (uint32_t i = 0; i < apps.GetN(); ++i)
+    {
+        Ptr<RealTimeApplication> app = DynamicCast<RealTimeApplication>(apps.Get(i));
+        if (app == nullptr)
+            continue;
+        auto appStats = app->GetStats();
+        std::shared_ptr<RealTimeApplication::Stats> rtaStats =
+            std::dynamic_pointer_cast<RealTimeApplication::Stats>(appStats);
+        if (rtaStats == nullptr)
+        {
+            NS_FATAL_ERROR("Cannot cast to RealTimeApplication::Stats");
+        }
 
-    appStatsObj->emplace("overallStatistics", overallStatsObj);
-    appStatsObj->emplace("flowStatistics", flowStatsArray);
-    return appStatsObj;
+        for (auto pFlowStats : rtaStats->mflowStats)
+        {
+            FlowIdentifier flowIdentifier = pFlowStats.first;
+            auto flowStats = pFlowStats.second;
+            // In this function, every flow should already have a json object
+            // We just need to add the real time stats to the object
+            auto flowStatsObj = mFlowStatsObjs[flowIdentifier];
+
+            (*flowStatsObj)["throughputFromArriveBps"] = flowStats->rAvgRateFromArrive.GetBitRate();
+            (*flowStatsObj)["throughputFromRecvBps"] = flowStats->rAvgRateFromRecv.GetBitRate();
+
+            // Calculate average and percentile delay
+            std::vector<Time> vArriveDelay = flowStats->vArriveDelay;
+            std::vector<Time> vTxDelay = flowStats->vTxDelay;
+            std::sort(vArriveDelay.begin(), vArriveDelay.end());
+            std::sort(vTxDelay.begin(), vTxDelay.end());
+            uint32_t nArriveDelay = vArriveDelay.size();
+            uint32_t nTxDelay = vTxDelay.size();
+            Time avgArriveDelay =
+                std::accumulate(vArriveDelay.begin(), vArriveDelay.end(), Time(0)) / nArriveDelay;
+            Time avgTxDelay = std::accumulate(vTxDelay.begin(), vTxDelay.end(), Time(0)) / nTxDelay;
+            Time p95ArriveDelay = vArriveDelay[0.95 * nArriveDelay];
+            Time p99ArriveDelay = vArriveDelay[0.99 * nArriveDelay];
+            Time p95TxDelay = vTxDelay[0.95 * nTxDelay];
+            Time p99TxDelay = vTxDelay[0.99 * nTxDelay];
+            (*flowStatsObj)["avgArriveDelayNs"] = avgArriveDelay.GetNanoSeconds();
+            (*flowStatsObj)["p95ArriveDelayNs"] = p95ArriveDelay.GetNanoSeconds();
+            (*flowStatsObj)["p99ArriveDelayNs"] = p99ArriveDelay.GetNanoSeconds();
+            (*flowStatsObj)["avgTxDelayNs"] = avgTxDelay.GetNanoSeconds();
+            (*flowStatsObj)["p95TxDelayNs"] = p95TxDelay.GetNanoSeconds();
+            (*flowStatsObj)["p99TxDelayNs"] = p99TxDelay.GetNanoSeconds();
+
+            // Add detailed stats
+            if (rtaStats->bDetailedStats)
+            {
+                boost::json::array recvPktArray;
+                for (auto recvPkt : flowStats->vRecvPkt)
+                {
+                    recvPktArray.emplace_back(
+                        boost::json::object{{"timeNs", recvPkt.first.GetNanoSeconds()},
+                                            {"sizeByte", recvPkt.second}});
+                }
+                (*flowStatsObj)["recvPkt"] = recvPktArray;
+            }
+        }
+    }
 }
 
 } // namespace json_util
