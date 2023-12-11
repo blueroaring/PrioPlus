@@ -46,15 +46,9 @@ FlowIdentifier::FlowIdentifier(const FlowIdentifier& other)
 bool
 FlowIdentifier::operator<(const FlowIdentifier& other) const
 {
-    return srcAddr < other.srcAddr || dstAddr < other.dstAddr || srcPort < other.srcPort ||
-           dstPort < other.dstPort;
-}
-
-bool
-FlowIdentifier::operator<=(const FlowIdentifier& other) const
-{
-    return srcAddr.Get() <= other.srcAddr.Get() || dstAddr.Get() <= other.dstAddr.Get() ||
-           srcPort <= other.srcPort || dstPort <= other.dstPort;
+    // Compare via tuple
+    return std::tuple(srcAddr, dstAddr, srcPort, dstPort) <
+           std::tuple(other.srcAddr, other.dstAddr, other.srcPort, other.dstPort);
 }
 
 bool

@@ -663,8 +663,8 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
             // In this function, we will create a new json object for each flow
             // and store it in the map
             auto flowStatsObj = std::make_shared<boost::json::object>();
-            mFlowStatsObjs.insert(std::make_pair(flowIdentifier, flowStatsObj));
-            // mFlowStatsObjs[flowIdentifier] = flowStatsObj;
+            // mFlowStatsObjs.insert(std::make_pair(flowIdentifier, flowStatsObj));
+            mFlowStatsObjs[flowIdentifier] = flowStatsObj;
 
             (*flowStatsObj)["flowId"] = 0; // This will be filled later
             (*flowStatsObj)["flowIdentifier"] =

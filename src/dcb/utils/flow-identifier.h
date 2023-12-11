@@ -34,7 +34,6 @@ class FlowIdentifier
     FlowIdentifier(const FlowIdentifier& other);
 
     bool operator<(const FlowIdentifier& other) const;
-    bool operator<=(const FlowIdentifier& other) const;
     bool operator==(const FlowIdentifier& other) const;
     // overload operator=
     FlowIdentifier& operator=(const FlowIdentifier& other);
