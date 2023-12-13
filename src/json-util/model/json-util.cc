@@ -594,8 +594,9 @@ ConstructAppStatsObj(ApplicationContainer& apps)
     // Total bytes of all flows, used to calculate the total throughput rate
     uint32_t totalPkts = 0;
     uint64_t totalBytes = 0;
-    uint32_t totalLossPkts = 0;
-    uint64_t totalLossBytes = 0;
+    uint32_t totalSentPkts = 0;
+    uint64_t totalSentBytes = 0;
+    uint32_t retxCount = 0;
     // FCT of all flows, used to calculate the average and percentile FCT
     std::vector<Time> vFct;
 
@@ -611,8 +612,9 @@ ConstructAppStatsObj(ApplicationContainer& apps)
         finishTime = std::max(finishTime, appStats->tFinish);
         totalPkts += appStats->nTotalSizePkts;
         totalBytes += appStats->nTotalSizeBytes;
-        totalLossPkts += appStats->nTotalLossPkts;
-        totalLossBytes += appStats->nTotalLossBytes;
+        totalSentPkts += appStats->nTotalSentPkts;
+        totalSentBytes += appStats->nTotalSentBytes;
+        retxCount += appStats->nRetxCount;
 
         // Per flow statistics
         auto mFlowStats = appStats->mFlowStats;
@@ -625,8 +627,8 @@ ConstructAppStatsObj(ApplicationContainer& apps)
     // Calculate overall statistics
     overallStatsObj["totalThroughputBps"] =
         totalBytes * 8.0 / (finishTime - startTime).GetSeconds();
-    overallStatsObj["totalLossRatePkt"] = double(totalLossPkts) / totalPkts;
-    overallStatsObj["totalLossRateByte"] = double(totalLossBytes) / totalBytes;
+    overallStatsObj["totalRetxRatePkt"] = double(totalSentPkts - totalPkts) / totalPkts;
+    overallStatsObj["totalRetxRateByte"] = double(totalSentBytes - totalBytes) / totalBytes;
     // Calculate average and percentile FCT
     std::sort(vFct.begin(), vFct.end());
     uint32_t nFct = vFct.size();
@@ -674,8 +676,7 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                                     {"dstPort", flowIdentifier.dstPort}};
             (*flowStatsObj)["totalSizePkts"] = flowStats->nTotalSizePkts;
             (*flowStatsObj)["totalSizeBytes"] = flowStats->nTotalSizeBytes;
-            (*flowStatsObj)["totalLossPkts"] = flowStats->nTotalLossPkts;
-            (*flowStatsObj)["totalLossBytes"] = flowStats->nTotalLossBytes;
+            (*flowStatsObj)["retxCount"] = flowStats->nRetxCount;
             (*flowStatsObj)["fctNs"] = flowStats->tFct.GetNanoSeconds();
             (*flowStatsObj)["overallFlowRate"] = flowStats->overallFlowRate.GetBitRate();
 

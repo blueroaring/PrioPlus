@@ -56,3 +56,6 @@ vcpkg/
 .cache/
 
 data/
+
+# Ignore patches
+*.patch

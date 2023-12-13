@@ -173,8 +173,7 @@ class TraceApplication : public Application
         uint64_t nTotalSentBytes;
         uint32_t nTotalDeliverPkts; //<! Data pkts successfully delivered to peer upper layer
         uint64_t nTotalDeliverBytes;
-        uint32_t nTotalLossPkts; //<! Data pkts lost and retxed
-        uint64_t nTotalLossBytes;
+        uint32_t nRetxCount; //<! Number of retransmission
         Time tStart;          //<! Time of the first flow start
         Time tFinish;         //<! Time of the last flow finish
         DataRate overallRate; //<! overall rate, calculate by total size / (first flow arrive -

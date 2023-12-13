@@ -144,8 +144,8 @@ RoCEv2Socket::SendPendingPacket()
     if (rateRatio > 1e-6)
     {
         // [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] =
-        //     m_buffer.GetNextShouldSent();
-        const DcbTxBuffer::DcbTxBufferItem& item = m_buffer.GetNextShouldSent();
+        //     m_buffer.PeekNextShouldSent();
+        const DcbTxBuffer::DcbTxBufferItem& item = m_buffer.PopNextShouldSent();
         const uint32_t sz = item.m_payload->GetSize() + 8 + 20 + 14;
         DoSendDataPacket(item);
 
@@ -187,6 +187,10 @@ RoCEv2Socket::DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item)
     m_stats->nTotalSentBytes += payload->GetSize();
     // TODO Only payload size is recorded now
     m_stats->RecordSentPkt(payload->GetSize());
+
+    // Used to debug
+    NS_LOG_DEBUG("Send packet " << rocev2Header.GetPSN() << " at "
+                                << Simulator::Now().GetNanoSeconds() << "ns.");
 }
 
 void
@@ -229,12 +233,14 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
     switch (aeth.GetSyndromeType())
     {
     case AETHeader::SyndromeType::FC_DISABLED: { // normal ACK
-        // XXX Why only pop out the first packet?
-        uint32_t psn = m_buffer.Pop().m_psn; // packet acked, pop out from buffer
-        if (psn != roce.GetPSN())
-        {
-            NS_FATAL_ERROR("RoCEv2 socket receive an ACK with PSN not expected");
-        }
+        uint32_t psn = m_buffer.Front().m_psn;   // The PSN expected to be ACKed
+        // The following judgement only reasonalbe under per-packet ack and lossless network
+        // if (psn != roce.GetPSN())
+        // {
+        //     NS_FATAL_ERROR("RoCEv2 socket receive an ACK with PSN not expected");
+        // }
+        m_buffer.AcknowledgeTo(roce.GetPSN());
+
         if (psn + 1 == m_psnEnd)
         { // last ACk received, flow finshed
             NotifyFlowCompletes();
@@ -341,14 +347,17 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
 }
 
 void
-RoCEv2Socket::GoBackN(uint32_t lostPSN) const
+RoCEv2Socket::GoBackN(uint32_t lostPSN)
 {
     // DcbTxBuffer::DcbTxBufferItemI item = m_buffer.FindPSN(lostPSN);
-    NS_LOG_WARN("Go-back-N not implemented. Packet lost or out-of-order happens. Sender is node "
-                << Simulator::GetContext() << " at time " << Simulator::Now().GetNanoSeconds()
-                << "ns.");
+    NS_LOG_WARN("Go-back-N to " << lostPSN << " at time " << Simulator::Now().GetNanoSeconds()
+                                << "ns.");
+    m_buffer.RetransmitFrom(lostPSN);
+    // Don't forget to call SendPendingPacket to send the retransmitted packets
+    SendPendingPacket();
 
-    // TODO Record the statistics
+    // Record the retx count
+    m_stats->nRetxCount++;
 }
 
 void
@@ -538,7 +547,7 @@ DcbTxBuffer::GetTypeId(void)
 }
 
 DcbTxBuffer::DcbTxBuffer()
-    : m_sentIdx(0)
+    : m_frontPsn(0)
 {
 }
 
@@ -550,6 +559,7 @@ DcbTxBuffer::Push(uint32_t psn,
                   Ptr<Ipv4Route> route)
 {
     m_buffer.emplace_back(psn, header, packet, daddr, route);
+    m_txQueue.push(psn);
 }
 
 const DcbTxBuffer::DcbTxBufferItem&
@@ -558,27 +568,49 @@ DcbTxBuffer::Front() const
     return m_buffer.front();
 }
 
-DcbTxBuffer::DcbTxBufferItem
-DcbTxBuffer::Pop()
+void
+DcbTxBuffer::AcknowledgeTo(uint32_t psn)
 {
-    DcbTxBuffer::DcbTxBufferItem item = std::move(m_buffer.front());
-    m_buffer.pop_front();
-    if (m_sentIdx)
+    NS_ASSERT_MSG(psn >= m_frontPsn, "PSN to be acknowledged is smaller than the front PSN.");
+    NS_ASSERT_MSG(psn < TotalSize(), "PSN to be acknowledged is larger than the total size.");
+    // Release the acknowledged packets in the buffer
+    while (m_frontPsn <= psn)
     {
-        m_sentIdx--;
+        m_buffer.pop_front();
+        m_frontPsn++;
     }
-    return item;
+    // Remove all acked packets in the txQueue
+    while (m_txQueue.top() <= psn && m_txQueue.size() != 0)
+    {
+        m_txQueue.pop();
+    }
+    // m_buffer.size() == 0 means all packets have been acked
+    NS_ASSERT_MSG(m_frontPsn == m_buffer.front().m_psn || m_buffer.size() == 0,
+                  "The buffer's order has broken.");
 }
 
 const DcbTxBuffer::DcbTxBufferItem&
-DcbTxBuffer::GetNextShouldSent()
+DcbTxBuffer::PeekNextShouldSent()
 {
-    // TODO The next should send packet could not be the packet who is pointed by sentIdx
-    if (m_buffer.size() - m_sentIdx)
+    // Check whether has packet to send
+    uint32_t nextSendPsn = m_txQueue.top();
+    if (TotalSize() - nextSendPsn)
     {
-        return m_buffer.at(m_sentIdx++);
+        return m_buffer.at(nextSendPsn - m_frontPsn);
     }
     NS_FATAL_ERROR("DcbTxBuffer has no packet to be sent.");
+}
+
+const DcbTxBuffer::DcbTxBufferItem&
+DcbTxBuffer::PopNextShouldSent()
+{
+    const DcbTxBufferItem& item = PeekNextShouldSent();
+    // If there are duplicate PSNs in the buffer, pop them all
+    while (m_txQueue.top() == item.m_psn && m_txQueue.size() != 0)
+    {
+        m_txQueue.pop();
+    }
+    return item;
 }
 
 uint32_t
@@ -588,21 +620,25 @@ DcbTxBuffer::Size() const
 }
 
 uint32_t
+DcbTxBuffer::TotalSize() const
+{
+    // m_buffer.size() + m_frontPsn = total number of packets to send
+    return m_buffer.size() + m_frontPsn;
+}
+
+uint32_t
 DcbTxBuffer::GetSizeToBeSent() const
 {
-    return m_buffer.size() - m_sentIdx;
+    return m_txQueue.size();
 }
 
 DcbTxBuffer::DcbTxBufferItemI
 DcbTxBuffer::FindPSN(uint32_t psn) const
 {
-    for (auto it = m_buffer.cbegin(); it != m_buffer.cend(); it++)
-    {
-        if (psn == (*it).m_psn)
-        {
-            return it;
-        }
-    }
+    NS_ASSERT_MSG(psn < TotalSize(), "PSN not found in DcbTxBuffer");
+    auto it = m_buffer.cbegin() + (psn - m_frontPsn);
+    NS_ASSERT_MSG((*it).m_psn == psn,
+                  "The found PSN is not the expected one, the buffer's order has broken.");
     return End();
 }
 
@@ -610,6 +646,26 @@ DcbTxBuffer::DcbTxBufferItemI
 DcbTxBuffer::End() const
 {
     return m_buffer.cend();
+}
+
+void
+DcbTxBuffer::Retransmit(uint32_t psn)
+{
+    NS_ASSERT_MSG(psn < TotalSize(), "PSN to be retransmitted is larger than the total size.");
+    NS_ASSERT_MSG(psn >= m_frontPsn, "PSN to be retransmitted not in the buffer.");
+    m_txQueue.push(psn);
+}
+
+void
+DcbTxBuffer::RetransmitFrom(uint32_t psn)
+{
+    NS_ASSERT_MSG(psn < TotalSize(), "PSN to be retransmitted is larger than the total size.");
+    // Push all psn from the given psn to the txQueue
+    // There will be many duplicate PSNs in the txQueue, which will be removed when poping
+    for (uint32_t i = psn; i < TotalSize(); i++)
+    {
+        Retransmit(i);
+    }
 }
 
 DcbTxBuffer::DcbTxBufferItem::DcbTxBufferItem(uint32_t psn,
@@ -649,8 +705,7 @@ RoCEv2Socket::Stats::Stats()
       nTotalSentBytes(0),
       nTotalDeliverPkts(0),
       nTotalDeliverBytes(0),
-      nTotalLossPkts(0),
-      nTotalLossBytes(0),
+      nRetxCount(0),
       tStart(Time(0)),
       tFinish(Time(0)),
       tFct(Time(0)),
@@ -678,8 +733,6 @@ RoCEv2Socket::Stats::CollectAndCheck()
     NS_ASSERT_MSG(tStart <= tFinish, "The flow has not finished yet.");
     // NS_ASSERT_MSG(nTotalSizeBytes == nTotalDeliverBytes,
     //               "Total size bytes is not equal to total deliver bytes");
-    NS_ASSERT_MSG(nTotalSentBytes == nTotalSizeBytes + nTotalLossBytes,
-                  "Total sent bytes is not equal to total size bytes plus total loss bytes");
 
     tFct = tFinish - tStart;
     // Calculate the overallFlowRate

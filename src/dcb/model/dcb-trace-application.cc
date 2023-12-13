@@ -613,8 +613,7 @@ TraceApplication::Stats::Stats()
       nTotalSentBytes(0),
       nTotalDeliverPkts(0),
       nTotalDeliverBytes(0),
-      nTotalLossPkts(0),
-      nTotalLossBytes(0),
+      nRetxCount(0),
       tStart(Time::Max()),
       tFinish(Time::Min()),
       overallRate(DataRate(0))
@@ -656,8 +655,7 @@ TraceApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
             nTotalSentBytes += roceStats->nTotalSentBytes;
             nTotalDeliverPkts += roceStats->nTotalDeliverPkts;
             nTotalDeliverBytes += roceStats->nTotalDeliverBytes;
-            nTotalLossPkts += roceStats->nTotalLossPkts;
-            nTotalLossBytes += roceStats->nTotalLossBytes;
+            nRetxCount += roceStats->nRetxCount;
             tStart = std::min(tStart, roceStats->tStart);
             tFinish = std::max(tFinish, roceStats->tFinish);
 

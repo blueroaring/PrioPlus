@@ -67,21 +67,54 @@ class DcbTxBuffer : public Object
               Ptr<Packet> payload,
               Ipv4Address daddr,
               Ptr<Ipv4Route> route);
+    /**
+     * \brief Get the front item of the buffer.
+     */
     const DcbTxBufferItem& Front() const;
-    DcbTxBufferItem Pop();
-    const DcbTxBufferItem& GetNextShouldSent();
+    // We do not need pop, to avoid mistakes
+    /**
+     * \brief Remove the item to given PSN.
+     * \param psn PSN which has been acknowledged.
+     */
+    void AcknowledgeTo(uint32_t psn);
+    /**
+     * \brief Get the next item to be sent.
+     */
+    const DcbTxBufferItem& PeekNextShouldSent();
+    /**
+     * \brief Remove the next item to be sent.
+     */
+    const DcbTxBufferItem& PopNextShouldSent();
+    /**
+     * \brief Return the number of packets in the buffer.
+     */
     uint32_t Size() const;
     /**
-     * Number of packets left to be sent
+     * \brief Return the number of packets should be sent.
+     */
+    uint32_t TotalSize() const;
+    /**
+     * \brief Number of packets left to be sent
      */
     uint32_t GetSizeToBeSent() const;
+    /**
+     * \brief Add a PSN to the txQueue.
+     * Called when a packet with the PSN is desired to be retransmit.
+     */
+    void Retransmit(uint32_t psn);
+    /**
+     * \brief Retansmit all packets from the given PSN, i.e., go back N.
+     * \return the number of packets to be retransmitted.
+     */
+    void RetransmitFrom(uint32_t psn);
 
     DcbTxBufferItemI FindPSN(uint32_t psn) const;
     DcbTxBufferItemI End() const;
 
   private:
     std::deque<DcbTxBufferItem> m_buffer;
-    uint32_t m_sentIdx; // Idx to send now, which is according to the buffer but not PSN
+    uint32_t m_frontPsn; // PSN of the front item in the buffer. Only increase when acked.
+    std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>> m_txQueue; // PSN of the items to be sent
 
 }; // class DcbTxBuffer
 
@@ -155,8 +188,12 @@ class RoCEv2Socket : public UdpBasedSocket
         uint64_t nTotalSentBytes;
         uint32_t nTotalDeliverPkts; //<! Data pkts successfully delivered to peer upper layer
         uint64_t nTotalDeliverBytes;
-        uint32_t nTotalLossPkts; //<! Data pkts lost and retxed
-        uint64_t nTotalLossBytes;
+        /**
+         * No need to record the number of lost packets, as it can be calculated by
+         * nTotalSentPkts - nTotalDeliverPkts.
+         * And it is often not accurate, as the lost packets may be retransmitted.
+         */
+        uint32_t nRetxCount; //<! Number of retransmission
         Time tStart;
         Time tFinish;
         Time tFct;                //<! Flow completion time
@@ -235,7 +272,7 @@ class RoCEv2Socket : public UdpBasedSocket
                           uint32_t port,
                           Ptr<Ipv4Interface> incomingInterface,
                           const RoCEv2Header& roce);
-    void GoBackN(uint32_t lostPSN) const;
+    void GoBackN(uint32_t lostPSN);
     void ScheduleNextCNP(std::map<FlowIdentifier, FlowInfo>::iterator flowInfoIter,
                          Ipv4Header header);
     /**
