@@ -101,8 +101,7 @@ RoCEv2Socket::SendPendingPacket()
 
         // The interval serve as the interval of spinning when the qdisc is unavaliable.
         uint32_t sz = 1000; // XXX A typical packet size
-        Time interval =
-            m_deviceRate.CalculateBytesTxTime(sz * 100 / m_sockState->GetRateRatioPercent());
+        Time interval = m_deviceRate.CalculateBytesTxTime(sz / m_sockState->GetRateRatioPercent());
         m_sendEvent = Simulator::Schedule(interval, &RoCEv2Socket::SendPendingPacket, this);
         // XXX If all the sender's send rate is line rate, this will cause unfairness,
         // however, it is unlikely to happen.
@@ -120,13 +119,11 @@ RoCEv2Socket::SendPendingPacket()
     }
 
     // rateRatio is controled by congestion control
-    // rateRatio = sending rate calculated by CC / line rate, which is between [0.0., 100.0]
+    // rateRatio = sending rate calculated by CC / line rate, which is between [0.0, 1.0]
     const double rateRatio =
-        m_sockState->GetRateRatioPercent(); // in percentage, i.e., maximum is 100.0
-    // XXX Why? Do not have minimum rate ratio?
-    // TODO Add minimum rate ratio
+        m_sockState->GetRateRatioPercent(); // in percentage, i.e., maximum is 1.0
     // TODO Add window constraint
-    if (rateRatio > 1e-6)
+    if (rateRatio > 1e-3)
     {
         // [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] =
         //     m_buffer.GetNextShouldSent();
@@ -135,7 +132,7 @@ RoCEv2Socket::SendPendingPacket()
         DoSendDataPacket(item);
 
         // Control the send rate by interval of sending packets.
-        Time interval = m_deviceRate.CalculateBytesTxTime(sz * 100 / rateRatio);
+        Time interval = m_deviceRate.CalculateBytesTxTime(sz / rateRatio);
         m_sendEvent = Simulator::Schedule(interval, &RoCEv2Socket::SendPendingPacket, this);
     }
 }
@@ -146,8 +143,7 @@ RoCEv2Socket::DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item)
     NS_LOG_FUNCTION(this);
 
     [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] = item;
-    // DCQCN is a rate based CC.
-    // Send packet and delay a bit time to control the sending rate.
+
     m_ccOps->UpdateStateSend(payload);
     Ptr<Packet> packet = payload->Copy(); // do not modify the payload in the buffer
     packet->AddHeader(rocev2Header);
@@ -171,12 +167,18 @@ RoCEv2Socket::ForwardUp(Ptr<Packet> packet,
     switch (rocev2Header.GetOpcode())
     {
     case RoCEv2Header::Opcode::RC_ACK:
+        m_ccOps->UpdateStateWithRcvACK(packet, rocev2Header, m_senderNextPSN);
+        NS_LOG_DEBUG("RoCEv2Socket: Received ACK and rate decreased to "
+                     << m_sockState->GetRateRatioPercent() * 100 << "% at time "
+                     << Simulator::Now().GetMicroSeconds() << "us. " << header.GetSource() << ":"
+                     << rocev2Header.GetSrcQP() << "->" << header.GetDestination() << ":"
+                     << rocev2Header.GetDestQP());
         HandleACK(packet, rocev2Header);
         break;
     case RoCEv2Header::Opcode::CNP:
         m_ccOps->UpdateStateWithCNP();
-        NS_LOG_DEBUG("DCQCN: Received CNP and rate decreased to "
-                     << m_sockState->GetRateRatioPercent() << "% at time "
+        NS_LOG_DEBUG("RoCEv2Socket: Received CNP and rate decreased to "
+                     << m_sockState->GetRateRatioPercent() * 100 << "% at time "
                      << Simulator::Now().GetMicroSeconds() << "us. " << header.GetSource() << ":"
                      << rocev2Header.GetSrcQP() << "->" << header.GetDestination() << ":"
                      << rocev2Header.GetDestQP());
@@ -265,6 +267,8 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
             // TODO No check of whether queue disc avaliable, as don't know how to hold the ACK
             // packet at l4
             Ptr<Packet> ack = RoCEv2L4Protocol::GenerateACK(dstQP, srcQP, psn);
+            m_ccOps->UpdateStateWithGenACK(packet, ack);
+
             m_innerProto->Send(ack, header.GetDestination(), header.GetSource(), dstQP, srcQP, 0);
         }
     }
@@ -597,7 +601,7 @@ RoCEv2SocketState::GetTypeId()
 }
 
 RoCEv2SocketState::RoCEv2SocketState()
-    : m_rateRatio(100.)
+    : m_rateRatio(1.)
 {
 }
 

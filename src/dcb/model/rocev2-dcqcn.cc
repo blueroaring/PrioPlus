@@ -51,12 +51,12 @@ RoCEv2Dcqcn::GetTypeId()
                           MakeDoubleChecker<double>())
             .AddAttribute("RateAIRatio",
                           "DCQCN's RateAI ratio",
-                          DoubleValue(.5),
+                          DoubleValue(0.0005),
                           MakeDoubleAccessor(&RoCEv2Dcqcn::m_raiRatio),
                           MakeDoubleChecker<double>())
             .AddAttribute("HraiRatio",
                           "DCQCN's hrai ratio",
-                          DoubleValue(1.),
+                          DoubleValue(0.01),
                           MakeDoubleAccessor(&RoCEv2Dcqcn::m_hraiRatio),
                           MakeDoubleChecker<double>())
             .AddAttribute("BytesThreshold",
@@ -110,6 +110,8 @@ void
 RoCEv2Dcqcn::SetReady()
 {
     NS_LOG_FUNCTION(this);
+    m_alphaTimer.SetDelay(m_alphaTimerDelay); // 55
+    m_rateTimer.SetDelay(m_rateTimerDelay);   // 1500
     m_rateTimer.Schedule();
 }
 
@@ -184,20 +186,21 @@ RoCEv2Dcqcn::UpdateRate()
     if (m_rateUpdateIter > m_F && m_bytesUpdateIter > m_F)
     { // Hyper increase
         uint32_t i = std::min(m_rateUpdateIter, m_bytesUpdateIter) - m_F + 1;
-        m_targetRateRatio = std::min(m_targetRateRatio + i * m_hraiRatio, 100.);
+        m_targetRateRatio = std::min(m_targetRateRatio + i * m_hraiRatio, 1.);
     }
     else if (m_rateUpdateIter > m_F || m_bytesUpdateIter > m_F)
     { // Additive increase
-        m_targetRateRatio = std::min(m_targetRateRatio + m_raiRatio, 100.);
+        m_targetRateRatio = std::min(m_targetRateRatio + m_raiRatio, 1.);
     }
     // else m_rateUpdateIter < m_F && m_bytesUpdateIter < m_F
     // Fast recovery: don't need to update target rate
 
     m_curRateRatio = (m_targetRateRatio + m_curRateRatio) / 2;
     m_sockState->SetRateRatioPercent(m_curRateRatio);
-    if (old < 100.)
+    if (old < 1.)
     {
-        NS_LOG_DEBUG("DCQCN: Rate update from " << old << "% to " << m_curRateRatio << "% at time "
+        NS_LOG_DEBUG("DCQCN: Rate update from " << old * 100 << "% to " << m_curRateRatio * 100
+                                                << "% at time "
                                                 << Simulator::Now().GetMicroSeconds() << "us");
     }
 }
@@ -208,27 +211,26 @@ RoCEv2Dcqcn::Init()
     // Init timer
     m_alphaTimer = Timer(Timer::CANCEL_ON_DESTROY);
     m_alphaTimer.SetFunction(&RoCEv2Dcqcn::UpdateAlpha, this);
-    m_alphaTimer.SetDelay(m_alphaTimerDelay); // 55
+
     m_rateTimer.SetFunction(&RoCEv2Dcqcn::RateTimerTriggered, this);
-    m_rateTimer.SetDelay(m_rateTimerDelay); // 1500
     // Init others
     m_bytesCounter = 0;
     m_rateUpdateIter = 0;
     m_bytesUpdateIter = 0;
-    m_targetRateRatio = 100.;
-    m_curRateRatio = 100.;
+    m_targetRateRatio = 1.;
+    m_curRateRatio = 1.;
 }
 
 void
 RoCEv2Dcqcn::SetRateAIRatio(double ratio)
 {
-    m_raiRatio = ratio * 100.;
+    m_raiRatio = ratio * 1.;
 }
 
 void
 RoCEv2Dcqcn::SetRateHyperAIRatio(double ratio)
 {
-    m_hraiRatio = ratio * 100.;
+    m_hraiRatio = ratio * 1.;
 }
 
 std::string
