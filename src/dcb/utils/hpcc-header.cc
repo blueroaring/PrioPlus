@@ -26,7 +26,7 @@ NS_OBJECT_ENSURE_REGISTERED(HpccHeader);
 HpccHeader::HpccHeader()
     : m_infoBuf(0)
 {
-    std::memset(m_intHops, 0, sizeof(m_intHops));
+    // std::memset(m_intHops, 0, sizeof(m_intHops)); // not necessary
 }
 
 void

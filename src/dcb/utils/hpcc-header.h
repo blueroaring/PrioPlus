@@ -33,6 +33,8 @@ class IntHop
     constexpr static const uint32_t TSWidth = 24;
     constexpr static const uint32_t txBytesWidth = 20;
     constexpr static const uint32_t qLenWidth = 16;
+    // XXX We should use a better way to store line rate.
+    // However, this is how HPCC implement.
     constexpr static const uint64_t lineRateValues[8]{
         100000000000lu, // 100Gbps, which is more frequent
         25000000000lu,  // 25Gbps
@@ -77,11 +79,17 @@ class IntHop
         return (uint64_t)m_txBytes * byteUnit;
     }
 
+    /**
+     * \brief Get the queue length. Unit: byte
+     */
     uint64_t GetQlen() const
     {
         return (uint64_t)m_qLen * qLenUnit;
     }
 
+    /**
+     * \brief Get the time slot. Unit: uint64_t
+     */
     uint64_t GetTimeSlot() const
     {
         return m_TS;
@@ -90,8 +98,8 @@ class IntHop
     void Set(uint64_t time, uint64_t bytes, uint64_t qlen, DataRate rate)
     {
         m_TS = time;
-        m_txBytes = bytes;
-        m_qLen = qlen;
+        m_txBytes = bytes / byteUnit;
+        m_qLen = qlen / qLenUnit;
         uint64_t bitrate = rate.GetBitRate();
         uint64_t i = 0;
         for (; i < 8; i++)
@@ -146,16 +154,6 @@ class HpccHeader : public Header
      */
     void PushHop(uint64_t time, uint64_t bytes, uint64_t qlen, DataRate rate);
 
-    uint16_t GetNHop() const
-    {
-        return m_nHop;
-    }
-
-    uint16_t GetPathID() const
-    {
-        return m_pathID;
-    }
-
     static TypeId GetTypeId();
     virtual TypeId GetInstanceTypeId(void) const override;
     virtual uint32_t GetSerializedSize() const override;
@@ -163,7 +161,6 @@ class HpccHeader : public Header
     virtual uint32_t Deserialize(Buffer::Iterator start) override;
     virtual void Print(std::ostream& os) const override;
 
-  private:
     IntHop m_intHops[MAX_HOP];
 
     union {
