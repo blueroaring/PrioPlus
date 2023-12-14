@@ -24,6 +24,8 @@ build_lib(
 	  model/rocev2-socket.cc
 	  model/rocev2-congestion-ops.cc
 	  model/rocev2-dcqcn.cc
+	  model/rocev2-hpcc.cc
+	  model/rocev2-timely.cc
 	  utils/hpcc-header.cc
 	  utils/pfc-frame.cc
   HEADER_FILES
@@ -49,6 +51,8 @@ build_lib(
 	  model/rocev2-socket.h
 	  model/rocev2-congestion-ops.h
 	  model/rocev2-dcqcn.h
+	  model/rocev2-hpcc.h
+	  model/rocev2-timely.h
 	  utils/hpcc-header.h
 	  utils/pfc-frame.h
   LIBRARIES_TO_LINK
