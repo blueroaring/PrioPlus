@@ -14,10 +14,10 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Author: Pavinberg <pavin0702@gmail.com>
+ * Author: F.Y. Xue <xue.fyang@foxmail.com>
  */
 
-#ifndef DCB_PHPCC_PORT_H
+#ifndef DCB_HPCC_PORT_H
 #define DCB_HPCC_PORT_H
 
 #include "dcb-pfc-port.h"
@@ -46,4 +46,4 @@ class DcbHpccPort : public DcbPfcPort
 
 } // namespace ns3
 
-#endif // DCB_PFC_PORT_H
+#endif // DCB_HPCC_PORT_H

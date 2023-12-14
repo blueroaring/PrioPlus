@@ -14,10 +14,12 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Author: Pavinberg <pavin0702@gmail.com>
+ * Author: F.Y. Xue <xue.fyang@foxmail.com>
  */
 
 #include "dcb-hpcc-port.h"
+
+#include "rocev2-l4-protocol.h"
 
 #include "ns3/hpcc-header.h"
 #include "ns3/rocev2-header.h"
@@ -59,20 +61,19 @@ DcbHpccPort::DoEgressProcess(Ptr<Packet> packet)
     // Add m_txBytes
     m_txBytes += packet->GetSize();
 
-    // Remove packet's IPv4Header
-    Ipv4Header ipv4Header;
-    packet->RemoveHeader(ipv4Header);
-
     // Check and Remove packet's RoCEv2 Header
     UdpHeader udpHeader;
     packet->PeekHeader(udpHeader);
-    if (udpHeader.GetSourcePort() == 4791) // RoCEv2L4Protocol::PROT_NUMBER
-    {                                      // RoCEv2
+
+    // Check if is RoCEv2
+    if (udpHeader.GetSourcePort() == RoCEv2L4Protocol::PROT_NUMBER)
+    {
         UdpRoCEv2Header udpRoCEheader;
         packet->RemoveHeader(udpRoCEheader);
 
-        // Check if RoCEv2 Header is not ACK
-        if (udpRoCEheader.GetRoCE().GetOpcode() != RoCEv2Header::Opcode::RC_ACK)
+        // Check if RoCEv2 Header is RC_SEND_ONLY
+        // XXX maybe we should find a better way to check if it's RC_SEND_ONLY
+        if (udpRoCEheader.GetRoCE().GetOpcode() == RoCEv2Header::Opcode::RC_SEND_ONLY)
         {
             // Remove and Modify packet's HPCC header
             HpccHeader hpccHeader;
@@ -95,13 +96,14 @@ DcbHpccPort::DoEgressProcess(Ptr<Packet> packet)
                                m_txBytes,
                                qLen,
                                device->GetDataRate());
+            packet->AddHeader(hpccHeader);
         }
 
         // Rebuild packet's UdpRocev2Header
         packet->AddHeader(udpRoCEheader);
     }
-    // Rebuild packet's Ipv4Header
-    packet->AddHeader(ipv4Header);
+    // // Rebuild packet's Ipv4Header
+    // packet->AddHeader(ipv4Header);
 }
 
 } // namespace ns3
