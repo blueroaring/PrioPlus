@@ -32,6 +32,13 @@ namespace ns3
 
 class DcqcnCongestionOps;
 class RoCEv2SocketState;
+class IrnHeader;
+
+enum RoCEv2RetxMode : uint8_t
+{
+    GBN, // Go Back N
+    IRN  // Improved RoCE NIC, see Revisiting Network Support for RDMA by Mittal et al.
+};
 
 class DcbTxBuffer : public Object
 {
@@ -58,7 +65,8 @@ class DcbTxBuffer : public Object
      */
     static TypeId GetTypeId(void);
 
-    DcbTxBuffer();
+    // No default constructor, as we need the sendCb
+    DcbTxBuffer(Callback<void> sendCb);
 
     typedef std::deque<DcbTxBufferItem>::const_iterator DcbTxBufferItemI;
 
@@ -112,11 +120,61 @@ class DcbTxBuffer : public Object
     DcbTxBufferItemI End() const;
 
   private:
+    /**
+     * \brief The SendPendingPacket() call back, called every time the tx buffer has new packet to
+     * send.
+     */
+    Callback<void> m_sendCb;
+
     std::deque<DcbTxBufferItem> m_buffer;
     uint32_t m_frontPsn; // PSN of the front item in the buffer. Only increase when acked.
-    std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>> m_txQueue; // PSN of the items to be sent
+    std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>
+        m_txQueue;             // PSN of the items to be sent
+    std::vector<bool> m_acked; // Whether the packet with the PSN is acked
 
 }; // class DcbTxBuffer
+
+class DcbRxBuffer : public Object
+{
+  public:
+    struct DcbRxBufferItem
+    {
+        // No default constructor
+        DcbRxBufferItem(Ipv4Header ipv4H, RoCEv2Header roceH, Ptr<Packet> p);
+
+        Ipv4Header m_ipv4H;
+        RoCEv2Header m_roceH;
+        Ptr<Packet> m_payload;
+    }; // class DcbTxBufferItem
+
+    /**
+     * \brief Get the type ID.
+     * \return the object TypeId
+     */
+    static TypeId GetTypeId(void);
+
+    // No default constructor
+    DcbRxBuffer(Callback<void, Ptr<Packet>, Ipv4Header, uint32_t, Ptr<Ipv4Interface>> forwardCb,
+                Ptr<Ipv4Interface> incomingInterface, RoCEv2RetxMode retxMode);
+
+    /**
+     * \brief Add a packet into the buffer.
+     */
+    void Add(uint32_t psn, Ipv4Header ipv4, RoCEv2Header roce, Ptr<Packet> payload);
+
+    uint32_t GetExpectedPsn() const;
+
+  private:
+    /**
+     * \brief The ForwardUp() call back, called when has packet to be forwarded up.
+     */
+    Callback<void, Ptr<Packet>, Ipv4Header, uint32_t, Ptr<Ipv4Interface>> m_forwardCb;
+    std::map<uint32_t, DcbRxBufferItem> m_buffer;
+    uint32_t m_expectedPsn; // PSN of the front item in the buffer. Only increase when ForwardUp.
+    uint32_t m_srcQp;       // Source QP of the flow, used to forward up
+    Ptr<Ipv4Interface> m_forwardInterface; // Interface to forward the packet up
+    RoCEv2RetxMode m_retxMode;
+}; // class DcbRxBuffer
 
 class RoCEv2SocketState : public Object
 {
@@ -254,12 +312,20 @@ class RoCEv2Socket : public UdpBasedSocket
         uint32_t nextPSN;
         bool receivedECN;
         EventId lastCNPEvent;
+        DcbRxBuffer m_rxBuffer;
 
-        FlowInfo(uint32_t dst)
+        FlowInfo(uint32_t dst,
+                 DcbRxBuffer rxBuffer)
             : dstQP(dst),
               nextPSN(0),
-              receivedECN(false)
+              receivedECN(false),
+              m_rxBuffer(rxBuffer)
         {
+        }
+
+        uint32_t GetExpectedPsn() const
+        {
+            return m_rxBuffer.GetExpectedPsn();
         }
     };
 
@@ -296,13 +362,23 @@ class RoCEv2Socket : public UdpBasedSocket
      */
     void CheckControlQueueDiscAvaliable() const;
 
+    /**
+     * \brief Do forward up to upper layer.
+     *
+     * In this function, the UdpBasedSocket::ForwardUp() is called.
+     */
+    void DoForwardUp(Ptr<Packet> packet,
+                     Ipv4Header header,
+                     uint32_t port,
+                     Ptr<Ipv4Interface> incomingInterface);
+
     // Time CalcTxTime (uint32_t bytes);
 
     std::shared_ptr<Stats> m_stats;
 
     Ptr<DcqcnCongestionOps> m_ccOps;    //!< DCQCN congestion control
     Ptr<RoCEv2SocketState> m_sockState; //!< DCQCN socket state
-    DcbTxBuffer m_buffer;
+    DcbTxBuffer m_txBuffer;
     DataRate m_deviceRate;
     // bool m_isSending;
     EventId m_sendEvent; //!< Event id of the next send event
@@ -313,7 +389,31 @@ class RoCEv2Socket : public UdpBasedSocket
 
     Time m_flowStartTime;
 
+    RoCEv2RetxMode m_retxMode;
+
 }; // class RoCEv2Socket
+
+/**
+ * \brief Header for IRN.
+ * It will be repleaced after AETH header in the NACK packet.
+ * It only has acked PSN. As the expected PSN is in the AETH header.
+ */
+class IrnHeader : public Header
+{
+  public:
+    IrnHeader();
+    static TypeId GetTypeId();
+    virtual TypeId GetInstanceTypeId(void) const override;
+    virtual uint32_t GetSerializedSize() const override;
+    virtual void Serialize(Buffer::Iterator start) const override;
+    virtual uint32_t Deserialize(Buffer::Iterator start) override;
+    virtual void Print(std::ostream& os) const override;
+    void SetAckedPsn(uint32_t psn);
+    uint32_t GetAckedPsn() const;
+
+  private:
+    uint32_t m_ackedPsn;
+}; // class IrnHeader
 
 } // namespace ns3
 

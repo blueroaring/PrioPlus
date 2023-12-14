@@ -54,12 +54,21 @@ RoCEv2Socket::GetTypeId()
     static TypeId tid = TypeId("ns3::RoCEv2Socket")
                             .SetParent<UdpBasedSocket>()
                             .SetGroupName("Dcb")
-                            .AddConstructor<RoCEv2Socket>();
+                            .AddConstructor<RoCEv2Socket>()
+                            .AddAttribute("RetxMode",
+                                          "The retransmission mode",
+                                          EnumValue(RoCEv2RetxMode::GBN),
+                                          MakeEnumAccessor(&RoCEv2Socket::m_retxMode),
+                                          MakeEnumChecker(RoCEv2RetxMode::GBN,
+                                                          "GBN",
+                                                          RoCEv2RetxMode::IRN,
+                                                          "IRN"));
     return tid;
 }
 
 RoCEv2Socket::RoCEv2Socket()
     : UdpBasedSocket(),
+      m_txBuffer(DcbTxBuffer(MakeCallback(&RoCEv2Socket::SendPendingPacket, this))),
       m_senderNextPSN(0),
       m_psnEnd(0)
 {
@@ -81,7 +90,7 @@ RoCEv2Socket::DoSendTo(Ptr<Packet> payload, Ipv4Address daddr, Ptr<Ipv4Route> ro
     NS_LOG_FUNCTION(this << payload << daddr << route);
 
     RoCEv2Header rocev2Header = CreateNextProtocolHeader();
-    m_buffer.Push(rocev2Header.GetPSN(), std::move(rocev2Header), payload, daddr, route);
+    m_txBuffer.Push(rocev2Header.GetPSN(), std::move(rocev2Header), payload, daddr, route);
 
     // Record the statistics
     if (m_stats->tStart == Time(0))
@@ -90,8 +99,6 @@ RoCEv2Socket::DoSendTo(Ptr<Packet> payload, Ipv4Address daddr, Ptr<Ipv4Route> ro
     }
     m_stats->nTotalSizePkts++;
     m_stats->nTotalSizeBytes += payload->GetSize();
-
-    SendPendingPacket();
 }
 
 void
@@ -99,6 +106,10 @@ RoCEv2Socket::SendPendingPacket()
 {
     NS_LOG_FUNCTION(this);
 
+    /**
+     * Check whether can send packet. As a optimization, the judgement is arranged
+     * in the order of the probability of the condition.
+     */
     if (m_sendEvent.IsRunning())
     {
         // Already scheduled, wait for the scheduled sending.
@@ -122,7 +133,7 @@ RoCEv2Socket::SendPendingPacket()
         return;
     }
 
-    if (m_buffer.GetSizeToBeSent() == 0)
+    if (m_txBuffer.GetSizeToBeSent() == 0)
     {
         // No packet to send.
         return;
@@ -144,8 +155,8 @@ RoCEv2Socket::SendPendingPacket()
     if (rateRatio > 1e-6)
     {
         // [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] =
-        //     m_buffer.PeekNextShouldSent();
-        const DcbTxBuffer::DcbTxBufferItem& item = m_buffer.PopNextShouldSent();
+        //     m_txBuffer.PeekNextShouldSent();
+        const DcbTxBuffer::DcbTxBufferItem& item = m_txBuffer.PopNextShouldSent();
         const uint32_t sz = item.m_payload->GetSize() + 8 + 20 + 14;
         DoSendDataPacket(item);
 
@@ -233,13 +244,13 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
     switch (aeth.GetSyndromeType())
     {
     case AETHeader::SyndromeType::FC_DISABLED: { // normal ACK
-        uint32_t psn = m_buffer.Front().m_psn;   // The PSN expected to be ACKed
+        uint32_t psn = m_txBuffer.Front().m_psn; // The PSN expected to be ACKed
         // The following judgement only reasonalbe under per-packet ack and lossless network
         // if (psn != roce.GetPSN())
         // {
         //     NS_FATAL_ERROR("RoCEv2 socket receive an ACK with PSN not expected");
         // }
-        m_buffer.AcknowledgeTo(roce.GetPSN());
+        m_txBuffer.AcknowledgeTo(roce.GetPSN());
 
         if (psn + 1 == m_psnEnd)
         { // last ACk received, flow finshed
@@ -291,7 +302,12 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     // be removed.
     if (flowInfoIter == m_receiverFlowInfo.end())
     {
-        auto pp = m_receiverFlowInfo.emplace(std::move(flowId), FlowInfo{dstQP});
+        auto pp = m_receiverFlowInfo.emplace(
+            std::move(flowId),
+            FlowInfo{dstQP,
+                     DcbRxBuffer{MakeCallback(&RoCEv2Socket::DoForwardUp, this),
+                                 incomingInterface,
+                                 m_retxMode}});
         flowInfoIter = std::move(pp.first);
         // TODO: erase flowInfo after flow finishes
     }
@@ -305,7 +321,8 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
 
     // Check PSN
     const uint32_t psn = roce.GetPSN();
-    uint32_t expectedPSN = flowInfoIter->second.nextPSN;
+    uint32_t expectedPSN = flowInfoIter->second.GetExpectedPsn();
+    flowInfoIter->second.m_rxBuffer.Add(psn, header, roce, packet);
 
     // Debug utility, ugly but useful, please do not remove it
     // if (roce.GetSrcQP()==258 && header.GetDestination().Get() == 167772163 && psn >= 42)
@@ -343,16 +360,16 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
 
     // Zhaochen: The ForwardUp should hand over the src port, not the dst port
     // The L4 layer has been written wrongly. We pass the src port to the L4 layer in this function
-    UdpBasedSocket::ForwardUp(packet, header, srcQP, incomingInterface);
+    // UdpBasedSocket::ForwardUp(packet, header, srcQP, incomingInterface);
 }
 
 void
 RoCEv2Socket::GoBackN(uint32_t lostPSN)
 {
-    // DcbTxBuffer::DcbTxBufferItemI item = m_buffer.FindPSN(lostPSN);
+    // DcbTxBuffer::DcbTxBufferItemI item = m_txBuffer.FindPSN(lostPSN);
     NS_LOG_WARN("Go-back-N to " << lostPSN << " at time " << Simulator::Now().GetNanoSeconds()
                                 << "ns.");
-    m_buffer.RetransmitFrom(lostPSN);
+    m_txBuffer.RetransmitFrom(lostPSN);
     // Don't forget to call SendPendingPacket to send the retransmitted packets
     SendPendingPacket();
 
@@ -534,20 +551,27 @@ RoCEv2Socket::CheckControlQueueDiscAvaliable() const
                                                     << " is unavaliable.");
 }
 
+void
+RoCEv2Socket::DoForwardUp(Ptr<Packet> packet,
+                          Ipv4Header header,
+                          uint32_t port,
+                          Ptr<Ipv4Interface> incomingInterface)
+{
+    UdpBasedSocket::ForwardUp(packet, header, port, incomingInterface);
+}
+
 NS_OBJECT_ENSURE_REGISTERED(DcbTxBuffer);
 
 TypeId
 DcbTxBuffer::GetTypeId(void)
 {
-    static TypeId tid = TypeId("ns3::DcbTxBuffer")
-                            .SetGroupName("Dcb")
-                            .SetParent<Object>()
-                            .AddConstructor<DcbTxBuffer>();
+    static TypeId tid = TypeId("ns3::DcbTxBuffer").SetGroupName("Dcb").SetParent<Object>();
     return tid;
 }
 
-DcbTxBuffer::DcbTxBuffer()
-    : m_frontPsn(0)
+DcbTxBuffer::DcbTxBuffer(Callback<void> sendCb)
+    : m_sendCb(sendCb),
+      m_frontPsn(0)
 {
 }
 
@@ -560,6 +584,9 @@ DcbTxBuffer::Push(uint32_t psn,
 {
     m_buffer.emplace_back(psn, header, packet, daddr, route);
     m_txQueue.push(psn);
+
+    // Call the send callback to notify the socket to send the packet
+    m_sendCb();
 }
 
 const DcbTxBuffer::DcbTxBufferItem&
@@ -654,6 +681,9 @@ DcbTxBuffer::Retransmit(uint32_t psn)
     NS_ASSERT_MSG(psn < TotalSize(), "PSN to be retransmitted is larger than the total size.");
     NS_ASSERT_MSG(psn >= m_frontPsn, "PSN to be retransmitted not in the buffer.");
     m_txQueue.push(psn);
+
+    // Call the send callback to notify the socket to send the packet
+    m_sendCb();
 }
 
 void
@@ -678,6 +708,87 @@ DcbTxBuffer::DcbTxBufferItem::DcbTxBufferItem(uint32_t psn,
       m_payload(payload),
       m_daddr(daddr),
       m_route(route)
+{
+}
+
+NS_OBJECT_ENSURE_REGISTERED(DcbRxBuffer);
+
+TypeId
+DcbRxBuffer::GetTypeId(void)
+{
+    static TypeId tid = TypeId("ns3::DcbRxBuffer").SetGroupName("Dcb").SetParent<Object>();
+    return tid;
+}
+
+DcbRxBuffer::DcbRxBuffer(
+    Callback<void, Ptr<Packet>, Ipv4Header, uint32_t, Ptr<Ipv4Interface>> forwardCb,
+    Ptr<Ipv4Interface> incomingInterface,
+    RoCEv2RetxMode retxMode)
+    : m_forwardCb(forwardCb),
+      m_expectedPsn(0),
+      m_forwardInterface(incomingInterface),
+      m_retxMode(retxMode)
+{
+}
+
+void
+DcbRxBuffer::Add(uint32_t psn, Ipv4Header ipv4, RoCEv2Header roce, Ptr<Packet> payload)
+{
+    // If the incoming psn is geq to expected PSN, and is not a duplicate packet, add the packet to
+    // the buffer.
+    // TODO The comparison should consider the warp around of the PSN
+    if (m_retxMode == RoCEv2RetxMode::GBN)
+    {
+        if (psn == m_expectedPsn)
+        {
+            m_buffer.emplace(psn, DcbRxBufferItem(ipv4, roce, payload));
+        }
+        else if (psn > m_expectedPsn)
+        {
+            NS_LOG_WARN("RoCEv2 socket receives out-of-order packet "
+                        << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
+        }
+        else
+        {
+            NS_LOG_WARN("RoCEv2 socket receives duplicate packet "
+                        << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
+        }
+    }
+    if (m_retxMode == RoCEv2RetxMode::IRN)
+    {
+        if (psn >= m_expectedPsn && m_buffer.find(psn) == m_buffer.end())
+        {
+            m_buffer.emplace(psn, DcbRxBufferItem(ipv4, roce, payload));
+        }
+        else
+        {
+            NS_LOG_WARN("RoCEv2 socket receives duplicate packet "
+                        << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
+        }
+    }
+
+    // Check and forward the in order packets
+    while (m_buffer.find(m_expectedPsn) != m_buffer.end())
+    {
+        const DcbRxBufferItem& item = m_buffer.at(m_expectedPsn);
+        m_forwardCb(item.m_payload, item.m_ipv4H, item.m_roceH.GetSrcQP(), m_forwardInterface);
+        m_buffer.erase(m_expectedPsn);
+        m_expectedPsn++;
+    }
+}
+
+uint32_t
+DcbRxBuffer::GetExpectedPsn() const
+{
+    return m_expectedPsn;
+}
+
+DcbRxBuffer::DcbRxBufferItem::DcbRxBufferItem(Ipv4Header ipv4H,
+                                              RoCEv2Header roceH,
+                                              Ptr<Packet> payload)
+    : m_ipv4H(ipv4H),
+      m_roceH(roceH),
+      m_payload(payload)
 {
 }
 
@@ -783,6 +894,68 @@ RoCEv2Socket::Stats::RecordSentPkt(uint32_t size)
     {
         vSentPkt.push_back(std::make_pair(Simulator::Now(), size));
     }
+}
+
+NS_OBJECT_ENSURE_REGISTERED(IrnHeader);
+
+TypeId
+IrnHeader::GetTypeId(void)
+{
+    static TypeId tid = TypeId("ns3::IrnHeader")
+                            .SetParent<Header>()
+                            .SetGroupName("Dcb")
+                            .AddConstructor<IrnHeader>();
+    return tid;
+}
+
+TypeId
+IrnHeader::GetInstanceTypeId(void) const
+{
+    return GetTypeId();
+}
+
+IrnHeader::IrnHeader()
+    : m_ackedPsn(0)
+{
+}
+
+uint32_t
+IrnHeader::GetSerializedSize(void) const
+{
+    return 4;
+}
+
+void
+IrnHeader::Serialize(Buffer::Iterator start) const
+{
+    Buffer::Iterator i = start;
+    i.WriteU32(m_ackedPsn);
+}
+
+uint32_t
+IrnHeader::Deserialize(Buffer::Iterator start)
+{
+    Buffer::Iterator i = start;
+    m_ackedPsn = i.ReadU32();
+    return GetSerializedSize();
+}
+
+void
+IrnHeader::Print(std::ostream& os) const
+{
+    os << "IrnHeader acked PSN " << m_ackedPsn;
+}
+
+void
+IrnHeader::SetAckedPsn(uint32_t psn)
+{
+    m_ackedPsn = psn;
+}
+
+uint32_t
+IrnHeader::GetAckedPsn() const
+{
+    return m_ackedPsn;
 }
 
 } // namespace ns3
