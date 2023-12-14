@@ -51,18 +51,16 @@ NS_OBJECT_ENSURE_REGISTERED(RoCEv2Socket);
 TypeId
 RoCEv2Socket::GetTypeId()
 {
-    static TypeId tid = TypeId("ns3::RoCEv2Socket")
-                            .SetParent<UdpBasedSocket>()
-                            .SetGroupName("Dcb")
-                            .AddConstructor<RoCEv2Socket>()
-                            .AddAttribute("RetxMode",
-                                          "The retransmission mode",
-                                          EnumValue(RoCEv2RetxMode::GBN),
-                                          MakeEnumAccessor(&RoCEv2Socket::m_retxMode),
-                                          MakeEnumChecker(RoCEv2RetxMode::GBN,
-                                                          "GBN",
-                                                          RoCEv2RetxMode::IRN,
-                                                          "IRN"));
+    static TypeId tid =
+        TypeId("ns3::RoCEv2Socket")
+            .SetParent<UdpBasedSocket>()
+            .SetGroupName("Dcb")
+            .AddConstructor<RoCEv2Socket>()
+            .AddAttribute("RetxMode",
+                          "The retransmission mode",
+                          EnumValue(RoCEv2RetxMode::GBN),
+                          MakeEnumAccessor(&RoCEv2Socket::m_retxMode),
+                          MakeEnumChecker(RoCEv2RetxMode::GBN, "GBN", RoCEv2RetxMode::IRN, "IRN"));
     return tid;
 }
 
@@ -244,15 +242,16 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
     switch (aeth.GetSyndromeType())
     {
     case AETHeader::SyndromeType::FC_DISABLED: { // normal ACK
-        uint32_t psn = m_txBuffer.Front().m_psn; // The PSN expected to be ACKed
         // The following judgement only reasonalbe under per-packet ack and lossless network
         // if (psn != roce.GetPSN())
         // {
         //     NS_FATAL_ERROR("RoCEv2 socket receive an ACK with PSN not expected");
         // }
-        m_txBuffer.AcknowledgeTo(roce.GetPSN());
 
-        if (psn + 1 == m_psnEnd)
+        // Note that the psn in ACK's BTH is expected PSN, not the PSN of the ACKed packet
+        m_txBuffer.AcknowledgeTo(roce.GetPSN() - 1);
+
+        if (m_txBuffer.GetFrontPsn() == m_psnEnd)
         { // last ACk received, flow finshed
             NotifyFlowCompletes();
             // a delay to handle remaining packets (e.g., CNP)
@@ -273,10 +272,23 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
             m_ccOps->SetStopTime(Simulator::Now());
             NS_LOG_DEBUG("Finish a flow at time " << Simulator::Now().GetNanoSeconds() << "ns.");
         }
+        else if (m_retxMode == IRN)
+        {
+            IrnReactToAck(roce.GetPSN());
+        }
         break;
     }
     case AETHeader::SyndromeType::NACK: {
-        GoBackN(roce.GetPSN());
+        if (m_retxMode == GBN)
+        {
+            GoBackN(roce.GetPSN());
+        }
+        else if (m_retxMode == IRN)
+        {
+            IrnHeader irnH;
+            packet->RemoveHeader(irnH);
+            IrnReactToNack(roce.GetPSN(), irnH);
+        }
         break;
     }
     default: {
@@ -325,10 +337,11 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     flowInfoIter->second.m_rxBuffer.Add(psn, header, roce, packet);
 
     // Debug utility, ugly but useful, please do not remove it
-    // if (roce.GetSrcQP()==258 && header.GetDestination().Get() == 167772163 && psn >= 42)
+    // if (psn >= 2646)
     // {
     //     NS_LOG_DEBUG("Break point");
     // }
+    NS_LOG_DEBUG("Receive packet " << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
 
     if (psn == expectedPSN)
     {
@@ -337,11 +350,12 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
         { // send ACK
             // TODO No check of whether queue disc avaliable, as don't know how to hold the ACK
             // packet at l4
-            Ptr<Packet> ack = RoCEv2L4Protocol::GenerateACK(dstQP, srcQP, psn);
+            Ptr<Packet> ack =
+                RoCEv2L4Protocol::GenerateACK(dstQP, srcQP, flowInfoIter->second.GetExpectedPsn());
             m_innerProto->Send(ack, header.GetDestination(), header.GetSource(), dstQP, srcQP, 0);
         }
-        NS_LOG_DEBUG("Send ACK with PSN " << psn << " at time " << Simulator::Now().GetNanoSeconds()
-                                          << "ns.");
+        NS_LOG_DEBUG("Send ACK with PSN " << flowInfoIter->second.GetExpectedPsn() << " at time "
+                                          << Simulator::Now().GetNanoSeconds() << "ns.");
     }
     else if (psn > expectedPSN)
     { // packet out-of-order, send NACK
@@ -349,13 +363,27 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
                                         << "->" << dstQP);
         // TODO No check of whether queue disc avaliable, as don't know how to hold the NACK packet
         // at l4
-        Ptr<Packet> nack = RoCEv2L4Protocol::GenerateNACK(dstQP, srcQP, expectedPSN);
+        Ptr<Packet> nack =
+            RoCEv2L4Protocol::GenerateNACK(dstQP, srcQP, flowInfoIter->second.GetExpectedPsn());
+
+        if (m_retxMode == RoCEv2RetxMode::IRN)
+        {
+            // If the receiver is in IRN mode, add a IRN header with the received packet's PSN
+            IrnHeader irnH;
+            irnH.SetAckedPsn(psn);
+            // The IRN header should be placed after the RoCEv2 and AETH header
+            // TODO So ugly, codesign it later with Feiyang's INT header placement
+            RoCEv2Header rocev2Header;
+            AETHeader aeth;
+            nack->RemoveHeader(rocev2Header);
+            nack->RemoveHeader(aeth);
+            nack->AddHeader(irnH);
+            nack->AddHeader(aeth);
+            nack->AddHeader(rocev2Header);
+        }
+
         m_innerProto
             ->Send(nack, header.GetDestination(), header.GetSource(), dstQP, srcQP, nullptr);
-    }
-    else
-    {
-        NS_LOG_WARN("RoCEv2 socket receives smaller PSN than expected, something wrong");
     }
 
     // Zhaochen: The ForwardUp should hand over the src port, not the dst port
@@ -375,6 +403,36 @@ RoCEv2Socket::GoBackN(uint32_t lostPSN)
 
     // Record the retx count
     m_stats->nRetxCount++;
+}
+
+void
+RoCEv2Socket::IrnReactToNack(uint32_t expectedPsn, IrnHeader irnH)
+{
+    NS_LOG_FUNCTION(this);
+    uint32_t ackedPsn = irnH.GetAckedPsn();
+
+    m_txBuffer.AcknowledgeTo(expectedPsn - 1);
+    m_txBuffer.Acknowledge(ackedPsn);
+    m_txBuffer.Retransmit(expectedPsn);
+
+    NS_LOG_DEBUG("IRN expected PSN " << expectedPsn << " ackedPsn " << ackedPsn << " at time "
+                                     << Simulator::Now().GetNanoSeconds() << "ns.");
+}
+
+void
+RoCEv2Socket::IrnReactToAck(uint32_t expectedPsn)
+{
+    NS_LOG_FUNCTION(this);
+
+    // For IRN, the expected packet should be retxed if it is not acked and there is a gap
+    if (!m_txBuffer.HasGap())
+    {
+        return;
+    }
+    m_txBuffer.Retransmit(expectedPsn);
+
+    NS_LOG_DEBUG("IRN expected PSN " << expectedPsn << " at time "
+                                     << Simulator::Now().GetNanoSeconds() << "ns.");
 }
 
 void
@@ -584,6 +642,7 @@ DcbTxBuffer::Push(uint32_t psn,
 {
     m_buffer.emplace_back(psn, header, packet, daddr, route);
     m_txQueue.push(psn);
+    m_acked.push_back(false);
 
     // Call the send callback to notify the socket to send the packet
     m_sendCb();
@@ -598,16 +657,40 @@ DcbTxBuffer::Front() const
 void
 DcbTxBuffer::AcknowledgeTo(uint32_t psn)
 {
+    // No need to check whether psn is smaller than m_frontPsn as there maybe duplicate ack in IRN.
+    // NS_ASSERT_MSG(psn >= m_frontPsn, "PSN to be acknowledged is smaller than the front PSN.");
+    NS_ASSERT_MSG(psn < TotalSize(), "PSN to be acknowledged is larger than the total size.");
+    for (uint32_t i = m_frontPsn; i <= psn; i++)
+    {
+        m_acked[i] = true;
+    }
+    m_maxAckedPsn = std::max(m_maxAckedPsn, psn);
+
+    CheckRelease();
+}
+
+void
+DcbTxBuffer::Acknowledge(uint32_t psn)
+{
     NS_ASSERT_MSG(psn >= m_frontPsn, "PSN to be acknowledged is smaller than the front PSN.");
     NS_ASSERT_MSG(psn < TotalSize(), "PSN to be acknowledged is larger than the total size.");
-    // Release the acknowledged packets in the buffer
-    while (m_frontPsn <= psn)
+    m_acked[psn] = true;
+    m_maxAckedPsn = std::max(m_maxAckedPsn, psn);
+
+    CheckRelease();
+}
+
+void
+DcbTxBuffer::CheckRelease()
+{
+    // Try to release the packets form m_frontPsn to the first unacked packet
+    while (m_frontPsn < TotalSize() && m_acked[m_frontPsn])
     {
         m_buffer.pop_front();
         m_frontPsn++;
     }
-    // Remove all acked packets in the txQueue
-    while (m_txQueue.top() <= psn && m_txQueue.size() != 0)
+    // Remove the released packets from the txQueue
+    while (m_txQueue.top() < m_frontPsn && m_txQueue.size() != 0)
     {
         m_txQueue.pop();
     }
@@ -620,7 +703,14 @@ const DcbTxBuffer::DcbTxBufferItem&
 DcbTxBuffer::PeekNextShouldSent()
 {
     // Check whether has packet to send
+    // If the top of the txQueue is acked, pop it and check the next one
     uint32_t nextSendPsn = m_txQueue.top();
+    while (m_acked[nextSendPsn] && m_txQueue.size() != 0)
+    {
+        m_txQueue.pop();
+        nextSendPsn = m_txQueue.top();
+    }
+
     if (TotalSize() - nextSendPsn)
     {
         return m_buffer.at(nextSendPsn - m_frontPsn);
@@ -657,6 +747,18 @@ uint32_t
 DcbTxBuffer::GetSizeToBeSent() const
 {
     return m_txQueue.size();
+}
+
+uint32_t
+DcbTxBuffer::GetFrontPsn() const
+{
+    return m_frontPsn;
+}
+
+bool
+DcbTxBuffer::HasGap() const
+{
+    return m_frontPsn != m_maxAckedPsn + 1;
 }
 
 DcbTxBuffer::DcbTxBufferItemI

@@ -86,7 +86,7 @@ main(int argc, char* argv[])
     // LogComponentEnable ("PausableQueueDisc", LOG_LEVEL_INFO);
     // LogComponentEnable ("FifoQueueDiscEcn", LOG_LEVEL_INFO);
     LogComponentEnable("ScratchSimulator", LOG_LEVEL_DEBUG);
-    // LogComponentEnable ("DcbNetDevice", LOG_DEBUG);
+    // LogComponentEnable("RoCEv2Socket", LOG_DEBUG);
 
     // Read config in json from config file
     boost::json::object configObj = json_util::ReadConfig(config_file);
@@ -124,7 +124,8 @@ main(int argc, char* argv[])
     //     Ptr<PausableQueueDisc> qdisc = device->GetQueueDisc();
     //     if (qdisc != nullptr)
     //     {
-    //         qdisc->TraceConnectWithoutContext("EnqueueWithId", MakeCallback(&QdiscEnqueueWithId));
+    //         qdisc->TraceConnectWithoutContext("EnqueueWithId",
+    //         MakeCallback(&QdiscEnqueueWithId));
     //     }
     // }
     // // Bind the PFC traces

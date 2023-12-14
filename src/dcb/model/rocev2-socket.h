@@ -86,6 +86,17 @@ class DcbTxBuffer : public Object
      */
     void AcknowledgeTo(uint32_t psn);
     /**
+     * \brief Acknowledge the given PSN.
+     * In this function, we just set m_acked[psn] to true.
+     *
+     * \param psn PSN which has been acknowledged.
+     */
+    void Acknowledge(uint32_t psn);
+    /**
+     * \brief Check if some packets can be released.
+     */
+    void CheckRelease();
+    /**
      * \brief Get the next item to be sent.
      */
     const DcbTxBufferItem& PeekNextShouldSent();
@@ -115,6 +126,14 @@ class DcbTxBuffer : public Object
      * \return the number of packets to be retransmitted.
      */
     void RetransmitFrom(uint32_t psn);
+    /**
+     * \brief Get the PSN of the front item in the buffer.
+     */
+    uint32_t GetFrontPsn() const;
+    /**
+     * \brief Whether the buffer has gap.
+     */
+    bool HasGap() const;
 
     DcbTxBufferItemI FindPSN(uint32_t psn) const;
     DcbTxBufferItemI End() const;
@@ -130,7 +149,9 @@ class DcbTxBuffer : public Object
     uint32_t m_frontPsn; // PSN of the front item in the buffer. Only increase when acked.
     std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>
         m_txQueue;             // PSN of the items to be sent
-    std::vector<bool> m_acked; // Whether the packet with the PSN is acked
+    std::vector<bool> m_acked; // Whether the packet with the PSN is acked, serve as a bitmap in
+                               // retx mode IRN. The index is the PSN.
+    uint32_t m_maxAckedPsn;    // The max PSN which has been acknowledged, used to detect gap.
 
 }; // class DcbTxBuffer
 
@@ -155,7 +176,8 @@ class DcbRxBuffer : public Object
 
     // No default constructor
     DcbRxBuffer(Callback<void, Ptr<Packet>, Ipv4Header, uint32_t, Ptr<Ipv4Interface>> forwardCb,
-                Ptr<Ipv4Interface> incomingInterface, RoCEv2RetxMode retxMode);
+                Ptr<Ipv4Interface> incomingInterface,
+                RoCEv2RetxMode retxMode);
 
     /**
      * \brief Add a packet into the buffer.
@@ -314,8 +336,7 @@ class RoCEv2Socket : public UdpBasedSocket
         EventId lastCNPEvent;
         DcbRxBuffer m_rxBuffer;
 
-        FlowInfo(uint32_t dst,
-                 DcbRxBuffer rxBuffer)
+        FlowInfo(uint32_t dst, DcbRxBuffer rxBuffer)
             : dstQP(dst),
               nextPSN(0),
               receivedECN(false),
@@ -338,7 +359,17 @@ class RoCEv2Socket : public UdpBasedSocket
                           uint32_t port,
                           Ptr<Ipv4Interface> incomingInterface,
                           const RoCEv2Header& roce);
+
     void GoBackN(uint32_t lostPSN);
+    /**
+     * \brief React to the ACK packet in IRN mode.
+     */
+    void IrnReactToAck(uint32_t expectedPSN);
+    /**
+     * \brief React to the NACK packet in IRN mode.
+     */
+    void IrnReactToNack(uint32_t expectedPSN, IrnHeader irnH);
+
     void ScheduleNextCNP(std::map<FlowIdentifier, FlowInfo>::iterator flowInfoIter,
                          Ipv4Header header);
     /**

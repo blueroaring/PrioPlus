@@ -23,6 +23,9 @@
         },
         "TcpSocketBase": {
             "Timestamp": false
+        },
+        "RoCEv2Socket" : {
+            "RetxMode" : "IRN"
         }
     },
     "globalConfig":{
