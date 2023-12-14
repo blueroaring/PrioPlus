@@ -71,4 +71,10 @@ RoCEv2CongestionOps::CheckStopCondition()
 {
     return m_stopTime.GetNanoSeconds() == 0 || Simulator::Now() < m_stopTime;
 }
+
+double
+RoCEv2CongestionOps::CheckRateRatio(double rateRatio)
+{
+    return std::min(std::max(rateRatio, m_minRateRatio), 1.);
+}
 } // namespace ns3

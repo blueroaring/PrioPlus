@@ -93,8 +93,6 @@ class RoCEv2Dcqcn : public RoCEv2CongestionOps
     uint32_t m_F;
 
     double m_targetRateRatio;
-    double m_curRateRatio;
-    double m_minRateRatio;
     // Time m_stopTime;
 
 }; // class RoCEv2Dcqcn

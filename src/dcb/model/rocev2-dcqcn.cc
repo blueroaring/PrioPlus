@@ -135,8 +135,7 @@ RoCEv2Dcqcn::UpdateStateWithCNP()
     NS_LOG_FUNCTION(this);
 
     m_targetRateRatio = m_curRateRatio;
-    m_curRateRatio *= 1 - m_alpha / 2;
-    m_curRateRatio = std::max(m_curRateRatio, m_minRateRatio);
+    m_curRateRatio = CheckRateRatio(m_curRateRatio * (1 - m_alpha / 2));
     m_sockState->SetRateRatioPercent(m_curRateRatio);
     m_alpha = (1 - m_g) * m_alpha + m_g;
 
@@ -195,7 +194,7 @@ RoCEv2Dcqcn::UpdateRate()
     // else m_rateUpdateIter < m_F && m_bytesUpdateIter < m_F
     // Fast recovery: don't need to update target rate
 
-    m_curRateRatio = (m_targetRateRatio + m_curRateRatio) / 2;
+    m_curRateRatio = CheckRateRatio((m_targetRateRatio + m_curRateRatio) / 2);
     m_sockState->SetRateRatioPercent(m_curRateRatio);
     if (old < 1.)
     {

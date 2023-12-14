@@ -22,6 +22,7 @@
 #include "ns3/data-rate.h"
 #include "ns3/object.h"
 #include "ns3/packet.h"
+#include "ns3/rocev2-header.h"
 #include "ns3/timer.h"
 #include "ns3/traced-value.h"
 
@@ -53,7 +54,8 @@ class RoCEv2CongestionOps : public Object
      */
 
     /**
-     * \brief Get the name of the congestion control algorithm
+     * \brief Get the name of the congestion control algorithm. All subclasses
+     * must implement this function.
      *
      * \return A string identifying the name
      */
@@ -62,7 +64,7 @@ class RoCEv2CongestionOps : public Object
     /**
      * \brief When the sender sending out a packet, update the state if needed.
      *
-     * Do nothing in this class.
+     * Do nothing in this class. And implementions in subclasses is not necessary.
      */
     virtual void UpdateStateSend(Ptr<Packet> packet)
     {
@@ -71,23 +73,57 @@ class RoCEv2CongestionOps : public Object
     /**
      * \brief When receiving a CNP, update the state if needed.
      *
-     * Do nothing in this class.
+     * Do nothing in this class. And implementions in subclasses is not necessary.
      */
     virtual void UpdateStateWithCNP()
     {
     }
 
     /**
-     * \brief When RoCEv2Socket is binded to netdevice, start some timer if needed.
+     * \brief When receiving an ACK, update the state if needed.
      *
-     * Do nothing in this class.
+     * Do nothing in this class. And implementions in subclasses is not necessary.
+     *
+     * Note: This function has the pointer of ACK packet as parameter, which is used after calling
+     * this function in RoCEv2Socket::ForwardUp. So, the ACK packet should be carefully modified in
+     * this.
+     */
+    virtual void UpdateStateWithRcvACK(Ptr<Packet> ack,
+                                       const RoCEv2Header& roce,
+                                       const uint32_t senderNextPSN)
+    {
+    }
+
+    /**
+     * \brief When Generating an ACK, update the state if needed.
+     *
+     * Do nothing in this class. And implementions in subclasses is not necessary.
+     *
+     * Note: This function has the pointer of packet as parameter, which is used after calling
+     * this function in RoCEv2Socket::HandleDataPacket. So, the packet should be carefully modified
+     * in this.
+     *
+     * \param packet The packet received.
+     * \param ack The ACK packet to be sent.
+     */
+    virtual void UpdateStateWithGenACK(Ptr<Packet> packet, Ptr<Packet> ack)
+    {
+    }
+
+    /**
+     * \brief When RoCEv2Socket is binded to netdevice, start some initialization if needed.
+     *
+     * Do nothing in this class. And implementions in subclasses is not necessary.
+     *
+     * Note: In subclass's constructor, the sockState is not set yet. So, any initialization with
+     * sockState should be done in this function.
      */
     virtual void SetReady()
     {
     }
 
     /**
-     * \brief Get headersize
+     * \brief Get headersize.
      */
     virtual uint32_t GetHeaderSize()
     {
@@ -102,6 +138,21 @@ class RoCEv2CongestionOps : public Object
     Ptr<RoCEv2SocketState> m_sockState;
     Time m_stopTime;
     uint32_t m_headerSize;
+
+    /**
+     ********** RATE-BASED **********
+     */
+
+    /**
+     * \brief Check if rateRatio is less than 1. and greater than m_minRateRatio.
+     * if not, correct it.
+     * \return corrected rateRatio.
+     */
+    double CheckRateRatio(double rateRatio);
+    double m_curRateRatio; //!< current rate
+    double m_minRateRatio; //!< minimum rate
+
+    // TODO add window-based
 };
 } // namespace ns3
 
