@@ -233,7 +233,10 @@ Ipv4GlobalRouting::LookupGlobal(Ipv4Header header, Ptr<const Packet> p, Ptr<NetD
                 selectIndex = UdpEcmp(header, p, allRoutes.size());
                 break;
             default:
-                NS_FATAL_ERROR("ECMP for this protocol has not been implemented.");
+                NS_LOG_INFO("ECMP for this protocol (PROT_NUMBETR="
+                            << header.GetProtocol()
+                            << ") has not been implemented, using the default route");
+                selectIndex = 0;
             }
             break;
         }
