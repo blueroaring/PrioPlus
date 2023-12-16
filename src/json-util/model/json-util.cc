@@ -390,6 +390,13 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
         appHelper->SetStaticFlowInterval(sfi->value().get_bool());
     }
 
+    // Get if send once is enabled, default is false
+    auto sendOnce = appConfig.find("sendOnce");
+    if (sendOnce != appConfig.end())
+    {
+        appHelper->SetSendOnce(sendOnce->value().get_bool());
+    }
+
     // Get the start time of the application
     if (appConfig.find("startTime") == appConfig.end())
     {
@@ -561,7 +568,7 @@ OutputStats(boost::json::object& conf, ApplicationContainer& apps, Ptr<DcTopolog
     outputObj["config"] = conf;
     std::shared_ptr<boost::json::object> appStatsObj = ConstructAppStatsObj(apps);
     outputObj["overallStatistics"] = appStatsObj->find("overallStatistics")->value();
-    
+
     // Construct flow statistics
     FlowStatsObjMap mFlowStatsObjs;
     ConstructSenderFlowStats(apps, mFlowStatsObjs);
@@ -681,7 +688,7 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
             (*flowStatsObj)["overallFlowRate"] = flowStats->overallFlowRate.GetBitRate();
 
             // Detailed statistics
-            if (flowStats->bDetailedStats)
+            if (flowStats->bDetailedSenderStats)
             {
                 boost::json::array ccRateArray;
                 boost::json::array ccCwndArray;
@@ -716,6 +723,51 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                 (*flowStatsObj)["ccCwnd"] = ccCwndArray;
                 (*flowStatsObj)["recvEcn"] = recvEcnArray;
                 (*flowStatsObj)["sentPkt"] = sentPktArray;
+            }
+
+            if (flowStats->bDetailedRetxStats)
+            {
+                // Add the sent psn into the sentPktArray if bDetailedSenderStats is true
+                // Otherwise, we will create a new array
+                if (flowStats->bDetailedSenderStats)
+                {
+                    boost::json::array& sentPktArray = (*flowStatsObj)["sentPkt"].as_array();
+                    for (uint32_t i = 0; i < flowStats->vSentPsn.size(); ++i)
+                    {
+                        // The sentPktArray is already created, so we just need to add the psn
+                        sentPktArray[i].as_object().emplace("psn", flowStats->vSentPsn[i].second);
+                    }
+                }
+                else
+                {
+                    boost::json::array sentPktArray;
+                    for (auto sentPsn : flowStats->vSentPsn)
+                    {
+                        sentPktArray.emplace_back(
+                            boost::json::object{{"timeNs", sentPsn.first.GetNanoSeconds()},
+                                                {"psn", sentPsn.second}});
+                    }
+                    (*flowStatsObj)["sentPkt"] = sentPktArray;
+                }
+
+                boost::json::array recvAckArray;
+                // vExpectedPsn must has stats, but vAckedPsn may not
+                bool bHasAckedPsn = flowStats->vAckedPsn.size() > 0;
+                // vAckedPsn's number of elements must be leq than vExpectedPsn's as a ack may carry
+                // acked psn, but must carry expected psn. Thus we use a index to iterate vAckedPsn.
+                uint32_t ackedPsnIndex = 0;
+                for (auto expectedPsn : flowStats->vExpectedPsn)
+                {
+                    boost::json::object recvAckObj;
+                    recvAckObj.emplace("timeNs", expectedPsn.first.GetNanoSeconds());
+                    recvAckObj.emplace("expectedPsn", expectedPsn.second);
+                    if (bHasAckedPsn && flowStats->vAckedPsn[ackedPsnIndex].first == expectedPsn.first)
+                    {
+                        recvAckObj.emplace("ackedPsn", flowStats->vAckedPsn[ackedPsnIndex++].second);
+                    }
+                    recvAckArray.emplace_back(recvAckObj);
+                }
+                (*flowStatsObj)["recvAck"] = recvAckArray;
             }
         }
     }
@@ -770,7 +822,7 @@ ConstructRealTimeFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowSta
             (*flowStatsObj)["p99TxDelayNs"] = p99TxDelay.GetNanoSeconds();
 
             // Add detailed stats
-            if (rtaStats->bDetailedStats)
+            if (rtaStats->bDetailedSenderStats)
             {
                 boost::json::array recvPktArray;
                 for (auto recvPkt : flowStats->vRecvPkt)

@@ -27,12 +27,12 @@
 #include "ns3/application.h"
 #include "ns3/data-rate.h"
 #include "ns3/dc-topology.h"
+#include "ns3/flow-identifier.h"
 #include "ns3/inet-socket-address.h"
 #include "ns3/random-variable-stream.h"
 #include "ns3/rocev2-header.h"
 #include "ns3/seq-ts-size-header.h"
 #include "ns3/traced-callback.h"
-#include "ns3/flow-identifier.h"
 
 #include <map>
 
@@ -163,7 +163,10 @@ class TraceApplication : public Application
       public:
         // constructor
         Stats();
-        virtual ~Stats() {} // Make the base class polymorphic
+
+        virtual ~Stats()
+        {
+        } // Make the base class polymorphic
 
         bool isCollected; //<! Whether the stats is collected
 
@@ -173,14 +176,15 @@ class TraceApplication : public Application
         uint64_t nTotalSentBytes;
         uint32_t nTotalDeliverPkts; //<! Data pkts successfully delivered to peer upper layer
         uint64_t nTotalDeliverBytes;
-        uint32_t nRetxCount; //<! Number of retransmission
+        uint32_t nRetxCount;  //<! Number of retransmission
         Time tStart;          //<! Time of the first flow start
         Time tFinish;         //<! Time of the last flow finish
         DataRate overallRate; //<! overall rate, calculate by total size / (first flow arrive -
                               // last flow finish)
 
         // Detailed statistics, only enabled if needed
-        bool bDetailedStats;
+        bool bDetailedSenderStats;
+        bool bDetailedRetxStats;
         std::map<FlowIdentifier, std::shared_ptr<RoCEv2Socket::Stats>> mFlowStats;
         std::vector<std::shared_ptr<RoCEv2Socket::Stats>>
             vFlowStats; //<! The statistics of each flow
@@ -290,6 +294,11 @@ class TraceApplication : public Application
 
     void SetFlowIdentifier(Flow* flow, Ptr<Socket> socket);
 
+    /**
+     * \brief Schedule a flow, send from the start time to the stop time in the given rate.
+     */
+    void ScheduleOnlyOnce();
+
     std::shared_ptr<Stats> m_stats;
 
     bool m_enableSend;
@@ -309,7 +318,9 @@ class TraceApplication : public Application
     Ptr<UniformRandomVariable> m_hostIndexRng;          //!< Host index random generator
     int32_t m_destNode; //!< if not choosing random destination, store the destined node index here
     InetSocketAddress
-        m_destAddr; //!< if not choosing random destination, store the destined address here
+        m_destAddr;  //!< if not choosing random destination, store the destined address here
+    bool m_sendOnce; //!< Whether the application only send one flow, if true, the application will
+                     //!< send form the start time to the end time in the given rate.
 
     /// traced Callback: transmitted packets.
     TracedCallback<Ptr<const Packet>> m_txTrace;

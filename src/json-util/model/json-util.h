@@ -56,6 +56,9 @@ void SetDefault(boost::json::object& defaultObj);
  * As ns3 expected, the global should be static variable to keep it alive during the whole
  * simulation. To make the global values automatically set, we allocate them on heap and
  * never free them. Please take care of this and never overuse this function.
+ *
+ * In addition, if you want to use MTP, you should better only use global value to set config and
+ * never rewrite it.
  */
 void SetGlobal(boost::json::object& globalObj);
 
@@ -105,8 +108,7 @@ void OutputStats(boost::json::object& conf, ApplicationContainer& apps, Ptr<DcTo
  */
 std::shared_ptr<boost::json::object> ConstructAppStatsObj(ApplicationContainer& apps);
 
-typedef std::map<FlowIdentifier, std::shared_ptr<boost::json::object>>
-    FlowStatsObjMap;
+typedef std::map<FlowIdentifier, std::shared_ptr<boost::json::object>> FlowStatsObjMap;
 
 /**
  * \brief Construct flow stats from sender side.

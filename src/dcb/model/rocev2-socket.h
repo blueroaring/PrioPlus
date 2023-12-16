@@ -270,8 +270,8 @@ class RoCEv2Socket : public UdpBasedSocket
         uint64_t nTotalDeliverBytes;
         /**
          * No need to record the number of lost packets, as it can be calculated by
-         * nTotalSentPkts - nTotalDeliverPkts.
-         * And it is often not accurate, as the lost packets may be retransmitted.
+         * nTotalSentPkts - nTotalDeliverPkts. And it is often not accurate, as the lost packets can
+         * not be detected at sender in some cases.
          */
         uint32_t nRetxCount; //<! Number of retransmission
         Time tStart;
@@ -280,19 +280,28 @@ class RoCEv2Socket : public UdpBasedSocket
         DataRate overallFlowRate; //<! overall rate, calculate by total size / (first msg arrive -
                                   // last msg finish)
 
-        // Detailed statistics, only enabled if needed
-        bool bDetailedStats;
+        // Detailed sender statistics, only enabled if needed
+        bool bDetailedSenderStats;
         std::vector<std::pair<Time, DataRate>> vCcRate; //<! Record the rate when changed
         std::vector<std::pair<Time, uint32_t>> vCcCwnd; //<! Record the cwnd when changed
         std::vector<Time> vRecvEcn;                     //<! Record the time when received ECN
         std::vector<std::pair<Time, uint32_t>>
             vSentPkt; //<! Record the packets' send time and size XXX (only payload now)
 
+        // Detailed statistics for retx, only enabled if needed
+        bool bDetailedRetxStats;
+        std::vector<std::pair<Time, uint32_t>> vSentPsn;  //<! Record the packets' send time and PSN
+        std::vector<std::pair<Time, uint32_t>> vAckedPsn; //<! Record the ack recv time and PSN
+        std::vector<std::pair<Time, uint32_t>> vExpectedPsn; //<! Record the ack recv time and PSN
+
         // Recorder function of the detailed statistics
         void RecordCcRate(DataRate rate);
         void RecordCcCwnd(uint32_t cwnd);
         void RecordRecvEcn();
         void RecordSentPkt(uint32_t size);
+        void RecordSentPsn(uint32_t psn);
+        void RecordAckedPsn(uint32_t psn);
+        void RecordExpectedPsn(uint32_t psn);
 
         // Collect the statistics and check if the statistics is correct
         void CollectAndCheck();

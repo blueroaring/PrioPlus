@@ -180,7 +180,7 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
             flowStats->tFirstPktRecv = std::min(flowStats->tFirstPktRecv, Simulator::Now());
             flowStats->tLastPktRecv = std::max(flowStats->tLastPktRecv, Simulator::Now());
 
-            if (flowStats->bDetailedStats)
+            if (flowStats->bDetailedSenderStats)
             {
                 flowStats->vRecvPkt.push_back(std::make_pair(Simulator::Now(), packet->GetSize()));
             }
@@ -210,13 +210,13 @@ RealTimeApplication::Stats::FlowStats::FlowStats()
       tLastPktRecv(Time::Min()),
       rAvgRateFromArrive(0),
       rAvgRateFromRecv(0),
-      bDetailedStats(false)
+      bDetailedSenderStats(false)
 {
     BooleanValue bv;
-    if (GlobalValue::GetValueByNameFailSafe("detailedStats", bv))
-        bDetailedStats = bv.Get();
+    if (GlobalValue::GetValueByNameFailSafe("detailedSenderStats", bv))
+        bDetailedSenderStats = bv.Get();
     else
-        bDetailedStats = false;
+        bDetailedSenderStats = false;
 }
 
 void

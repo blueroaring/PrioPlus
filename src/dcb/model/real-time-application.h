@@ -84,7 +84,7 @@ class RealTimeApplication : public TraceApplication
             DataRate rAvgRateFromRecv;   // average rate from first packet received
 
             // Detailed statistics, only enabled if needed
-            bool bDetailedStats;
+            bool bDetailedSenderStats;
             std::vector<std::pair<Time, uint32_t>> vRecvPkt;
 
             // Collect the statistics and check if the statistics is correct

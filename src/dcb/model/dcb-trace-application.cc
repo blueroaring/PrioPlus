@@ -30,6 +30,7 @@
 #include "ns3/global-value.h"
 #include "ns3/integer.h"
 #include "ns3/ipv4-address.h"
+#include "ns3/ipv4.h"
 #include "ns3/log-macros-enabled.h"
 #include "ns3/loopback-net-device.h"
 #include "ns3/node.h"
@@ -44,7 +45,6 @@
 #include "ns3/udp-l4-protocol.h"
 #include "ns3/udp-socket-factory.h"
 #include "ns3/uinteger.h"
-#include "ns3/ipv4.h"
 
 #include <cmath>
 
@@ -68,6 +68,11 @@ TraceApplication::GetTypeId()
             //                MakeTypeIdAccessor (&TraceApplication::m_socketTid),
             //                // This should check for SocketFactory as a parent
             //                MakeTypeIdChecker ())
+            .AddAttribute("SendOnce",
+                          "Send one flow from start time to stop time if true",
+                          BooleanValue(false),
+                          MakeBooleanAccessor(&TraceApplication::m_sendOnce),
+                          MakeBooleanChecker())
             .AddTraceSource("FlowComplete",
                             "Trace when a flow completes.",
                             MakeTraceSourceAccessor(&TraceApplication::m_flowCompleteTrace),
@@ -88,7 +93,8 @@ TraceApplication::TraceApplication(Ptr<DcTopology> topology,
       m_ecnEnabled(true),
       m_staticFlowArriveInterval(Time(0)),
       m_destNode(destIndex),
-      m_destAddr(InetSocketAddress("0.0.0.0", 0))
+      m_destAddr(InetSocketAddress("0.0.0.0", 0)),
+      m_sendOnce(false)
 {
     NS_LOG_FUNCTION(this);
 
@@ -114,7 +120,8 @@ TraceApplication::TraceApplication(Ptr<DcTopology> topology,
       m_node(node),
       m_ecnEnabled(true),
       m_destNode(-1),
-      m_destAddr(destAddr)
+      m_destAddr(destAddr),
+      m_sendOnce(false)
 {
     NS_LOG_FUNCTION(this);
 
@@ -226,15 +233,22 @@ TraceApplication::StartApplication(void)
 
     if (m_enableSend)
     {
-        // Schedule all flows in the beginning
-        for (Time t = Simulator::Now() + GetNextFlowArriveInterval(); t < m_stopTime;
-             t += GetNextFlowArriveInterval())
-        {
-            ScheduleNextFlow(t);
+        if (m_sendOnce)
+        { // Schedule only once
+            ScheduleOnlyOnce();
         }
-        if (m_protoGroup == ProtocolGroup::RoCEv2)
+        else
         {
-            tracer_extension::RegisterTraceFCT(this);
+            // Schedule all flows in the beginning
+            for (Time t = Simulator::Now() + GetNextFlowArriveInterval(); t < m_stopTime;
+                 t += GetNextFlowArriveInterval())
+            {
+                ScheduleNextFlow(t);
+            }
+            if (m_protoGroup == ProtocolGroup::RoCEv2)
+            {
+                tracer_extension::RegisterTraceFCT(this);
+            }
         }
     }
 }
@@ -380,6 +394,45 @@ TraceApplication::ScheduleNextFlow(const Time& startTime)
                         flow);
 }
 
+/**
+ * Many duplicate code here, but if we want to reuse ScheduleNextFlow(Time), we need to both modify
+ * GetNextFlowArriveInterval() and GetNextFlowSize(), which place one feature in two places.
+ * So just duplicate the code here...
+ */
+void
+TraceApplication::ScheduleOnlyOnce()
+{
+    NS_LOG_FUNCTION(this);
+    if (!m_sendOnce)
+    {
+        return;
+    }
+
+    // Set the dest and create a socket to it
+    uint32_t destNode = 0;
+    Ptr<Socket> socket;
+    if (m_destAddr.GetPort() == 0)
+    {
+        // The dest addr is not set, select a destination node
+        destNode = GetDestinationNode();
+        socket = CreateNewSocket(destNode);
+    }
+    else
+    {
+        socket = CreateNewSocket(m_destAddr);
+    }
+
+    // Calculate the flow size according to the start time, stop time, and link rate
+    Time flowDuration = m_stopTime - Simulator::Now();
+    uint64_t flowSize = flowDuration.GetSeconds() * m_socketLinkRate.GetBitRate() / 8;
+
+    // Create a flow and schedule it's send
+    Flow* flow = new Flow(flowSize, Simulator::Now(), destNode, socket);
+    SetFlowIdentifier(flow, socket);
+    m_flows.emplace(socket, flow); // used when flow completes
+    Simulator::Schedule(Time(0), &TraceApplication::SendNextPacket, this, flow);
+}
+
 void
 TraceApplication::SendNextPacket(Flow* flow)
 {
@@ -390,27 +443,29 @@ TraceApplication::SendNextPacket(Flow* flow)
     {
         m_totBytes += packetSize;
         Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_headerSize);
-        // XXX We do not need flow truncate!!!
-        if (true)
-        {
-            if (flow->remainBytes > MSS)
-            { // Schedule next packet
-                flow->remainBytes -= MSS;
-                Simulator::Schedule(txTime, &TraceApplication::SendNextPacket, this, flow);
-                return;
-            }
-            else
-            {
-                // flow sending completes
-                Ptr<UdpBasedSocket> udpSock = DynamicCast<UdpBasedSocket>(flow->socket);
-                if (udpSock)
-                {
-                    udpSock->FinishSending();
-                }
-                // TODO: do some trace here
-                // ...
-            }
+        /**
+         * Note that the send will continue even the application is stopped.
+         * We just want the appliaction to schedule the flows, but not determine when to stop the
+         * simulation.
+         */
+        if (flow->remainBytes > MSS)
+        { // Schedule next packet
+            flow->remainBytes -= MSS;
+            Simulator::Schedule(txTime, &TraceApplication::SendNextPacket, this, flow);
+            return;
         }
+        else
+        {
+            // flow sending completes
+            Ptr<UdpBasedSocket> udpSock = DynamicCast<UdpBasedSocket>(flow->socket);
+            if (udpSock)
+            {
+                udpSock->FinishSending();
+            }
+            // TODO: do some trace here
+            // ...
+        }
+
         // m_flows.erase (flow);
         // flow->Dispose ();
         // Dispose will delete the struct leading to flow a dangling pointer.
@@ -618,11 +673,16 @@ TraceApplication::Stats::Stats()
       tFinish(Time::Min()),
       overallRate(DataRate(0))
 {
+    // Retrieve the global config values
     BooleanValue bv;
-    if (GlobalValue::GetValueByNameFailSafe("detailedStats", bv))
-        bDetailedStats = bv.Get();
+    if (GlobalValue::GetValueByNameFailSafe("detailedSenderStats", bv))
+        bDetailedSenderStats = bv.Get();
     else
-        bDetailedStats = false;
+        bDetailedSenderStats = false;
+    if (GlobalValue::GetValueByNameFailSafe("detailedRetxStats", bv))
+        bDetailedRetxStats = bv.Get();
+    else
+        bDetailedRetxStats = false;
 }
 
 std::shared_ptr<TraceApplication::Stats>

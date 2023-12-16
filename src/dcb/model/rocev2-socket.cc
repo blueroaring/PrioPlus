@@ -196,6 +196,7 @@ RoCEv2Socket::DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item)
     m_stats->nTotalSentBytes += payload->GetSize();
     // TODO Only payload size is recorded now
     m_stats->RecordSentPkt(payload->GetSize());
+    m_stats->RecordSentPsn(rocev2Header.GetPSN());
 
     // Used to debug
     NS_LOG_DEBUG("Send packet " << rocev2Header.GetPSN() << " at "
@@ -239,15 +240,12 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
     AETHeader aeth;
     packet->RemoveHeader(aeth);
 
+    // Record the expected PSN, for both ack and nack
+    m_stats->RecordExpectedPsn(roce.GetPSN());
+
     switch (aeth.GetSyndromeType())
     {
     case AETHeader::SyndromeType::FC_DISABLED: { // normal ACK
-        // The following judgement only reasonalbe under per-packet ack and lossless network
-        // if (psn != roce.GetPSN())
-        // {
-        //     NS_FATAL_ERROR("RoCEv2 socket receive an ACK with PSN not expected");
-        // }
-
         // Note that the psn in ACK's BTH is expected PSN, not the PSN of the ACKed packet
         m_txBuffer.AcknowledgeTo(roce.GetPSN() - 1);
 
@@ -414,6 +412,9 @@ RoCEv2Socket::IrnReactToNack(uint32_t expectedPsn, IrnHeader irnH)
     m_txBuffer.AcknowledgeTo(expectedPsn - 1);
     m_txBuffer.Acknowledge(ackedPsn);
     m_txBuffer.Retransmit(expectedPsn);
+
+    // Record the acked PSN
+    m_stats->RecordAckedPsn(ackedPsn);
 
     NS_LOG_DEBUG("IRN expected PSN " << expectedPsn << " ackedPsn " << ackedPsn << " at time "
                                      << Simulator::Now().GetNanoSeconds() << "ns.");
@@ -629,7 +630,8 @@ DcbTxBuffer::GetTypeId(void)
 
 DcbTxBuffer::DcbTxBuffer(Callback<void> sendCb)
     : m_sendCb(sendCb),
-      m_frontPsn(0)
+      m_frontPsn(0),
+      m_maxAckedPsn(0)
 {
 }
 
@@ -924,11 +926,16 @@ RoCEv2Socket::Stats::Stats()
       tFct(Time(0)),
       overallFlowRate(DataRate(0))
 {
+    // Retrieve the global config values
     BooleanValue bv;
-    if (GlobalValue::GetValueByNameFailSafe("detailedStats", bv))
-        bDetailedStats = bv.Get();
+    if (GlobalValue::GetValueByNameFailSafe("detailedSenderStats", bv))
+        bDetailedSenderStats = bv.Get();
     else
-        bDetailedStats = false;
+        bDetailedSenderStats = false;
+    if (GlobalValue::GetValueByNameFailSafe("detailedRetxStats", bv))
+        bDetailedRetxStats = bv.Get();
+    else
+        bDetailedRetxStats = false;
 }
 
 std::shared_ptr<RoCEv2Socket::Stats>
@@ -955,7 +962,7 @@ RoCEv2Socket::Stats::CollectAndCheck()
 void
 RoCEv2Socket::Stats::RecordCcRate(DataRate rate)
 {
-    if (bDetailedStats)
+    if (bDetailedSenderStats)
     {
         // Check if the rate is changed
         if (vCcRate.size() > 0 && vCcRate.back().second == rate)
@@ -969,7 +976,7 @@ RoCEv2Socket::Stats::RecordCcRate(DataRate rate)
 void
 RoCEv2Socket::Stats::RecordCcCwnd(uint32_t cwnd)
 {
-    if (bDetailedStats)
+    if (bDetailedSenderStats)
     {
         // Check if the cwnd is changed
         if (vCcCwnd.size() > 0 && vCcCwnd.back().second == cwnd)
@@ -983,7 +990,7 @@ RoCEv2Socket::Stats::RecordCcCwnd(uint32_t cwnd)
 void
 RoCEv2Socket::Stats::RecordRecvEcn()
 {
-    if (bDetailedStats)
+    if (bDetailedSenderStats)
     {
         vRecvEcn.push_back(Simulator::Now());
     }
@@ -992,9 +999,36 @@ RoCEv2Socket::Stats::RecordRecvEcn()
 void
 RoCEv2Socket::Stats::RecordSentPkt(uint32_t size)
 {
-    if (bDetailedStats)
+    if (bDetailedSenderStats)
     {
         vSentPkt.push_back(std::make_pair(Simulator::Now(), size));
+    }
+}
+
+void
+RoCEv2Socket::Stats::RecordSentPsn(uint32_t psn)
+{
+    if (bDetailedRetxStats)
+    {
+        vSentPsn.push_back(std::make_pair(Simulator::Now(), psn));
+    }
+}
+
+void
+RoCEv2Socket::Stats::RecordAckedPsn(uint32_t psn)
+{
+    if (bDetailedRetxStats)
+    {
+        vAckedPsn.push_back(std::make_pair(Simulator::Now(), psn));
+    }
+}
+
+void
+RoCEv2Socket::Stats::RecordExpectedPsn(uint32_t psn)
+{
+    if (bDetailedRetxStats)
+    {
+        vExpectedPsn.push_back(std::make_pair(Simulator::Now(), psn));
     }
 }
 

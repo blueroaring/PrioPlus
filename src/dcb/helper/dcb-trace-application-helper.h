@@ -53,6 +53,7 @@ class TraceApplicationHelper
     void SetDestination(InetSocketAddress dest);
     void SetSendEnabled(bool enabled);
     void SetStaticFlowInterval(bool staticFlowInterval);
+    void SetSendOnce(bool sendOnce);
     void SetStartAndStopTime(Time start, Time stop);
     void SetRealTimeApp(bool realTimeApp);
 
@@ -128,6 +129,7 @@ class TraceApplicationHelper
     bool m_sendEnabled;
     double m_load;
     bool m_staticFlowInterval;
+    bool m_sendOnce;
     Time m_startTime;
     Time m_stopTime;
     bool m_realTimeApp;

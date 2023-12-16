@@ -29,7 +29,9 @@
         }
     },
     "globalConfig":{
-        "detailedStats": true
+        "detailedSenderStats": true,
+        "detailedRetxStats": false,
+        "detailedSwitchStats": false
     },
     "topologyConfig": {
         "hostPort": {

@@ -41,6 +41,7 @@ TraceApplicationHelper::TraceApplicationHelper(Ptr<DcTopology> topo)
       m_sendEnabled(true),
       m_load(0),
       m_staticFlowInterval(false),
+      m_sendOnce(false),
       m_startTime(Time(0)),
       m_stopTime(Time(0)),
       m_realTimeApp(false)
@@ -120,6 +121,12 @@ TraceApplicationHelper::SetStaticFlowInterval(bool staticFlowInterval)
 }
 
 void
+TraceApplicationHelper::SetSendOnce(bool sendOnce)
+{
+    m_sendOnce = sendOnce;
+}
+
+void
 TraceApplicationHelper::SetStartAndStopTime(Time start, Time stop)
 {
     m_startTime = start;
@@ -172,6 +179,7 @@ TraceApplicationHelper::InstallPriv(Ptr<Node> node)
     {
         app->SetFlowCdf(*m_cdf);
         app->SetFlowMeanArriveInterval(m_flowMeanInterval, m_staticFlowInterval);
+        app->SetAttribute("SendOnce", BooleanValue(m_sendOnce));
     }
     else
     {
