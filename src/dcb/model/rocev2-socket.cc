@@ -386,7 +386,7 @@ void
 RoCEv2Socket::GoBackN(uint32_t lostPSN)
 {
     // DcbTxBuffer::DcbTxBufferItemI item = m_txBuffer.FindPSN(lostPSN);
-    NS_LOG_WARN("Go-back-N to " << lostPSN << " at time " << Simulator::Now().GetNanoSeconds()
+    NS_LOG_DEBUG("Go-back-N to " << lostPSN << " at time " << Simulator::Now().GetNanoSeconds()
                                 << "ns.");
     m_txBuffer.RetransmitFrom(lostPSN);
 
@@ -841,12 +841,12 @@ DcbRxBuffer::Add(uint32_t psn, Ipv4Header ipv4, RoCEv2Header roce, Ptr<Packet> p
         }
         else if (psn > m_expectedPsn)
         {
-            NS_LOG_WARN("RoCEv2 socket receives out-of-order packet "
+            NS_LOG_DEBUG("RoCEv2 socket receives out-of-order packet "
                         << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
         }
         else
         {
-            NS_LOG_WARN("RoCEv2 socket receives duplicate packet "
+            NS_LOG_DEBUG("RoCEv2 socket receives duplicate packet "
                         << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
         }
     }
@@ -858,7 +858,7 @@ DcbRxBuffer::Add(uint32_t psn, Ipv4Header ipv4, RoCEv2Header roce, Ptr<Packet> p
         }
         else
         {
-            NS_LOG_WARN("RoCEv2 socket receives duplicate packet "
+            NS_LOG_DEBUG("RoCEv2 socket receives duplicate packet "
                         << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
         }
     }

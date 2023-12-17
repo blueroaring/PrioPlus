@@ -1,0 +1,6 @@
+# untrack all files in a directory except for a few
+*/*
+
+!./*
+!topo/
+!trace/
