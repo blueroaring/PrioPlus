@@ -285,8 +285,8 @@ Initialize(int argc, char* argv[])
     Config::SetDefault("ns3::RedQueueDisc::MaxTh", DoubleValue(150));
 
     // network layer settings
-    Config::SetDefault("ns3::Ipv4GlobalRouting::RandomEcmpRouting", BooleanValue(conf::ecmp));
-    Config::SetDefault("ns3::Ipv4GlobalRouting::FlowEcmpRouting", BooleanValue(conf::flow));
+    Config::SetDefault("ns3::Ipv4GlobalRouting::RandomEcmpRouting",
+                       UintegerValue(conf::ecmp ? (conf::flow ? 2 : 1) : 0));
 
     // transport layer settings
     Config::SetDefault("ns3::TcpL4Protocol::SocketType", StringValue(conf::tcp));
