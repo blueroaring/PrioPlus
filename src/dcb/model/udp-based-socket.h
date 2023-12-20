@@ -349,6 +349,9 @@ class UdpBasedSocket : public Socket
 
     virtual void FinishSending();
 
+    void SetLocalAddress(Ipv4Address local);
+    virtual Ipv4Address GetLocalAddress() const;
+    virtual Ipv4Address GetPeerAddress() const;
     virtual uint32_t GetSrcPort() const;
     virtual uint32_t GetDstPort() const;
 

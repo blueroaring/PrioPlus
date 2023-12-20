@@ -235,6 +235,8 @@ class DcbNetDevice : public NetDevice
      */
     void AddEthernetHeader(Ptr<Packet> p, uint16_t protocolNumber);
 
+    std::pair<uint32_t, uint32_t> GetNodeAndPortId() const;
+
     virtual void NotifyLinkUp(void);
 
   private:
@@ -355,6 +357,12 @@ class DcbNetDevice : public NetDevice
      * the medium.
      */
     TracedCallback<Ptr<const Packet>> m_phyTxBeginTrace;
+
+    /**
+     * The trace source fired when a packet begins the transmission process on
+     * the medium. The node id and port id is also passed as a parameter.
+     */
+    TracedCallback<Ptr<const Packet>, std::pair<uint32_t, uint32_t>> m_phyTxBeginWithIdTrace;
 
     /**
      * The trace source fired when a packet ends the transmission process on

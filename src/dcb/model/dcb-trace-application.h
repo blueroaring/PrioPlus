@@ -27,6 +27,7 @@
 #include "ns3/application.h"
 #include "ns3/data-rate.h"
 #include "ns3/dc-topology.h"
+#include "ns3/flow-identifier.h"
 #include "ns3/inet-socket-address.h"
 #include "ns3/random-variable-stream.h"
 #include "ns3/rocev2-header.h"
@@ -62,6 +63,7 @@ class TraceApplication : public Application
      * destination.
      */
     TraceApplication(Ptr<DcTopology> topology, uint32_t nodeIndex, int32_t destIndex = -1);
+    TraceApplication(Ptr<DcTopology> topology, Ptr<Node> node, InetSocketAddress destAddr);
     virtual ~TraceApplication();
 
     enum ProtocolGroup
@@ -93,6 +95,7 @@ class TraceApplication : public Application
         uint64_t remainBytes;
         uint32_t destNode;
         const Ptr<Socket> socket;
+        FlowIdentifier flowIdentifier;
 
         Flow(uint64_t s, Time t, uint32_t dest, Ptr<Socket> sock)
             : startTime(t),
@@ -111,11 +114,19 @@ class TraceApplication : public Application
         }
     };
 
-    typedef const std::vector<std::pair<double, double>> TraceCdf;
+    // The message size trace CDF in <size (in Byte), probility>
+    typedef const std::vector<std::pair<uint32_t, double>> TraceCdf;
 
     void SetFlowCdf(const TraceCdf& cdf);
 
     void SetFlowMeanArriveInterval(double interval);
+    /**
+     * \brief Set mean arrive interval
+     *
+     * \param iterval The mean interval in ms.
+     * \param staticFlowInterval Whether the flow interval is static.
+     */
+    void SetFlowMeanArriveInterval(double interval, bool staticFlowInterval);
 
     void SetEcnEnabled(bool enabled);
 
@@ -123,6 +134,8 @@ class TraceApplication : public Application
     void SetReceiveEnabled(bool enabled);
 
     void FlowCompletes(Ptr<UdpBasedSocket> socket);
+
+    void SetDestAddr(InetSocketAddress destAddr);
 
     constexpr static inline const uint64_t MSS = 1000; // bytes
 
@@ -145,6 +158,52 @@ class TraceApplication : public Application
         {2000., 0.67},   {7000., 0.70},   {30000., 0.72},    {50000., 0.82},   {80000., 0.87},
         {120000., 0.90}, {300000., 0.95}, {1000000., 0.975}, {2000000., 0.99}, {10000000., 1.00}};
 
+    class Stats
+    {
+      public:
+        // constructor
+        Stats();
+
+        virtual ~Stats()
+        {
+        } // Make the base class polymorphic
+
+        bool isCollected; //<! Whether the stats is collected
+
+        uint32_t nTotalSizePkts;  //<! Data size scheduled by application
+        uint64_t nTotalSizeBytes; //<! Data size scheduled by application
+        uint32_t nTotalSentPkts;  //<! Data pkts sent to lower layer, including retransmission
+        uint64_t nTotalSentBytes;
+        uint32_t nTotalDeliverPkts; //<! Data pkts successfully delivered to peer upper layer
+        uint64_t nTotalDeliverBytes;
+        uint32_t nRetxCount;  //<! Number of retransmission
+        Time tStart;          //<! Time of the first flow start
+        Time tFinish;         //<! Time of the last flow finish
+        DataRate overallRate; //<! overall rate, calculate by total size / (first flow arrive -
+                              // last flow finish)
+
+        // Detailed statistics, only enabled if needed
+        bool bDetailedSenderStats;
+        bool bDetailedRetxStats;
+        std::map<FlowIdentifier, std::shared_ptr<RoCEv2Socket::Stats>> mFlowStats;
+        std::vector<std::shared_ptr<RoCEv2Socket::Stats>>
+            vFlowStats; //<! The statistics of each flow
+
+        // Collect the statistics and check if the statistics is correct
+        void CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows);
+
+        // No getter for simplicity
+    };
+
+    virtual std::shared_ptr<Stats> GetStats() const;
+
+  protected:
+    DataRate m_socketLinkRate; //!< Link rate of the deice
+    uint64_t m_totBytes;       //!< Total bytes sent so far
+    uint32_t m_headerSize;     //!< total header bytes of a packet
+    std::map<Ptr<Socket>, Flow*> m_flows;
+    Ptr<RoCEv2Socket> m_receiverSocket;
+
   private:
     /**
      * \brief Init fields, e.g., RNGs and m_socketLinkRate.
@@ -161,9 +220,16 @@ class TraceApplication : public Application
     void ScheduleNextFlow(const Time& startTime);
 
     /**
-     * \brief Create new socket.
+     * \brief Create new socket to the destNode.
+     *
+     * Call this function requires m_topology set.
      */
     Ptr<Socket> CreateNewSocket(uint32_t destNode);
+
+    /**
+     * \brief Create new socket send to the destAddr.
+     */
+    Ptr<Socket> CreateNewSocket(InetSocketAddress destAddr);
 
     /**
      * \brief Get destination node index of one flow.
@@ -181,7 +247,7 @@ class TraceApplication : public Application
      * Raise error if packet does not sent successfully.
      * \param socket the socket to send packet.
      */
-    void SendNextPacket(Flow* flow);
+    virtual void SendNextPacket(Flow* flow);
 
     /**
      * \brief Get next random flow start time.
@@ -217,33 +283,44 @@ class TraceApplication : public Application
      *
      * \param socket the socket the packet was received to.
      */
-    void HandleRead(Ptr<Socket> socket);
+    virtual void HandleRead(Ptr<Socket> socket);
 
     /**
      * \brief Find a outbound net device (i.e., not a loopback net device) for the application's
-     * node. \return a outbound net device (typically the only outbound net device).
+     * node.
+     * \return a outbound net device (typically the only outbound net device).
      */
-    Ptr<DcbNetDevice> GetOutboundNetDevice();
+    Ptr<NetDevice> GetOutboundNetDevice();
 
-    std::map<Ptr<Socket>, Flow*> m_flows;
+    void SetFlowIdentifier(Flow* flow, Ptr<Socket> socket);
+
+    /**
+     * \brief Schedule a flow, send from the start time to the stop time in the given rate.
+     */
+    void ScheduleOnlyOnce();
+
+    std::shared_ptr<Stats> m_stats;
 
     bool m_enableSend;
     bool m_enableReceive;
     const Ptr<DcTopology> m_topology; //!< The topology
     const uint32_t m_nodeIndex;
+    Ptr<Node> m_node; //!< The node the application is installed on, used when dctopo is not set
     bool m_ecnEnabled;
     // bool                   m_connected;       //!< True if connected
-    DataRate m_socketLinkRate;                          //!< Link rate of the deice
-    uint64_t m_totBytes;                                //!< Total bytes sent so far
-    TypeId m_socketTid;                                 //!< Type of the socket used
-    ProtocolGroup m_protoGroup;                         //!< Protocol group
-    TypeId m_innerUdpProtocol;                          //!< inner-UDP protocol type id
-    uint32_t m_headerSize;                              //!< total header bytes of a packet
+    TypeId m_socketTid;         //!< Type of the socket used
+    ProtocolGroup m_protoGroup; //!< Protocol group
+    TypeId m_innerUdpProtocol;  //!< inner-UDP protocol type id
+
     Ptr<EmpiricalRandomVariable> m_flowSizeRng;         //!< Flow size random generator
+    Time m_staticFlowArriveInterval;                    //!< Static flow arrive interval
     Ptr<ExponentialRandomVariable> m_flowArriveTimeRng; //!< Flow arrive time random generator
     Ptr<UniformRandomVariable> m_hostIndexRng;          //!< Host index random generator
-    int32_t m_destNode; //!< if not choosing random destination, store the destined address here
-    Ptr<RoCEv2Socket> m_receiverSocket;
+    int32_t m_destNode; //!< if not choosing random destination, store the destined node index here
+    InetSocketAddress
+        m_destAddr;  //!< if not choosing random destination, store the destined address here
+    bool m_sendOnce; //!< Whether the application only send one flow, if true, the application will
+                     //!< send form the start time to the end time in the given rate.
 
     /// traced Callback: transmitted packets.
     TracedCallback<Ptr<const Packet>> m_txTrace;

@@ -72,4 +72,27 @@ DcbFcHelper::InstallPFCtoNodePort(Ptr<Node> node,
                                   dev);
 }
 
+// static
+void
+DcbFcHelper::InstallPFCtoHostPort(Ptr<Node> node,
+                                  const uint32_t port,
+                                  const uint8_t enableVec)
+{
+    Ptr<NetDevice> dev = node->GetDevice(port);
+
+    // enable flow control on queue disc
+    Ptr<PausableQueueDisc> qDisc = DynamicCast<DcbNetDevice>(node->GetDevice(port))->GetQueueDisc();
+    qDisc->SetFCEnabled(true);
+
+    // install PFC, pass a null DcbTrafficControl to DcbPfcPort
+    Ptr<DcbPfcPort> pfc = CreateObject<DcbPfcPort>(dev, Ptr<DcbTrafficControl>(0));
+    pfc->SetEnableVec(enableVec);
+
+    // register protocol handler
+    node->RegisterProtocolHandler(MakeCallback(&DcbPfcPort::ReceivePfc, pfc),
+                                  PfcFrame::PROT_NUMBER,
+                                  dev);
+}
+
+
 } // namespace ns3

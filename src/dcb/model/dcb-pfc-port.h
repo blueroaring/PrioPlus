@@ -87,7 +87,7 @@ class DcbPfcPort : public DcbFlowControlPort
 
     void ConfigQueue(uint32_t priority, uint32_t reserve, uint32_t xon);
 
-    /*
+    /**
      * \brief Set the EnableVec field of PFC to deviceIndex with enableVec.
      * enableVec should be a 8 bits variable, each bit of it represents whether
      * PFC is enabled on the corresponding priority.
@@ -98,25 +98,21 @@ class DcbPfcPort : public DcbFlowControlPort
     /**
      * A port has 8 priority queues and stores an PFC enableVec
      */
-    struct PortInfo
+    struct IngressPortInfo
     {
         struct IngressQueueInfo
         {
             uint32_t reserve; // XXX Act as xoff now
             uint32_t xon;
-            bool isPaused; // Whether the upstream priorty is paused
+            bool isUpstreamPaused; // Whether the upstream priorty is paused
 
-            bool hasEvent;
             EventId pauseEvent;
 
             IngressQueueInfo();
-
-            void ReplacePauseEvent(const EventId& event);
-            void CancelPauseEvent();
         }; // struct IngressQueueInfo
 
-        explicit PortInfo(uint32_t index);
-        PortInfo(uint32_t index, uint8_t enableVec);
+        explicit IngressPortInfo(uint32_t index);
+        IngressPortInfo(uint32_t index, uint8_t enableVec);
 
         const IngressQueueInfo& getQueue(uint8_t priority) const;
 
@@ -125,20 +121,50 @@ class DcbPfcPort : public DcbFlowControlPort
         uint32_t m_index;
         std::vector<IngressQueueInfo> m_ingressQueues;
         uint8_t m_enableVec;
-    }; // struct PortInfo
+    }; // struct IngressPortInfo
 
     bool CheckEnableVec(uint8_t cls);
 
     bool CheckShouldSendPause(uint8_t priority, uint32_t packetSize) const;
+    void DoSendPause(uint8_t priority, const Address& from);
     bool CheckShouldSendResume(uint8_t priority) const;
 
-    void SetPaused(uint8_t priority, bool paused);
+    void SetUpstreamPaused(uint8_t priority, bool paused);
 
-    void UpdatePauseEvent(uint8_t priority, const EventId& event);
-    void CancelPauseEvent(uint8_t priority);
+    /**
+     * \brief Called when a sent pause frame coming to expires.
+     *
+     * In this function, we check the ingress queue length, if it still exceeds
+     * the threshold, we send another pause frame. By doing this, we can make
+     * sure that the upstream will not send any packet to us.
+     */
+    void UpstreamPauseExpired(uint8_t priority, Address from);
+    /**
+     * \brief Calculate the pause duration given the quanta and line rate.
+     */
+    Time PauseDuration(uint16_t quanta, DataRate lineRate) const;
 
   private:
-    PortInfo m_port;
+    std::pair<uint32_t, uint32_t> GetNodeAndPortId() const;
+
+    IngressPortInfo m_port;
+
+    std::vector<EventId> m_egressResumeEvents;
+
+    enum PFCExpireReactionType
+    {
+        RESEND_PAUSE,
+        RESET_UPSTREAM_PAUSED,
+        NEVER_EXPIRE
+    }; // enum PFCExpireReactionType
+    const enum PFCExpireReactionType m_reactionType = RESEND_PAUSE;
+
+    /// Traced callback: fired a PFC frame is sent, trace with node and port id, priority, pause or
+    /// resume
+    TracedCallback<std::pair<uint32_t, uint32_t>, uint8_t, bool> m_tracePfcSent;
+    /// Traced callback: fired when a pause frame is received, trace with node and port id,
+    /// priority, pause or resume
+    TracedCallback<std::pair<uint32_t, uint32_t>, uint8_t, bool> m_tracePfcReceived;
 
 }; // class DcbPfcPort
 

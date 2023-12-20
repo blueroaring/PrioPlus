@@ -32,6 +32,7 @@
 #include "ns3/simulator.h"
 #include "ns3/udp-header.h"
 #include "ns3/udp-l4-protocol.h"
+#include "ns3/rocev2-l4-protocol.h"
 
 namespace ns3
 {
@@ -133,6 +134,12 @@ UdpBasedL4Protocol::ForwardUp(Ptr<Packet> packet,
     }
     else
     {
+        // Check if the packet is a RoCEv2 CNP packet
+        if (RoCEv2L4Protocol::IsCNP(packet))
+        {
+            NS_LOG_DEBUG("Received a CNP packet for a closed socket.");
+            return;
+        }
         NS_FATAL_ERROR("No endPoints matched in UDP-based L4 protocol with inner port "
                        << innerPort << " on node " << Simulator::GetContext());
     }

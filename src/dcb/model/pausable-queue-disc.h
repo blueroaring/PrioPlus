@@ -23,6 +23,7 @@
 #include "ns3/queue-disc.h"
 #include "ns3/queue-item.h"
 #include "ns3/type-id.h"
+#include "ns3/node.h"
 
 namespace ns3
 {
@@ -51,7 +52,8 @@ class PausableQueueDisc : public QueueDisc
     static TypeId GetTypeId(void);
 
     PausableQueueDisc();
-    explicit PausableQueueDisc(uint32_t port);
+    PausableQueueDisc(uint32_t port);
+    PausableQueueDisc(Ptr<Node> node, uint32_t port);
 
     virtual ~PausableQueueDisc();
 
@@ -83,6 +85,8 @@ class PausableQueueDisc : public QueueDisc
      */
     QueueSize GetInnerQueueSize(uint8_t priority) const;
 
+    std::pair<uint32_t, uint32_t> GetNodeAndPortId() const;
+
   private:
     virtual bool DoEnqueue(Ptr<QueueDiscItem> item) override;
 
@@ -94,6 +98,8 @@ class PausableQueueDisc : public QueueDisc
 
     virtual void InitializeParams(void) override;
 
+    Ptr<Node> m_node;       //!< Node owning this NetDevice
+
     bool m_fcEnabled; // Whether flow control is enabled, once enabled, the queue disc will be pausable
 
     TCEgressCallback m_tcEgress; // Costum callback, called after packet is dequeued
@@ -101,6 +107,9 @@ class PausableQueueDisc : public QueueDisc
     int32_t m_portIndex; //!< the port index this QueueDisc belongs to
 
     QueueSize m_queueSize;
+
+    /// Traced callback: fired when a packet is enqueued, trace with item, host and port id, priority
+    TracedCallback<Ptr<const QueueDiscItem>, std::pair<uint32_t, uint32_t>, uint8_t> m_traceEnqueueWithId;
 
 }; // class PausableQueueDisc
 
