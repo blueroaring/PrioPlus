@@ -157,7 +157,7 @@ class DcbPfcPort : public DcbFlowControlPort
         RESET_UPSTREAM_PAUSED,
         NEVER_EXPIRE
     }; // enum PFCExpireReactionType
-    const enum PFCExpireReactionType m_reactionType = NEVER_EXPIRE;
+    const enum PFCExpireReactionType m_reactionType = RESEND_PAUSE;
 
     /// Traced callback: fired a PFC frame is sent, trace with node and port id, priority, pause or
     /// resume

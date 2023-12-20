@@ -193,7 +193,6 @@ class DcbRxBuffer : public Object
     Callback<void, Ptr<Packet>, Ipv4Header, uint32_t, Ptr<Ipv4Interface>> m_forwardCb;
     std::map<uint32_t, DcbRxBufferItem> m_buffer;
     uint32_t m_expectedPsn; // PSN of the front item in the buffer. Only increase when ForwardUp.
-    uint32_t m_srcQp;       // Source QP of the flow, used to forward up
     Ptr<Ipv4Interface> m_forwardInterface; // Interface to forward the packet up
     RoCEv2RetxMode m_retxMode;
 }; // class DcbRxBuffer

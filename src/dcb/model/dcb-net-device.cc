@@ -364,7 +364,7 @@ DcbNetDevice::TransmitComplete(void)
             TransmitStart(p);
         }
 
-        /*
+        /**
          * If the device queue is empty, make queueDisc to send one packet down.
          * Should not do this procedure every time when a packet is sent out, given
          * that the FC Frame is sent out through this device as well.

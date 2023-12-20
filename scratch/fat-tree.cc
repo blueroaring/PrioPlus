@@ -168,7 +168,7 @@ enum debugType
     TRACK_PORT
 };
 
-const debugType debugT = TRACK_PORT;
+const debugType debugT = TRACK_PACKET;
 // Variables used for track a packet
 const uint32_t dstAddr = 167772163;
 const uint32_t dstQp = 100;

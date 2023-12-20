@@ -252,13 +252,6 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
         if (m_txBuffer.GetFrontPsn() == m_psnEnd)
         { // last ACk received, flow finshed
             NotifyFlowCompletes();
-            // a delay to handle remaining packets (e.g., CNP)
-
-            // FIXME: do not use magic number
-            // NS_LOG_DEBUG("RoCEv2Socket will close at "
-            //              << (Simulator::Now() + MicroSeconds(50)).GetMicroSeconds() << "us node "
-            //              << Simulator::GetContext() << " qp " << roce.GetDestQP());
-            // Simulator::Schedule(MicroSeconds(50), &RoCEv2Socket::Close, this);
 
             // Filter the orphan CNP packets at UdpBasedL4Protocol, thus the socket can be closed
             // immediately
@@ -343,7 +336,7 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
 
     if (psn == expectedPSN)
     {
-        flowInfoIter->second.nextPSN = (expectedPSN + 1) & 0xffffff;
+        // flowInfoIter->second.nextPSN = (expectedPSN + 1) & 0xffffff;
         if (roce.GetAckQ())
         { // send ACK
             // TODO No check of whether queue disc avaliable, as don't know how to hold the ACK
@@ -396,8 +389,6 @@ RoCEv2Socket::GoBackN(uint32_t lostPSN)
     NS_LOG_WARN("Go-back-N to " << lostPSN << " at time " << Simulator::Now().GetNanoSeconds()
                                 << "ns.");
     m_txBuffer.RetransmitFrom(lostPSN);
-    // Don't forget to call SendPendingPacket to send the retransmitted packets
-    SendPendingPacket();
 
     // Record the retx count
     m_stats->nRetxCount++;
@@ -705,6 +696,7 @@ const DcbTxBuffer::DcbTxBufferItem&
 DcbTxBuffer::PeekNextShouldSent()
 {
     // Check whether has packet to send
+    NS_ASSERT(GetSizeToBeSent() != 0);
     // If the top of the txQueue is acked, pop it and check the next one
     uint32_t nextSendPsn = m_txQueue.top();
     while (m_acked[nextSendPsn] && m_txQueue.size() != 0)
@@ -741,7 +733,7 @@ DcbTxBuffer::Size() const
 uint32_t
 DcbTxBuffer::TotalSize() const
 {
-    // m_buffer.size() + m_frontPsn = total number of packets to send
+    // m_buffer.size() + m_frontPsn = total number of packets to send = maximum PSN + 1
     return m_buffer.size() + m_frontPsn;
 }
 
@@ -877,6 +869,7 @@ DcbRxBuffer::Add(uint32_t psn, Ipv4Header ipv4, RoCEv2Header roce, Ptr<Packet> p
         const DcbRxBufferItem& item = m_buffer.at(m_expectedPsn);
         m_forwardCb(item.m_payload, item.m_ipv4H, item.m_roceH.GetSrcQP(), m_forwardInterface);
         m_buffer.erase(m_expectedPsn);
+        // TODO No warp around check
         m_expectedPsn++;
     }
 }
