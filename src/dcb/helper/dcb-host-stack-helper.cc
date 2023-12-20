@@ -357,25 +357,20 @@ DcbHostStackHelper::Install(Ptr<Node> node) const
 }
 
 void
-DcbHostStackHelper::InstallPortsProtos(Ptr<Node> node) const
+DcbHostStackHelper::InstallRocev2L4(Ptr<Node> node) const
 {
-    // Install pausable queue disc
-    Ptr<TrafficControlLayer> tc = node->GetObject<TrafficControlLayer>();
-    NS_ASSERT(tc);
-    ObjectFactory qDiscFactory;
-    qDiscFactory.SetTypeId(PausableQueueDisc::GetTypeId());
-    const uint32_t devN = node->GetNDevices();
-    for (uint32_t i = 1; i < devN; i++)
+    if (m_ipv4Enabled || m_ipv6Enabled)
     {
-        Ptr<NetDevice> dev = node->GetDevice(i);
-        Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
-        Ptr<PausableQueueDisc> qDisc = qDiscFactory.Create<PausableQueueDisc>();
-        // Set the queue size to 100KB, which is not critical to performance
-        qDisc->SetQueueSize(QueueSize(QueueSizeUnit::BYTES, 1e5)); 
-        qDisc->SetFCEnabled(true);
-        dcbDev->SetQueueDisc(qDisc);
-        tc->SetRootQueueDiscOnDevice(dev, qDisc);
-        dcbDev->SetFcEnabled(true); // all NetDevices should support FC
+        CreateAndAggregateObjectFromTypeId(node, "ns3::UdpBasedSocketFactory");
+    }
+}
+
+void
+DcbHostStackHelper::InstallRocev2L4(NodeContainer c) const
+{
+    for (NodeContainer::Iterator i = c.Begin(); i != c.End(); ++i)
+    {
+        InstallRocev2L4(*i);
     }
 }
 

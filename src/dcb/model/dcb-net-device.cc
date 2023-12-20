@@ -110,6 +110,11 @@ DcbNetDevice::GetTypeId(void)
                             "transmitting over the channel",
                             MakeTraceSourceAccessor(&DcbNetDevice::m_phyTxBeginTrace),
                             "ns3::Packet::TracedCallback")
+            .AddTraceSource("PhyTxBeginWithId",
+                            "Trace source indicating a packet has begun "
+                            "transmitting over the channel",
+                            MakeTraceSourceAccessor(&DcbNetDevice::m_phyTxBeginWithIdTrace),
+                            "ns3::Packet::TracedCallback")
             .AddTraceSource("PhyTxEnd",
                             "Trace source indicating a packet has been "
                             "completely transmitted over the channel",
@@ -310,6 +315,7 @@ DcbNetDevice::TransmitStart(Ptr<Packet> packet)
     m_txMachineState = BUSY;
     m_currentPkt = packet;
     m_phyTxBeginTrace(m_currentPkt);
+    m_phyTxBeginWithIdTrace(m_currentPkt, GetNodeAndPortId());
     m_snifferTrace(packet);
 
     Time txTime = m_bps.CalculateBytesTxTime(packet->GetSize());
@@ -357,9 +363,23 @@ DcbNetDevice::TransmitComplete(void)
         {
             TransmitStart(p);
         }
-        m_queueDisc->RunEnd(); // finish the run
-        // Ask the egress buffer to pop next packet if there is any packet not paused.
-        m_queueDisc->Run();
+
+        /**
+         * If the device queue is empty, make queueDisc to send one packet down.
+         * Should not do this procedure every time when a packet is sent out, given
+         * that the FC Frame is sent out through this device as well.
+         */
+        if (m_queue->GetCurrentSize() == QueueSize("0p"))
+        {
+            m_queueDisc->RunEnd(); // finish the run
+            // Ask the egress buffer to pop next packet if there is any packet not paused.
+            m_queueDisc->Run();
+        }
+        else if (m_queue->GetCurrentSize() >= QueueSize("2p"))
+        {
+            NS_LOG_DEBUG("Device queue is not empty after transmitting a packet. Current size: "
+                         << m_queue->GetCurrentSize() << "");
+        }
     }
     else
     {
@@ -640,6 +660,12 @@ DcbNetDevice::SendFrom(Ptr<Packet> packet,
 {
     NS_LOG_FUNCTION(this << packet << source << dest << protocolNumber);
     return false;
+}
+
+std::pair<uint32_t, uint32_t>
+DcbNetDevice::GetNodeAndPortId() const
+{
+    return std::make_pair(m_node->GetId(), m_ifIndex);
 }
 
 } // namespace ns3

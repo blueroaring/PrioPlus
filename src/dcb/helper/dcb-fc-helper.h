@@ -37,6 +37,13 @@ class DcbFcHelper
                                      const uint32_t port,
                                      const DcbPfcPortConfig& config);
 
+    /*
+     * Install PFC to host port
+     */
+    static void InstallPFCtoHostPort(Ptr<Node> node,
+                                     const uint32_t port,
+                                     const uint8_t enableVec);
+
     // ... other flow control configurtions should be added here
 
     static void InstallHpccPFCtoNodePort(Ptr<Node> node,

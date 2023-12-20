@@ -224,7 +224,7 @@ RoCEv2L4Protocol::GenerateACK(uint32_t srcQP, uint32_t dstQP, uint32_t expectedP
     return packet;
 }
 
-// statis
+// static
 Ptr<Packet>
 RoCEv2L4Protocol::GenerateNACK(uint32_t srcQP, uint32_t dstQP, uint32_t expectedPSN)
 {
@@ -239,6 +239,15 @@ RoCEv2L4Protocol::GenerateNACK(uint32_t srcQP, uint32_t dstQP, uint32_t expected
     packet->AddHeader(aeth);
     packet->AddHeader(rocev2Header);
     return packet;
+}
+
+// static
+bool
+RoCEv2L4Protocol::IsCNP(Ptr<Packet> packet)
+{
+    RoCEv2Header rocev2Header;
+    packet->PeekHeader(rocev2Header);
+    return rocev2Header.GetOpcode() == RoCEv2Header::Opcode::CNP;
 }
 
 } // namespace ns3

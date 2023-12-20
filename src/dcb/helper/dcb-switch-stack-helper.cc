@@ -474,7 +474,7 @@ DcbSwitchStackHelper::InstallPortsProtos(Ptr<Node> node) const
             Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
             NS_ASSERT_MSG(dcbDev, "DcbNetDevice is not installed");
 
-            Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(i);
+            Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(node, i);
             qDisc->RegisterTrafficControlCallback(tcCallback);
             // The queue size of a pauseable queue disc is fixed to the size of the switch
             qDisc->SetQueueSize(m_bufferSize); 

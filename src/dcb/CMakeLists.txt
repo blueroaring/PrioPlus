@@ -15,6 +15,7 @@ build_lib(
 	  model/fifo-queue-disc-ecn.cc
 	  model/dcb-traffic-control.cc
 	  model/dcb-trace-application.cc
+	  model/real-time-application.cc
 	  model/dcb-flow-control-port.cc
 	  model/dcb-hpcc-port.cc
 	  model/dcb-pfc-port.cc
@@ -28,6 +29,8 @@ build_lib(
 	  model/rocev2-timely.cc
 	  utils/hpcc-header.cc
 	  utils/pfc-frame.cc
+	  utils/real-time-stats-tag.cc
+	  utils/flow-identifier.cc
   HEADER_FILES
       helper/dcb-net-device-helper.h
       helper/dcb-host-stack-helper.h
@@ -42,6 +45,7 @@ build_lib(
 	  model/pausable-queue-disc.h
 	  model/fifo-queue-disc-ecn.h
 	  model/dcb-trace-application.h
+	  model/real-time-application.h
 	  model/dcb-flow-control-port.h
 	  model/dcb-hpcc-port.h
 	  model/dcb-pfc-port.h
@@ -55,6 +59,8 @@ build_lib(
 	  model/rocev2-timely.h
 	  utils/hpcc-header.h
 	  utils/pfc-frame.h
+	  utils/real-time-stats-tag.h
+	  utils/flow-identifier.h
   LIBRARIES_TO_LINK
       ${libcore}
 	  ${libnetwork}

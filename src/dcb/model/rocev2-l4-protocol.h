@@ -62,6 +62,17 @@ class RoCEv2L4Protocol : public UdpBasedL4Protocol
     static Ptr<Packet> GenerateACK(uint32_t srcQP, uint32_t dstQP, uint32_t expectedPSN);
     static Ptr<Packet> GenerateNACK(uint32_t srcQP, uint32_t dstQP, uint32_t expectedPSN);
 
+    static bool IsCNP(Ptr<Packet> packet);
+
+    /**
+     * \brief Get the dst QP from RoCEv2 header.
+     * \return The dst QP number.
+     */
+    virtual uint32_t ParseInnerPort(Ptr<Packet> packet,
+                                    Ipv4Header header,
+                                    uint16_t port,
+                                    Ptr<Ipv4Interface> incomingIntf) override;
+
     // protected:
     // void ServerReceive (Ptr<Packet> packet, Ipv4Header header, uint32_t port,
     //                     Ptr<Ipv4Interface> incommingInterface);
@@ -72,15 +83,6 @@ class RoCEv2L4Protocol : public UdpBasedL4Protocol
     // virtual void PreSend (Ptr<Packet> packet, Ipv4Address saddr, Ipv4Address daddr, uint32_t
     // srcQP,
     //                       uint32_t destQP, Ptr<Ipv4Route> route) override;
-
-    /**
-     * \brief Get the dst QP from RoCEv2 header.
-     * \return The dst QP number.
-     */
-    virtual uint32_t ParseInnerPort(Ptr<Packet> packet,
-                                    Ipv4Header header,
-                                    uint16_t port,
-                                    Ptr<Ipv4Interface> incomingIntf) override;
 
     std::map<uint32_t, uint32_t> m_qpMapper; //!< map destQP to stcQP, not used for now
 
