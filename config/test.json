@@ -3,8 +3,7 @@
         "topo": "config/topo/dumbell.txt"
     },
     "outputFile": {
-        "result": "output/output.json",
-        "debug": "output/debug.txt"
+        "resultFile": "output/data-test.json"
     },
     "runtimeConfig": {
         "seed": 1111,
@@ -24,11 +23,20 @@
         },
         "TcpSocketBase": {
             "Timestamp": false
+        },
+        "RoCEv2Socket": {
+            "RetxMode": "GBN"
         }
+    },
+    "globalConfig": {
+        "detailedSenderStats": false,
+        "detailedRetxStats": false,
+        "detailedSwitchStats": false
     },
     "topologyConfig": {
         "hostPort": {
-            "pfcEnabled": false
+            "pfcEnabled": true,
+            "enableVec": 255
         },
         "switch": {
             "pfcDynamic": false,

@@ -46,12 +46,12 @@ RoCEv2Dcqcn::GetTypeId()
                           MakeDoubleChecker<double>())
             .AddAttribute("G",
                           "DCQCN's g",
-                          DoubleValue(0.00390625), // 1/16
+                          DoubleValue(1 / 16),
                           MakeDoubleAccessor(&RoCEv2Dcqcn::m_g),
                           MakeDoubleChecker<double>())
             .AddAttribute("RateAIRatio",
                           "DCQCN's RateAI ratio",
-                          DoubleValue(0.0005),
+                          DoubleValue(0.005),
                           MakeDoubleAccessor(&RoCEv2Dcqcn::m_raiRatio),
                           MakeDoubleChecker<double>())
             .AddAttribute("HraiRatio",
@@ -61,7 +61,7 @@ RoCEv2Dcqcn::GetTypeId()
                           MakeDoubleChecker<double>())
             .AddAttribute("BytesThreshold",
                           "DCQCN's BytesThreshold",
-                          UintegerValue(150 * 1024),
+                          UintegerValue(10 * 1024 * 1024),
                           MakeUintegerAccessor(&RoCEv2Dcqcn::m_bytesThreshold),
                           MakeUintegerChecker<uint32_t>())
             .AddAttribute("F",
@@ -71,17 +71,17 @@ RoCEv2Dcqcn::GetTypeId()
                           MakeUintegerChecker<uint32_t>())
             .AddAttribute("MinRateRatio",
                           "DCQCN's minRateRatio",
-                          DoubleValue(1e-3),
+                          DoubleValue(5e-4),
                           MakeDoubleAccessor(&RoCEv2Dcqcn::m_minRateRatio),
                           MakeDoubleChecker<double>())
             .AddAttribute("AlphaTimerDelay",
                           "DCQCN's alpha timer delay",
-                          TimeValue(MicroSeconds(1)),
+                          TimeValue(MicroSeconds(55)),
                           MakeTimeAccessor(&RoCEv2Dcqcn::m_alphaTimerDelay),
                           MakeTimeChecker())
             .AddAttribute("RateTimerDelay",
                           "DCQCN's rate timer delay",
-                          TimeValue(MicroSeconds(20)),
+                          TimeValue(MicroSeconds(55)),
                           MakeTimeAccessor(&RoCEv2Dcqcn::m_rateTimerDelay),
                           MakeTimeChecker());
     return tid;

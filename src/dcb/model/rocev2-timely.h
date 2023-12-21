@@ -29,6 +29,7 @@ namespace ns3
 {
 
 class RoCEv2SocketState;
+class TimelyHeader;
 
 /**
  * The DCQCN implementation according to paper:
@@ -101,6 +102,65 @@ class RoCEv2Timely : public RoCEv2CongestionOps
     Time m_tHigh;  //!< Thigh in paper.
 
 }; // class RoCEv2Timely
+
+class TimelyHeader : public Header
+{
+    // Timely Header with only one Timeslot
+  public:
+    TimelyHeader()
+        : m_ts(Simulator::Now().GetTimeStep())
+    {
+        NS_LOG_FUNCTION(this);
+    }
+
+    static TypeId GetTypeId(void)
+    {
+        static TypeId tid = TypeId("ns3::TimelyHeader")
+                                .SetParent<Header>()
+                                .SetGroupName("Dcb")
+                                .AddConstructor<TimelyHeader>();
+        return tid;
+    }
+
+    TypeId GetInstanceTypeId(void) const override
+    {
+        return GetTypeId();
+    }
+
+    inline uint32_t GetSerializedSize(void) const override
+    {
+        return 8;
+    }
+
+    void Serialize(Buffer::Iterator start) const override
+    {
+        NS_LOG_FUNCTION(this << &start);
+        Buffer::Iterator i = start;
+        i.WriteHtonU64(m_ts);
+    }
+
+    uint32_t Deserialize(Buffer::Iterator start) override
+    {
+        NS_LOG_FUNCTION(this << &start);
+        Buffer::Iterator i = start;
+        m_ts = i.ReadNtohU64();
+        return GetSerializedSize();
+    }
+
+    void Print(std::ostream& os) const override
+    {
+        NS_LOG_FUNCTION(this << &os);
+        os << "time=" << TimeStep(m_ts).As(Time::S) << "";
+    }
+
+    Time GetTs() const
+    {
+        NS_LOG_FUNCTION(this);
+        return TimeStep(m_ts);
+    }
+
+    uint64_t m_ts; //!< Timestamp
+};
 
 } // namespace ns3
 

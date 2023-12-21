@@ -117,24 +117,24 @@ RoCEv2Timely::UpdateStateSend(Ptr<Packet> packet)
 {
     NS_LOG_FUNCTION(this << packet);
 
-    // Add a SeqTsHeader into packet, which will set timestamp automatically.
-    SeqTsHeader seqTsHeader;
-    packet->AddHeader(seqTsHeader);
+    // Add a TimelyHeader into packet, which will set timestamp automatically.
+    TimelyHeader timelyHeader;
+    packet->AddHeader(timelyHeader);
 }
 
 void
 RoCEv2Timely::UpdateStateWithGenACK(Ptr<Packet> packet, Ptr<Packet> ack)
 {
     NS_LOG_FUNCTION(this << packet << ack);
-    // Remove the SeqTsHeader from the packet.
-    SeqTsHeader seqTsHeader;
-    packet->RemoveHeader(seqTsHeader);
+    // Remove the TimelyHeader from the packet.
+    TimelyHeader timelyHeader;
+    packet->RemoveHeader(timelyHeader);
     // And then copy to the ACK
-    // Note that the ACK has RoCEv2Header and AETHeader. And we should add SeqTsHeader between
+    // Note that the ACK has RoCEv2Header and AETHeader. And we should add TimelyHeader between
     // them.
     RoCEv2Header roceHeader;
     ack->RemoveHeader(roceHeader);
-    ack->AddHeader(seqTsHeader);
+    ack->AddHeader(timelyHeader);
     ack->AddHeader(roceHeader);
 }
 
@@ -144,10 +144,10 @@ RoCEv2Timely::UpdateStateWithRcvACK(Ptr<Packet> ack,
                                     const uint32_t senderNextPSN)
 {
     NS_LOG_FUNCTION(this << ack << roce);
-    // Timely should remove the SeqTsHeader of the ACK.
-    SeqTsHeader seqTsHeader;
-    ack->RemoveHeader(seqTsHeader);
-    Time newRtt = Simulator::Now() - seqTsHeader.GetTs();
+    // Timely should remove the TimelyHeader of the ACK.
+    TimelyHeader timelyHeader;
+    ack->RemoveHeader(timelyHeader);
+    Time newRtt = Simulator::Now() - timelyHeader.GetTs();
     if (m_prevRtt < Time(0))
     {
         // first ACK, do nothing
@@ -207,8 +207,8 @@ RoCEv2Timely::GetName() const
 void
 RoCEv2Timely::Init()
 {
-    SeqTsHeader hd;
-    m_headerSize += hd.GetSerializedSize(); // SeqTsHeader+Rocev2+UDP+IP+Eth
+    TimelyHeader hd;
+    m_headerSize += hd.GetSerializedSize(); // TimelyHeader+Rocev2+UDP+IP+Eth
 
     m_prevRtt = Seconds(-1.0);
     m_incStage = 1;

@@ -3,7 +3,7 @@
         "topo": "config/topo/fat4.txt"
     },
     "outputFile": {
-        "resultFile": "data/fat4-goodsetting-1ms.json"
+        "resultFile": "data/fat4-hpcc-goodsetting-1ms.json"
     },
     "runtimeConfig": {
         "seed": 8259,
@@ -24,11 +24,17 @@
         "TcpSocketBase": {
             "Timestamp": false
         },
-        "RoCEv2Socket" : {
-            "RetxMode" : "GBN"
+        "TraceApplication": {
+            "CongestionType": "ns3::RoCEv2Hpcc"
+        },
+        "RoCEv2Hpcc": {
+            "BaseRTT": "5us"
+        },
+        "RoCEv2Socket": {
+            "RetxMode": "GBN"
         }
     },
-    "globalConfig":{
+    "globalConfig": {
         "detailedSenderStats": true,
         "detailedRetxStats": false,
         "detailedSwitchStats": false

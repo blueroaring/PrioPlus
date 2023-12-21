@@ -219,6 +219,16 @@ class RoCEv2SocketState : public Object
         return m_rateRatio;
     }
 
+    inline void SetCwnd(uint64_t cwnd)
+    {
+        m_cwnd = cwnd;
+    }
+
+    inline uint64_t GetCwnd() const
+    {
+        return m_cwnd;
+    }
+
   private:
     /**
      * Instead of directly store sending rate here, we store a rate ratio.
@@ -226,6 +236,7 @@ class RoCEv2SocketState : public Object
      * In this way, this class is totally decoupled with others.
      */
     double m_rateRatio;
+    uint64_t m_cwnd;
 
 }; // class RoCEv2SocketState
 

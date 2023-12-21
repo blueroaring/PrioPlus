@@ -75,16 +75,18 @@ main(int argc, char* argv[])
 
     // Automatically set default values using ns3 Config system
     json_util::SetDefault(configObj["defaultConfig"].get_object());
-
+    // Automatically set global values using ns3 GlobalValue system
+    json_util::SetGlobal(configObj["globalConfig"].get_object());
     // Set global seed for random generator
     json_util::SetRandomSeed(
         configObj["runtimeConfig"].get_object().find("seed")->value().as_int64());
-
+    // Set the stop time of simulation
+    json_util::SetStopTime(configObj);
     // Build topology from topology file
     Ptr<DcTopology> topology = json_util::BuildTopology(configObj);
 
     // Install applications
-    json_util::InstallApplications(configObj, topology);
+    ApplicationContainer apps = json_util::InstallApplications(configObj, topology);
 
     tracer_extension::ConfigOutputDirectory("data");
     tracer_extension::ConfigTraceFCT(tracer_extension::Protocol::RoCEv2, "fct.csv");
@@ -104,6 +106,7 @@ main(int argc, char* argv[])
                                                  MicroSeconds(10));
 
     Simulator::Run();
+    json_util::OutputStats(configObj, apps, topology);
     endt = clock();
     std::cout << "Total used time: " << (double)(endt - begint) / CLOCKS_PER_SEC << "s"
               << std::endl;
