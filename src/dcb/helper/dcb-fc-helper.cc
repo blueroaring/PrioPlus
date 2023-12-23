@@ -95,4 +95,43 @@ DcbFcHelper::InstallPFCtoHostPort(Ptr<Node> node,
 }
 
 
+void
+DcbFcHelper::InstallHpccPFCtoNodePort(Ptr<Node> node,
+                                      const uint32_t port,
+                                      const DcbPfcPortConfig& config)
+{
+    Ptr<DcbTrafficControl> dcbTc = node->GetObject<DcbTrafficControl>();
+    NS_ASSERT_MSG(dcbTc, "PFC enabled but there is no DcbTrafficControl aggregated to the node");
+
+    Ptr<NetDevice> dev = node->GetDevice(port);
+
+    // enable flow control on queue disc
+    Ptr<PausableQueueDisc> qDisc = DynamicCast<DcbNetDevice>(node->GetDevice(port))->GetQueueDisc();
+    qDisc->SetFCEnabled(true);
+
+    // install HpccPfc
+    Ptr<DcbHpccPort> hpccPfc = CreateObject<DcbHpccPort>(dev, dcbTc);
+    uint8_t enableVec = 0;
+    for (const DcbPfcPortConfig::QueueConfig& qConfig : config.queues)
+    {
+        if (qConfig.priority >= DcbTrafficControl::PRIORITY_NUMBER)
+        {
+            NS_FATAL_ERROR("PFC priority should be 0~7, your input is " << qConfig.priority);
+        }
+        if (qConfig.xon > qConfig.reserve)
+        {
+            NS_FATAL_ERROR("XON should be less or equal to reserve");
+        }
+        enableVec |= (1 << qConfig.priority);
+        hpccPfc->ConfigQueue(qConfig.priority, qConfig.reserve, qConfig.xon);
+    }
+    hpccPfc->SetEnableVec(enableVec);
+    hpccPfc->SetFcEgressEnabled(true);
+    dcbTc->InstallFCToPort(port, hpccPfc);
+
+    // register protocol handler
+    node->RegisterProtocolHandler(MakeCallback(&DcbPfcPort::ReceivePfc, hpccPfc),
+                                  PfcFrame::PROT_NUMBER,
+                                  dev);
+}
 } // namespace ns3

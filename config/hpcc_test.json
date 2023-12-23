@@ -1,12 +1,12 @@
 {
     "inputFile": {
-        "topo": "config/topo/fat4.txt"
+        "topo": "config/topo/dumbell.txt"
     },
     "outputFile": {
-        "resultFile": "data/fat4-goodsetting-1ms.json"
+        "resultFile": "output/data-hpcc.json"
     },
     "runtimeConfig": {
-        "seed": 8259,
+        "seed": 1111,
         "runningTime": "1s",
         "stopTime": "10s"
     },
@@ -24,12 +24,18 @@
         "TcpSocketBase": {
             "Timestamp": false
         },
-        "RoCEv2Socket" : {
-            "RetxMode" : "GBN"
+        "TraceApplication": {
+            "CongestionType": "ns3::RoCEv2Hpcc"
+        },
+        "RoCEv2Hpcc": {
+            "BaseRTT": "2us"
+        },
+        "RoCEv2Socket": {
+            "RetxMode": "GBN"
         }
     },
-    "globalConfig":{
-        "detailedSenderStats": true,
+    "globalConfig": {
+        "detailedSenderStats": false,
         "detailedRetxStats": false,
         "detailedSwitchStats": false
     },
@@ -45,14 +51,15 @@
         "switchPort": {
             "pfcEnabled": true,
             "ecnEnabled": true,
+            "hpccEnabled": true,
             "queues": 8
         },
         "switchPortQueue": {
-            "pfcReserve": "500KiB",
-            "pfcXon": "450KiB",
-            "ecnKMin": "20KiB",
-            "ecnKMax": "200KiB",
-            "ecnPMax": 0.01
+            "pfcReserve": "20KiB",
+            "pfcXon": "15KiB",
+            "ecnKMin": "200KiB",
+            "ecnKMax": "400KiB",
+            "ecnPMax": 0.4
         },
         "link": {
             "rate": "100Gbps",
@@ -69,7 +76,7 @@
                 "avgSize": 0,
                 "scaleFactor": 1
             },
-            "load": 0.3,
+            "load": 0.9,
             "startTime": "0.1s",
             "stopTime": "0.101s"
         }

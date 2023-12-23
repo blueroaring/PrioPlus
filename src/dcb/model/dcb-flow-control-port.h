@@ -62,7 +62,8 @@ class DcbFlowControlPort : public Object
      */
     void EgressProcess(Ptr<Packet> packet);
 
-    void SetFcEnabled(bool enable);
+    void SetFcIngressEnabled(bool enable);
+    void SetFcEgressEnabled(bool enable);
 
   protected:
     virtual void DoIngressProcess(Ptr<const Packet> packet,

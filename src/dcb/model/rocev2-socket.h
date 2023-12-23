@@ -20,7 +20,7 @@
 #ifndef ROCEV2_SOCKET_H
 #define ROCEV2_SOCKET_H
 
-#include "dcqcn.h"
+#include "rocev2-congestion-ops.h"
 #include "udp-based-socket.h"
 
 #include "ns3/ipv4-address.h"
@@ -30,7 +30,7 @@
 namespace ns3
 {
 
-class DcqcnCongestionOps;
+class RoCEv2CongestionOps;
 class RoCEv2SocketState;
 class IrnHeader;
 
@@ -219,6 +219,16 @@ class RoCEv2SocketState : public Object
         return m_rateRatio;
     }
 
+    inline void SetCwnd(uint64_t cwnd)
+    {
+        m_cwnd = cwnd;
+    }
+
+    inline uint64_t GetCwnd() const
+    {
+        return m_cwnd;
+    }
+
   private:
     /**
      * Instead of directly store sending rate here, we store a rate ratio.
@@ -226,6 +236,7 @@ class RoCEv2SocketState : public Object
      * In this way, this class is totally decoupled with others.
      */
     double m_rateRatio;
+    uint64_t m_cwnd;
 
 }; // class RoCEv2SocketState
 
@@ -249,7 +260,12 @@ class RoCEv2Socket : public UdpBasedSocket
 
     virtual void FinishSending() override;
 
-    void SetStopTime(Time stopTime); // for DCQCN
+    void SetStopTime(Time stopTime); // for RoCEv2 Congestion
+
+    // void SetCcOps(Ptr<RoCEv2CongestionOps> algo);
+    void SetCcOps(TypeId congTypeId);
+
+    Time GetCNPInterval() const;
 
     Time GetFlowStartTime() const;
 
@@ -415,17 +431,21 @@ class RoCEv2Socket : public UdpBasedSocket
 
     std::shared_ptr<Stats> m_stats;
 
-    Ptr<DcqcnCongestionOps> m_ccOps;    //!< DCQCN congestion control
+    Ptr<RoCEv2CongestionOps> m_ccOps; //!< RoCEv2 congestion control
+    // FIXME Now just used in DCQCN
     Ptr<RoCEv2SocketState> m_sockState; //!< DCQCN socket state
     DcbTxBuffer m_txBuffer;
     DataRate m_deviceRate;
     // bool m_isSending;
     EventId m_sendEvent; //!< Event id of the next send event
 
-    uint32_t m_senderNextPSN;
+    uint32_t m_senderNextPSN; //!< Note that it is not the PSN of the next
+                              //!< packet to be sent by socket, which is the top of
+                              //!< m_txBuffer.m_txQueue.
     std::map<FlowIdentifier, FlowInfo> m_receiverFlowInfo;
     uint32_t m_psnEnd; //!< the last PSN + 1, used to check if flow completes
 
+    Time m_CNPInterval; //!< Interval to send CNP
     Time m_flowStartTime;
 
     RoCEv2RetxMode m_retxMode;

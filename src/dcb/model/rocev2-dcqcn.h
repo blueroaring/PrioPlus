@@ -17,13 +17,10 @@
  * Author: Pavinberg <pavin0702@gmail.com>
  */
 
-#ifndef DCQCN_H
-#define DCQCN_H
+#ifndef ROCEV2_DCQCN_H
+#define ROCEV2_DCQCN_H
 
-#include "ns3/data-rate.h"
-#include "ns3/object.h"
-#include "ns3/packet.h"
-#include "ns3/timer.h"
+#include "rocev2-congestion-ops.h"
 
 namespace ns3
 {
@@ -35,7 +32,7 @@ class RoCEv2SocketState;
  *   Zhu, Yibo, et al. "Congestion control for large-scale RDMA deployments." ACM SIGCOMM.
  *   \url https://dl.acm.org/doi/abs/10.1145/2829988.2787484
  */
-class DcqcnCongestionOps : public Object
+class RoCEv2Dcqcn : public RoCEv2CongestionOps
 {
   public:
     /**
@@ -45,8 +42,9 @@ class DcqcnCongestionOps : public Object
      */
     static TypeId GetTypeId(void);
 
-    DcqcnCongestionOps(Ptr<RoCEv2SocketState> sockState);
-    ~DcqcnCongestionOps();
+    RoCEv2Dcqcn();
+    RoCEv2Dcqcn(Ptr<RoCEv2SocketState> sockState);
+    ~RoCEv2Dcqcn();
 
     void SetRateAIRatio(double ratio);
     void SetRateHyperAIRatio(double ratio);
@@ -54,21 +52,19 @@ class DcqcnCongestionOps : public Object
     /**
      * After configuring the DCQCN, call this function to start the timer.
      */
-    void SetReady();
+    void SetReady() override;
 
     /**
      * Update socket state when receiving a CNP.
      */
-    void UpdateStateWithCNP();
+    void UpdateStateWithCNP() override;
 
     /**
      * When the sender sending out a packet, update the state if needed.
      */
-    void UpdateStateSend(Ptr<Packet> packet);
+    void UpdateStateSend(Ptr<Packet> packet) override;
 
-    void SetStopTime(Time stopTime);
-
-    Time GetCNPInterval() const;
+    std::string GetName() const override;
 
   private:
     void UpdateAlpha();
@@ -77,25 +73,29 @@ class DcqcnCongestionOps : public Object
 
     void UpdateRate();
 
-    const Ptr<RoCEv2SocketState> m_sockState;
+    void Init();
+
+    // const Ptr<RoCEv2SocketState> m_sockState;
     double m_alpha;
-    const double m_g;
+    double m_g;
     double m_raiRatio;  //!< RateAI / link rate for additive increase
     double m_hraiRatio; //!< Hyper rate AI / link rate for hyper additive increase
+
     Timer m_alphaTimer; //!< update alpha if haven't received CNP for a configured time
     Timer m_rateTimer;
-    const uint32_t m_bytesThreshold;
+    Time m_alphaTimerDelay;
+    Time m_rateTimerDelay;
+
+    uint32_t m_bytesThreshold;
     uint32_t m_bytesCounter;
     uint32_t m_rateUpdateIter;
     uint32_t m_bytesUpdateIter;
-    const uint32_t m_F;
-    double m_targetRateRatio;
-    double m_curRateRatio;
-    Time m_CNPInterval;
-    double m_minRateRatio;
-    Time m_stopTime;
+    uint32_t m_F;
 
-}; // class DcqcnCongestionOps
+    double m_targetRateRatio;
+    // Time m_stopTime;
+
+}; // class RoCEv2Dcqcn
 
 } // namespace ns3
 

@@ -220,9 +220,12 @@ class TraceApplication : public Application
     void ScheduleNextFlow(const Time& startTime);
 
     /**
-     * \brief Create new socket to the destNode.
-     *
+     * \brief Create a new RoCEv2 socket using the TypeId set by SocketType attribute
      * Call this function requires m_topology set.
+     * 
+     * \return A smart Socket pointer to a RoCEv2Socket
+     *
+     * \param destNode the destionation Node ID
      */
     Ptr<Socket> CreateNewSocket(uint32_t destNode);
 
@@ -230,6 +233,16 @@ class TraceApplication : public Application
      * \brief Create new socket send to the destAddr.
      */
     Ptr<Socket> CreateNewSocket(InetSocketAddress destAddr);
+
+    /**
+     * \brief Create a new RoCEv2 socket using the specified congestion control algorithm TypeId
+     */
+    Ptr<Socket> CreateNewSocket(uint32_t destNode, TypeId congestionTypeId);
+
+    /**
+     * \brief Create a new RoCEv2 socket send to the destAddr using the specified congestion control algorithm TypeId
+     */
+    Ptr<Socket> CreateNewSocket(InetSocketAddress destAddr, TypeId congestionTypeId);
 
     /**
      * \brief Get destination node index of one flow.
@@ -321,6 +334,8 @@ class TraceApplication : public Application
         m_destAddr;  //!< if not choosing random destination, store the destined address here
     bool m_sendOnce; //!< Whether the application only send one flow, if true, the application will
                      //!< send form the start time to the end time in the given rate.
+
+    TypeId m_congestionTypeId; //!< The socket's congestion control TypeId
 
     /// traced Callback: transmitted packets.
     TracedCallback<Ptr<const Packet>> m_txTrace;

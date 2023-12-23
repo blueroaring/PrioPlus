@@ -25,6 +25,7 @@
             "label": "Format",
             "type": "shell",
             "command": "${workspaceFolder}/utils/check-style-clang-format.py --fix ${file}",
+            "problemMatcher": []
         }
     ]
 }

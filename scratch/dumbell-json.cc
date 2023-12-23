@@ -68,7 +68,7 @@ int main (int argc, char *argv[])
     }
 
   LogComponentEnableAll (LOG_LEVEL_WARN);
-  LogComponentEnable ("DcbNetDevice", LOG_DEBUG);
+  // LogComponentEnable ("DcbNetDevice", LOG_DEBUG);
   // LogComponentEnable ("PausableQueueDisc", LOG_LEVEL_INFO);
   // LogComponentEnable ("FifoQueueDiscEcn", LOG_LEVEL_INFO);
 

@@ -147,6 +147,33 @@
                     "ignoreFailures": true
                 },
             ],
+        },
+        {
+            "name": "(gdb) Launch CCTest debuger",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/scratch/ns3.40-dumbell-cctest-debug",
+            "args": [
+                "config/hpcc_test.json"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build",
+            "environment": [
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "${workspaceFolder}/build/lib/"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+            ],
         }
     ],
     "inputs": [

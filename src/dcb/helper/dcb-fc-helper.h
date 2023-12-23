@@ -20,6 +20,7 @@
 #ifndef DCB_FC_HELPER_H
 #define DCB_FC_HELPER_H
 
+#include "ns3/dcb-hpcc-port.h"
 #include "ns3/dcb-pfc-port.h"
 
 namespace ns3
@@ -45,6 +46,9 @@ class DcbFcHelper
 
     // ... other flow control configurtions should be added here
 
+    static void InstallHpccPFCtoNodePort(Ptr<Node> node,
+                                         const uint32_t port,
+                                         const DcbPfcPortConfig& config);
 }; // class DcbFcHelper
 
 } // namespace ns3

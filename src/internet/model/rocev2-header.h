@@ -44,7 +44,7 @@ class RoCEv2Header : public Header
     virtual uint32_t Deserialize(Buffer::Iterator start) override;
     virtual void Print(std::ostream& os) const override;
 
-    enum Opcode
+    enum Opcode : uint8_t // Making sure that the size of the enum is 1 byte
     { // part of the opcodes for now
         RC_SEND_ONLY = 0b000'00100,
         RC_ACK = 0b000'10001,

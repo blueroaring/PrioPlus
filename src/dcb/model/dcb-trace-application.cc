@@ -20,6 +20,7 @@
 #include "dcb-trace-application.h"
 
 #include "dcb-net-device.h"
+#include "rocev2-dcqcn.h"
 #include "rocev2-l4-protocol.h"
 #include "rocev2-socket.h"
 #include "udp-based-socket.h"
@@ -68,6 +69,11 @@ TraceApplication::GetTypeId()
             //                MakeTypeIdAccessor (&TraceApplication::m_socketTid),
             //                // This should check for SocketFactory as a parent
             //                MakeTypeIdChecker ())
+            .AddAttribute("CongestionType",
+                          "Socket' congestion control type.",
+                          TypeIdValue(RoCEv2Dcqcn::GetTypeId()),
+                          MakeTypeIdAccessor(&TraceApplication::m_congestionTypeId),
+                          MakeTypeIdChecker())
             .AddAttribute("SendOnce",
                           "Send one flow from start time to stop time if true",
                           BooleanValue(false),
@@ -201,6 +207,7 @@ TraceApplication::SetInnerUdpProtocol(TypeId innerTid)
     Ptr<UdpBasedSocketFactory> socketFactory = node->GetObject<UdpBasedSocketFactory>();
     if (socketFactory)
     {
+        // Where set Rocev2Socket
         m_headerSize = socketFactory->AddUdpBasedProtocol(node, GetOutboundNetDevice(), innerTid);
     }
     else
@@ -222,6 +229,7 @@ TraceApplication::StartApplication(void)
             // crate a special socket to act as the receiver
             m_receiverSocket = DynamicCast<RoCEv2Socket>(
                 Socket::CreateSocket(GetNode(), UdpBasedSocketFactory::GetTypeId()));
+            m_receiverSocket->SetCcOps(m_congestionTypeId);
             m_receiverSocket->BindToNetDevice(GetOutboundNetDevice());
             m_receiverSocket->BindToLocalPort(RoCEv2L4Protocol::DefaultServicePort());
             m_receiverSocket->ShutdownSend();
@@ -308,17 +316,32 @@ TraceApplication::CreateNewSocket(uint32_t destNode)
 {
     NS_LOG_FUNCTION(this);
     InetSocketAddress destAddr = NodeIndexToAddr(destNode);
-    return CreateNewSocket(destAddr);
+    return CreateNewSocket(destAddr, m_congestionTypeId);
 }
+
 
 Ptr<Socket>
 TraceApplication::CreateNewSocket(InetSocketAddress destAddr)
 {
     NS_LOG_FUNCTION(this);
+    return CreateNewSocket(destAddr, m_congestionTypeId);
+}
 
+Ptr<Socket>
+TraceApplication::CreateNewSocket(uint32_t destNode, TypeId congestionTypeId)
+{
+    NS_LOG_FUNCTION(this);
+    InetSocketAddress destAddr = NodeIndexToAddr(destNode);
+    return CreateNewSocket(destAddr, congestionTypeId);
+}
+
+Ptr<Socket>
+TraceApplication::CreateNewSocket(InetSocketAddress destAddr, TypeId congestionTypeId)
+{
+    NS_LOG_FUNCTION(this);
+
+    // The InstanceTyoeId of socket is RoCEv2Socket
     Ptr<Socket> socket = Socket::CreateSocket(GetNode(), m_socketTid);
-
-    socket->BindToNetDevice(GetOutboundNetDevice());
 
     if (m_protoGroup == ProtocolGroup::TCP)
     {
@@ -336,10 +359,12 @@ TraceApplication::CreateNewSocket(InetSocketAddress destAddr)
             if (roceSocket)
             {
                 // Set stop time to max to avoid sender socket's timer close
+                roceSocket->SetCcOps(congestionTypeId);
                 roceSocket->SetStopTime(Time::Max());
             }
         }
     }
+    socket->BindToNetDevice(GetOutboundNetDevice());
 
     int ret = socket->Bind();
     if (ret == -1)

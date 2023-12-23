@@ -1,0 +1,120 @@
+/*
+ * Copyright (c) 2008 INRIA
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * Author: F.Y. Xue <xue.fyang@foxmail.com>
+ */
+
+#ifndef ROCEV2_HPCC_H
+#define ROCEV2_HPCC_H
+
+#include "rocev2-congestion-ops.h"
+
+#include "ns3/data-rate.h"
+#include "ns3/hpcc-header.h"
+#include "ns3/rocev2-header.h"
+
+namespace ns3
+{
+
+class RoCEv2SocketState;
+
+/**
+ * The DCQCN implementation according to paper:
+ *   Zhu, Yibo, et al. "Congestion control for large-scale RDMA deployments." ACM SIGCOMM.
+ *   \url https://dl.acm.org/doi/abs/10.1145/2829988.2787484
+ */
+class RoCEv2Hpcc : public RoCEv2CongestionOps
+{
+  public:
+    /**
+     * Get the type ID.
+     * \brief Get the type ID.
+     * \return the object TypeId
+     */
+    static TypeId GetTypeId(void);
+
+    RoCEv2Hpcc();
+    RoCEv2Hpcc(Ptr<RoCEv2SocketState> sockState);
+    ~RoCEv2Hpcc();
+
+    /**
+     * After configuring the HPCC, call this function.
+     */
+    void SetReady() override;
+
+    /**
+     * When the sender sending out a packet, add an empty HPCC header into packet.
+     */
+    void UpdateStateSend(Ptr<Packet> packet) override;
+
+    /**
+     * When the receiver generating an ACK, move the HPCC header from packet to ack.
+     */
+    void UpdateStateWithGenACK(Ptr<Packet> packet, Ptr<Packet> ack) override;
+
+    /**
+     * When the sender receiving an ACK, do what HPCC does.
+     */
+    void UpdateStateWithRcvACK(Ptr<Packet> ack,
+                               const RoCEv2Header& roce,
+                               const uint32_t senderNextPSN) override;
+
+    std::string GetName() const override;
+
+  private:
+    /**
+     * \brief Measure the current inflight.
+     */
+    void MeasureInflight(const HpccHeader& hpccHeader);
+
+    /**
+     * \brief Update the current rate.
+     *
+     * Note: we use the same formula as in paper's simulation, which is a bit different from the
+     * paper's Algorithm 1. That is, we use U to calculate the current rate instead of the current
+     * window, and then we use the current rate to update the current window.
+     *
+     * This function behaves like ComputeWind() in paper's Algorithm 1.
+     */
+    void UpdateRate(bool updateCurrent);
+
+    void CopyIntHop(const IntHop* src, uint32_t nhop);
+
+    /**
+     * Initialize the state.
+     */
+    void Init();
+
+    uint32_t m_lastUpdateSeq; //!< lastUpdateSeq in paper.
+
+    uint32_t m_incStage; //!< incStage in paper.
+    uint32_t m_maxStage; //!< maxStage in paper. Default to 5.
+
+    double m_raiRatio; //!< RateAI / link rate for additive increase
+
+    double m_targetUtil; //!< η in paper. Default to 0.95.
+
+    double m_u; //!< U in paper. Current inflight utilization.
+
+    Time m_baseRtt; //!< T in paper. Must be set by user.
+
+    IntHop m_hops[HpccHeader::MAX_HOP]; //!< L in paper, storing link feedbacks
+
+}; // class RoCEv2Hpcc
+
+} // namespace ns3
+
+#endif // HPCC_H

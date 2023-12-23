@@ -88,9 +88,14 @@ DcbFlowControlPort::EgressProcess(Ptr<Packet> packet)
 }
 
 void
-DcbFlowControlPort::SetFcEnabled(bool enable)
+DcbFlowControlPort::SetFcIngressEnabled(bool enable)
 {
     m_enableIngressControl = enable;
 }
 
+void
+DcbFlowControlPort::SetFcEgressEnabled(bool enable)
+{
+    m_enableEgressControl = enable;
+}
 } // namespace ns3

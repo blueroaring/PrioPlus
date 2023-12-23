@@ -152,7 +152,27 @@ ConfigureSwitch(boost::json::object& configObj, Ptr<Node> sw)
                 const uint32_t xon = QueueSize(sPfcXon).GetValue();
                 pfcConfig.AddQueueConfig(qi, reserve, xon);
             }
-            DcbFcHelper::InstallPFCtoNodePort(sw, portIdx, pfcConfig);
+
+            // PFC based Port Protocol
+            bool pfcBased = false;
+            // Check if has HPCC
+            const auto& hpccIterator = switchPortConfigObj.find("hpccEnabled");
+            if (hpccIterator != switchPortConfigObj.end())
+            {
+                bool hpccEnabled = hpccIterator->value().as_bool();
+                if (hpccEnabled)
+                {
+                    pfcBased = true;
+                    DcbFcHelper::InstallHpccPFCtoNodePort(sw, portIdx, pfcConfig);
+                }
+            }
+            // Other PFC based Port Protocol here
+            // const auto& xxxIterator = switchPortConfigObj.find("xxxEnabled");
+
+            if (!pfcBased)
+            {
+                DcbFcHelper::InstallPFCtoNodePort(sw, portIdx, pfcConfig);
+            }
         }
 
         // Configure ECN

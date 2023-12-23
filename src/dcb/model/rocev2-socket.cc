@@ -20,7 +20,6 @@
 #include "rocev2-socket.h"
 
 #include "dcb-net-device.h"
-#include "dcqcn.h"
 #include "rocev2-l4-protocol.h"
 #include "udp-based-l4-protocol.h"
 #include "udp-based-socket.h"
@@ -60,7 +59,12 @@ RoCEv2Socket::GetTypeId()
                           "The retransmission mode",
                           EnumValue(RoCEv2RetxMode::GBN),
                           MakeEnumAccessor(&RoCEv2Socket::m_retxMode),
-                          MakeEnumChecker(RoCEv2RetxMode::GBN, "GBN", RoCEv2RetxMode::IRN, "IRN"));
+                          MakeEnumChecker(RoCEv2RetxMode::GBN, "GBN", RoCEv2RetxMode::IRN, "IRN"))
+            .AddAttribute("CNPInterval",
+                          "The CNP interval",
+                          TimeValue(MicroSeconds(50)),
+                          MakeTimeAccessor(&RoCEv2Socket::m_CNPInterval),
+                          MakeTimeChecker());
     return tid;
 }
 
@@ -73,7 +77,8 @@ RoCEv2Socket::RoCEv2Socket()
     NS_LOG_FUNCTION(this);
     m_stats = std::make_shared<Stats>();
     m_sockState = CreateObject<RoCEv2SocketState>();
-    m_ccOps = CreateObject<DcqcnCongestionOps>(m_sockState);
+    // Note that m_ccOps is not inited.
+    //  m_ccOps = CreateObject<RoCEv2CongestionOps>(m_sockState);
     m_flowStartTime = Simulator::Now();
 }
 
@@ -122,8 +127,7 @@ RoCEv2Socket::SendPendingPacket()
 
         // The interval serve as the interval of spinning when the qdisc is unavaliable.
         uint32_t sz = 1000; // XXX A typical packet size
-        Time interval =
-            m_deviceRate.CalculateBytesTxTime(sz * 100 / m_sockState->GetRateRatioPercent());
+        Time interval = m_deviceRate.CalculateBytesTxTime(sz / m_sockState->GetRateRatioPercent());
         m_sendEvent = Simulator::Schedule(interval, &RoCEv2Socket::SendPendingPacket, this);
         // XXX If all the sender's send rate is line rate, this will cause unfairness,
         // however, it is unlikely to happen.
@@ -141,27 +145,23 @@ RoCEv2Socket::SendPendingPacket()
     }
 
     // rateRatio is controled by congestion control
-    // rateRatio = sending rate calculated by CC / line rate, which is between [0.0., 100.0]
-    const double rateRatio =
-        m_sockState->GetRateRatioPercent(); // in percentage, i.e., maximum is 100.0
-    // Record the rate
-    DataRate rate = m_deviceRate * (rateRatio / 100.00);
+    // rateRatio = sending rate calculated by CC / line rate, which is between [0.0, 1.0]
+    const double rateRatio = m_sockState->GetRateRatioPercent(); // in percentage, i.e., maximum is
+                                                                 // 100.0 Record the rate
+    DataRate rate = m_deviceRate * rateRatio;
     m_stats->RecordCcRate(rate);
     // XXX Why? Do not have minimum rate ratio?
     // TODO Add minimum rate ratio
     // TODO Add window constraint
-    if (rateRatio > 1e-6)
-    {
-        // [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] =
-        //     m_txBuffer.PeekNextShouldSent();
-        const DcbTxBuffer::DcbTxBufferItem& item = m_txBuffer.PopNextShouldSent();
-        const uint32_t sz = item.m_payload->GetSize() + 8 + 20 + 14;
-        DoSendDataPacket(item);
+    // [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] =
+    //     m_txBuffer.PeekNextShouldSent();
+    const DcbTxBuffer::DcbTxBufferItem& item = m_txBuffer.PopNextShouldSent();
+    const uint32_t sz = item.m_payload->GetSize() + 8 + 20 + 14;
+    DoSendDataPacket(item);
 
-        // Control the send rate by interval of sending packets.
-        Time interval = m_deviceRate.CalculateBytesTxTime(sz * 100 / rateRatio);
-        m_sendEvent = Simulator::Schedule(interval, &RoCEv2Socket::SendPendingPacket, this);
-    }
+    // Control the send rate by interval of sending packets.
+    Time interval = m_deviceRate.CalculateBytesTxTime(sz / rateRatio);
+    m_sendEvent = Simulator::Schedule(interval, &RoCEv2Socket::SendPendingPacket, this);
 }
 
 void
@@ -170,8 +170,7 @@ RoCEv2Socket::DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item)
     NS_LOG_FUNCTION(this);
 
     [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] = item;
-    // DCQCN is a rate based CC.
-    // Send packet and delay a bit time to control the sending rate.
+
     m_ccOps->UpdateStateSend(payload);
     Ptr<Packet> packet = payload->Copy(); // do not modify the payload in the buffer
     packet->AddHeader(rocev2Header);
@@ -215,17 +214,26 @@ RoCEv2Socket::ForwardUp(Ptr<Packet> packet,
     switch (rocev2Header.GetOpcode())
     {
     case RoCEv2Header::Opcode::RC_ACK:
+        m_ccOps->UpdateStateWithRcvACK(
+            packet,
+            rocev2Header,
+            m_txBuffer.GetSizeToBeSent() == 0 ? m_psnEnd : m_txBuffer.PeekNextShouldSent().m_psn);
+        NS_LOG_DEBUG("RoCEv2Socket: Received ACK and rate decreased to "
+                     << m_sockState->GetRateRatioPercent() * 100 << "% at time "
+                     << Simulator::Now().GetMicroSeconds() << "us. " << header.GetSource() << ":"
+                     << rocev2Header.GetSrcQP() << "->" << header.GetDestination() << ":"
+                     << rocev2Header.GetDestQP());
         HandleACK(packet, rocev2Header);
         break;
     case RoCEv2Header::Opcode::CNP:
         m_ccOps->UpdateStateWithCNP();
         // Record the CNP
         m_stats->RecordRecvEcn();
-        // NS_LOG_DEBUG("DCQCN: Received CNP and rate decreased to "
-        //              << m_sockState->GetRateRatioPercent() << "% at time "
-        //              << Simulator::Now().GetMicroSeconds() << "us. " << header.GetSource() << ":"
-        //              << rocev2Header.GetSrcQP() << "->" << header.GetDestination() << ":"
-        //              << rocev2Header.GetDestQP());
+        NS_LOG_DEBUG("DCQCN: Received CNP and rate decreased to "
+                     << m_sockState->GetRateRatioPercent() << "% at time "
+                     << Simulator::Now().GetMicroSeconds() << "us. " << header.GetSource() << ":"
+                     << rocev2Header.GetSrcQP() << "->" << header.GetDestination() << ":"
+                     << rocev2Header.GetDestQP());
         break;
     default:
         HandleDataPacket(packet, header, port, incomingInterface, rocev2Header);
@@ -343,6 +351,8 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
             // packet at l4
             Ptr<Packet> ack =
                 RoCEv2L4Protocol::GenerateACK(dstQP, srcQP, flowInfoIter->second.GetExpectedPsn());
+
+            m_ccOps->UpdateStateWithGenACK(packet, ack);
             m_innerProto->Send(ack, header.GetDestination(), header.GetSource(), dstQP, srcQP, 0);
         }
         NS_LOG_DEBUG("Send ACK with PSN " << flowInfoIter->second.GetExpectedPsn() << " at time "
@@ -446,7 +456,7 @@ RoCEv2Socket::ScheduleNextCNP(std::map<FlowIdentifier, FlowInfo>::iterator flowI
     m_innerProto
         ->Send(cnp, header.GetDestination(), header.GetSource(), flowInfo.dstQP, srcQP, nullptr);
     flowInfo.receivedECN = false;
-    flowInfo.lastCNPEvent = Simulator::Schedule(m_ccOps->GetCNPInterval(),
+    flowInfo.lastCNPEvent = Simulator::Schedule(GetCNPInterval(),
                                                 &RoCEv2Socket::ScheduleNextCNP,
                                                 this,
                                                 flowInfoIter,
@@ -541,6 +551,24 @@ void
 RoCEv2Socket::SetStopTime(Time stopTime)
 {
     m_ccOps->SetStopTime(stopTime);
+}
+
+void
+RoCEv2Socket::SetCcOps(TypeId congTypeId)
+{
+    NS_LOG_FUNCTION(this << congTypeId);
+
+    ObjectFactory congestionAlgorithmFactory;
+    congestionAlgorithmFactory.SetTypeId(congTypeId);
+    Ptr<RoCEv2CongestionOps> algo = congestionAlgorithmFactory.Create<RoCEv2CongestionOps>();
+    m_ccOps = algo;
+    m_ccOps->SetSockState(m_sockState);
+}
+
+Time
+RoCEv2Socket::GetCNPInterval() const
+{
+    return m_CNPInterval;
 }
 
 Time
@@ -902,7 +930,7 @@ RoCEv2SocketState::GetTypeId()
 }
 
 RoCEv2SocketState::RoCEv2SocketState()
-    : m_rateRatio(100.)
+    : m_rateRatio(1.)
 {
 }
 
