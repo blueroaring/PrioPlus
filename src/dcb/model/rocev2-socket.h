@@ -439,7 +439,9 @@ class RoCEv2Socket : public UdpBasedSocket
     // bool m_isSending;
     EventId m_sendEvent; //!< Event id of the next send event
 
-    uint32_t m_senderNextPSN;
+    uint32_t m_senderNextPSN; //!< Note that it is not the PSN of the next
+                              //!< packet to be sent by socket, which is the top of
+                              //!< m_txBuffer.m_txQueue.
     std::map<FlowIdentifier, FlowInfo> m_receiverFlowInfo;
     uint32_t m_psnEnd; //!< the last PSN + 1, used to check if flow completes
 

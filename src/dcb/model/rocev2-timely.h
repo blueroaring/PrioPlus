@@ -110,7 +110,6 @@ class TimelyHeader : public Header
     TimelyHeader()
         : m_ts(Simulator::Now().GetTimeStep())
     {
-        NS_LOG_FUNCTION(this);
     }
 
     static TypeId GetTypeId(void)
@@ -134,14 +133,12 @@ class TimelyHeader : public Header
 
     void Serialize(Buffer::Iterator start) const override
     {
-        NS_LOG_FUNCTION(this << &start);
         Buffer::Iterator i = start;
         i.WriteHtonU64(m_ts);
     }
 
     uint32_t Deserialize(Buffer::Iterator start) override
     {
-        NS_LOG_FUNCTION(this << &start);
         Buffer::Iterator i = start;
         m_ts = i.ReadNtohU64();
         return GetSerializedSize();
@@ -149,13 +146,11 @@ class TimelyHeader : public Header
 
     void Print(std::ostream& os) const override
     {
-        NS_LOG_FUNCTION(this << &os);
         os << "time=" << TimeStep(m_ts).As(Time::S) << "";
     }
 
     Time GetTs() const
     {
-        NS_LOG_FUNCTION(this);
         return TimeStep(m_ts);
     }
 

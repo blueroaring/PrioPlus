@@ -214,7 +214,10 @@ RoCEv2Socket::ForwardUp(Ptr<Packet> packet,
     switch (rocev2Header.GetOpcode())
     {
     case RoCEv2Header::Opcode::RC_ACK:
-        m_ccOps->UpdateStateWithRcvACK(packet, rocev2Header, m_txBuffer.PeekNextShouldSent().m_psn);
+        m_ccOps->UpdateStateWithRcvACK(
+            packet,
+            rocev2Header,
+            m_txBuffer.GetSizeToBeSent() == 0 ? m_psnEnd : m_txBuffer.PeekNextShouldSent().m_psn);
         NS_LOG_DEBUG("RoCEv2Socket: Received ACK and rate decreased to "
                      << m_sockState->GetRateRatioPercent() * 100 << "% at time "
                      << Simulator::Now().GetMicroSeconds() << "us. " << header.GetSource() << ":"

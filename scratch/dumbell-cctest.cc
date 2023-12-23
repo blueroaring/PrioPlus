@@ -69,6 +69,7 @@ main(int argc, char* argv[])
     }
 
     LogComponentEnableAll(LOG_LEVEL_WARN);
+    LogComponentEnable("JsonTopologyHelper", LOG_LEVEL_DEBUG);
 
     // Read config in json from config file
     boost::json::object configObj = json_util::ReadConfig(config_file);
