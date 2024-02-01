@@ -603,7 +603,7 @@ ConstructAppStatsObj(ApplicationContainer& apps)
     uint64_t totalBytes = 0;
     uint32_t totalSentPkts = 0;
     uint64_t totalSentBytes = 0;
-    uint32_t retxCount = 0;
+    // uint32_t retxCount = 0;
     // FCT of all flows, used to calculate the average and percentile FCT
     std::vector<Time> vFct;
 
@@ -621,7 +621,7 @@ ConstructAppStatsObj(ApplicationContainer& apps)
         totalBytes += appStats->nTotalSizeBytes;
         totalSentPkts += appStats->nTotalSentPkts;
         totalSentBytes += appStats->nTotalSentBytes;
-        retxCount += appStats->nRetxCount;
+        // retxCount += appStats->nRetxCount;
 
         // Per flow statistics
         auto mFlowStats = appStats->mFlowStats;

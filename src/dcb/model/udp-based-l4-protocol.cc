@@ -88,11 +88,11 @@ UdpBasedL4Protocol::NotifyNewAggregate()
 
     Ptr<Node> node = this->GetObject<Node>();
     Ptr<UdpL4Protocol> udp = this->GetObject<UdpL4Protocol>();
-    if (udp == 0)
+    if (udp == nullptr)
     {
         NS_FATAL_ERROR("UdpBasedL4Protocol must be aggregated after aggregating UdpL4Protocol");
     }
-    if (m_node == 0 && node && node->GetObject<UdpBasedSocketFactory>() == 0)
+    if (m_node == nullptr && node && node->GetObject<UdpBasedSocketFactory>() == nullptr)
     {
         // Aggregate UdpBasedSocketFacoty to the node
         m_node = node;

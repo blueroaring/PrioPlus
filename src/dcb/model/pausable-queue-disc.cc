@@ -233,7 +233,7 @@ PausableQueueDisc::DoDequeue()
     {
         Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(i);
         if ((!m_fcEnabled || !qdclass->IsPaused()) &&
-            (item = qdclass->GetQueueDisc()->Dequeue()) != 0)
+            (item = qdclass->GetQueueDisc()->Dequeue()) != nullptr)
         {
             NS_LOG_LOGIC("Popoed from priority " << i << ": " << item);
             if (!m_tcEgress.IsNull())
@@ -255,7 +255,7 @@ PausableQueueDisc::DoPeek()
     {
         Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(i);
         if ((!m_fcEnabled || !qdclass->IsPaused()) &&
-            (item = qdclass->GetQueueDisc()->Dequeue()) != 0)
+            (item = qdclass->GetQueueDisc()->Dequeue()) != nullptr)
         {
             NS_LOG_LOGIC("Peeked from priority " << i << ": " << item);
             return item;
