@@ -75,14 +75,11 @@ main(int argc, char* argv[])
     boost::json::object configObj = json_util::ReadConfig(config_file);
 
     // Automatically set default values using ns3 Config system
-    json_util::SetDefault(configObj["defaultConfig"].get_object());
+    json_util::SetDefault(configObj);
     // Automatically set global values using ns3 GlobalValue system
-    json_util::SetGlobal(configObj["globalConfig"].get_object());
-    // Set global seed for random generator
-    json_util::SetRandomSeed(
-        configObj["runtimeConfig"].get_object().find("seed")->value().as_int64());
-    // Set the stop time of simulation
-    json_util::SetStopTime(configObj);
+    json_util::SetGlobal(configObj);
+    // Set runtime configurations, i.e., random seed, MTP parallel and simulator stop time
+    json_util::SetRuntime(configObj);
     // Build topology from topology file
     Ptr<DcTopology> topology = json_util::BuildTopology(configObj);
 

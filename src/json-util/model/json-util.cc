@@ -18,6 +18,9 @@
  */
 #include "json-util.h"
 
+#include "ns3/mtp-interface.h"
+
+#include <atomic>
 #include <boost/json/src.hpp>
 #include <fstream>
 #include <iostream>
@@ -33,26 +36,69 @@ NS_LOG_COMPONENT_DEFINE("JsonUtil");
 namespace json_util
 {
 
+/*****************************************************
+ * A series of functions to extract field from json.
+ * The definitions are at the end of this file.
+ *****************************************************/
+static inline boost::json::object JsonGetObjectOrRaise(const boost::json::object& obj,
+                                                       const std::string& field,
+                                                       const std::string& failureMsg);
+static inline int64_t JsonGetInt64OrRaise(const boost::json::object& obj,
+                                          const std::string& field,
+                                          const std::string& failureMsg);
+static inline double JsonGetDoubleOrRaise(const boost::json::object& obj,
+                                           const std::string& field,
+                                           const std::string& failureMsg);
+static inline std::string JsonGetStringOrRaise(const boost::json::object& obj,
+                                               const std::string& field,
+                                               const std::string& failureMsg);
+static inline boost::json::array JsonGetArrayOrRaise(const boost::json::object& obj,
+                                                     const std::string& field,
+                                                     const std::string& failureMsg);
+static inline bool JsonCallIfExistsString(const boost::json::object& obj,
+                                          std::string field,
+                                          std::function<void(std::string)> callback);
+template <typename U>
+static bool JsonCallIfExistsInt(const boost::json::object& obj,
+                                std::string field,
+                                std::function<void(U)> callback);
+static inline bool JsonCallIfExistsBool(const boost::json::object& obj,
+                                        std::string field,
+                                        std::function<void(bool)> callback);
+
 boost::json::object
-ReadConfig(std::string config_file)
+ReadConfig(std::string configFile)
 {
     std::ifstream configf;
-    configf.open(config_file.c_str());
+    configf.open(configFile.c_str());
+    if (!configf.good())
+    {
+        NS_FATAL_ERROR("Cannot open config file: " << configFile);
+    }
     std::stringstream buf;
     buf << configf.rdbuf();
     boost::json::error_code ec;
     boost::json::object configJsonObj = boost::json::parse(buf.str()).as_object();
-    if (ec.failed())
+    try
     {
-        std::cout << ec.message() << std::endl;
-        NS_FATAL_ERROR("Config file read error!");
+        if (ec.failed())
+        {
+            std::cout << ec.message() << std::endl;
+            NS_FATAL_ERROR("Config file read error!");
+        }
+        return configJsonObj;
     }
-    return configJsonObj;
+    catch (const std::exception& err)
+    {
+        NS_FATAL_ERROR("Failed to parse the json file");
+    }
 }
 
 void
-SetDefault(boost::json::object& defaultObj)
+SetDefault(boost::json::object& configObj)
 {
+    const auto defaultObj =
+        JsonGetObjectOrRaise(configObj, "defaultConfig", "Cannot find defaultConfig field");
     for (auto kvPair : defaultObj)
     {
         // kvPair is the first level pair
@@ -92,8 +138,10 @@ SetDefault(boost::json::object& defaultObj)
 }
 
 void
-SetGlobal(boost::json::object& globalObj)
+SetGlobal(boost::json::object& configObj)
 {
+    const auto globalObj =
+        JsonGetObjectOrRaise(configObj, "globalConfig", "Cannot find globalConfig field");
     // In this function, global value is allocated on heap without being freed
     // See declaration of this function for more details and take care!!!
     for (auto kvPair : globalObj)
@@ -239,13 +287,12 @@ PrettyPrint(std::ostream& os, const boost::json::value& jv, std::string* indent)
 
 /***** Utilities about setting seed*****/
 void
-SetRandomSeed(boost::json::object& configJsonObj)
+SetRandomSeed(uint32_t seed)
 {
-    uint32_t seed = configJsonObj["runtimeConfig"].get_object().find("seed")->value().as_int64();
     if (seed == 0)
     {
         // Random seed
-        SeedManager::SetSeed(time(NULL));
+        SeedManager::SetSeed(time(nullptr));
     }
     else
     {
@@ -255,18 +302,24 @@ SetRandomSeed(boost::json::object& configJsonObj)
 }
 
 void
-SetRandomSeed(uint32_t seed)
+SetRuntime(boost::json::object& configJsonObj)
 {
-    if (seed == 0)
-    {
-        // Random seed
-        SeedManager::SetSeed(time(NULL));
-    }
-    else
-    {
-        // Manually set seed
-        SeedManager::SetSeed(seed);
-    }
+    const auto runtimeConfig =
+        JsonGetObjectOrRaise(configJsonObj, "runtimeConfig", "Cannot find runtimeConfig field");
+    uint32_t seed =
+        JsonGetInt64OrRaise(runtimeConfig, "seed", "Cannot find seed field in runtimeConfig");
+    SetRandomSeed(seed);
+    std::string stopTime = JsonGetStringOrRaise(runtimeConfig,
+                                                "stopTime",
+                                                "Cannot find stopTime field in runtimeConfig");
+    Simulator::Stop(Time(stopTime));
+    JsonCallIfExistsInt<uint32_t>(runtimeConfig, "mtpThreads", [](uint32_t threads) {
+        if (threads > 1)
+        {
+            NS_LOG_INFO("Using MTP with threads: " << threads);
+            MtpInterface::Enable(threads);
+        }
+    });
 }
 
 /***** Utilities about application *****/
@@ -294,18 +347,19 @@ static std::map<std::string, TraceApplication::TraceCdf*> appCdfMapper = {
 ApplicationContainer
 InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology)
 {
-    boost::json::array appConfigs = conf.find("applicationConfig")->value().get_array();
+    boost::json::array appConfigs =
+        JsonGetArrayOrRaise(conf, "applicationConfig", "Cannot find applicationConfig field");
     ApplicationContainer apps;
     // This fucntion can be extended to install more sets of applications using this for loop
     for (const auto& appConfig : appConfigs)
     {
-        auto it = appInstallMapper.find(
-            appConfig.as_object().find("appName")->value().as_string().c_str());
+        std::string appName = JsonGetStringOrRaise(appConfig.as_object(),
+                                                   "appName",
+                                                   "Cannot find appName field in appConfig");
+        auto it = appInstallMapper.find(appName);
         if (it == appInstallMapper.end())
         {
-            NS_FATAL_ERROR("App \""
-                           << appConfig.as_object().find("appName")->value().as_string().c_str()
-                           << "\" installation logic has not been implemented");
+            NS_FATAL_ERROR("App \"" << appName << "\" installation logic has not been implemented");
         }
         AppInstallFunc appInstallLogic = it->second;
         apps.Add(appInstallLogic(appConfig.as_object(), topology));
@@ -320,11 +374,10 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
         std::make_shared<TraceApplicationHelper>(topology);
 
     // Set protocol group
-    std::string sProtocolGroup = appConfig.find("protocolGroup")->value().as_string().c_str();
-    if (appConfig.find("protocolGroup") == appConfig.end())
-    {
-        NS_FATAL_ERROR("Using TraceApplication needs to specify \"protocolGroup\"");
-    }
+    std::string sProtocolGroup =
+        JsonGetStringOrRaise(appConfig,
+                             "protocolGroup",
+                             "Using TraceApplication needs to specify \"protocolGroup\"");
     auto pProtocolGroup = protocolGroupMapper.find(sProtocolGroup);
     if (pProtocolGroup == protocolGroupMapper.end())
     {
@@ -333,11 +386,12 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
     appHelper->SetProtocolGroup(pProtocolGroup->second);
 
     // Set CDF
-    if (appConfig.find("cdf") == appConfig.end())
+    auto cdfObjIt = appConfig.find("cdf");
+    if (cdfObjIt == appConfig.end())
     {
         NS_FATAL_ERROR("Using TraceApplication needs to specify \"Cdf\"");
     }
-    if (appConfig.find("cdf")->value().is_string())
+    if (cdfObjIt->value().is_string())
     {
         // Has CDF type specified
         std::string sCdf = appConfig.find("cdf")->value().as_string().c_str();
@@ -352,7 +406,7 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
         // If pass the pointer directly, it will cause double free error
         // appHelper.SetCdf(std::unique_ptr<TraceApplication::TraceCdf>(pCdf->second));
     }
-    else if (appConfig.find("cdf")->value().is_object())
+    else if (cdfObjIt->value().is_object())
     {
         // No CDF type specified, use CDF Read from file
         boost::json::object cdfConfig = appConfig.find("cdf")->value().as_object();
@@ -372,44 +426,36 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
     }
 
     // Get the load of the application
-    if (appConfig.find("load") == appConfig.end())
-    {
-        NS_FATAL_ERROR("Using TraceApplication needs to specify \"load\"");
-    }
-    double dLoad = appConfig.find("load")->value().as_double();
+    double dLoad =
+        JsonGetDoubleOrRaise(appConfig, "load", "Using TraceApplication needs to specify \"load\"");
     if (dLoad < 0 || dLoad > 1)
     {
         NS_FATAL_ERROR("Load should be in [0, 1]");
     }
     appHelper->SetLoad(dLoad);
 
-    // Get if static flow interval is enabled, default is false
-    auto sfi = appConfig.find("staticFlowInterval");
-    if (sfi != appConfig.end())
-    {
-        appHelper->SetStaticFlowInterval(sfi->value().get_bool());
-    }
+    // Set static flow interval if is enabled, default is false
+    JsonCallIfExistsBool(appConfig, "staticFlowInterval", [&appHelper](bool b) {
+        appHelper->SetStaticFlowInterval(b);
+    });
 
-    // Get if send once is enabled, default is false
-    auto sendOnce = appConfig.find("sendOnce");
-    if (sendOnce != appConfig.end())
-    {
-        appHelper->SetSendOnce(sendOnce->value().get_bool());
-    }
+    // Set send once if is enabled, default is false
+    JsonCallIfExistsBool(appConfig, "sendOnce", [&appHelper](bool b) {
+        appHelper->SetStaticFlowInterval(b);
+    });
 
-    // Get the start time of the application
-    if (appConfig.find("startTime") == appConfig.end())
-    {
-        NS_FATAL_ERROR("Using TraceApplication needs to specify \"startTime\"");
-    }
-    Time startTime = Time(appConfig.find("startTime")->value().as_string().c_str());
+    // Get and set the start time of the application
+    std::string startTimeStr =
+        JsonGetStringOrRaise(appConfig,
+                             "startTime",
+                             "Using TraceApplication needs to specify \"startTime\"");
+    Time startTime = Time(startTimeStr);
 
-    // Get the stop time of the application, if not specified, set to 0
+    // Get the stop time of the application, if specified
     Time stopTime = Time(0);
-    if (appConfig.find("stopTime") != appConfig.end())
-    {
-        stopTime = Time(appConfig.find("stopTime")->value().as_string().c_str());
-    }
+    JsonCallIfExistsString(appConfig, "stopTime", [&stopTime](std::string s) {
+        stopTime = Time(s);
+    });
     appHelper->SetStartAndStopTime(startTime, stopTime);
 
     return appHelper;
@@ -454,7 +500,7 @@ InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> to
 std::unique_ptr<TraceApplication::TraceCdf>
 ConstructCdf(const boost::json::object& conf)
 {
-    std::string cdfFile = conf.find("cdfFile")->value().as_string().c_str();
+    std::string cdfFile = JsonGetStringOrRaise(conf, "cdfFile", "Cannot find cdfFile field");
     uint32_t avgSize = ConvertToUint(conf.find("avgSize")->value());
     // The double value may be interpreted as int64_t
     double scaleFactor = ConvertToDouble(conf.find("scaleFactor")->value());
@@ -547,18 +593,10 @@ ConvertToUint(const boost::json::value& v)
 }
 
 void
-SetStopTime(boost::json::object& configJsonObj)
-{
-    Time stopTime = Time(
-        configJsonObj["runtimeConfig"].get_object().find("stopTime")->value().as_string().c_str());
-    Simulator::Stop(stopTime);
-}
-
-void
 OutputStats(boost::json::object& conf, ApplicationContainer& apps, Ptr<DcTopology> topology)
 {
-    std::string outputFile =
-        conf["outputFile"].get_object().find("resultFile")->value().as_string().c_str();
+    auto obj = JsonGetObjectOrRaise(conf, "outputFile", "Cannot find outputFile field");
+    std::string outputFile = JsonGetStringOrRaise(obj, "resultFile", "CAnnot file resultFile field in outputFile");
     std::ofstream ofs(outputFile);
     if (!ofs.is_open())
     {
@@ -637,8 +675,13 @@ ConstructAppStatsObj(ApplicationContainer& apps)
     overallStatsObj["totalRetxRatePkt"] = double(totalSentPkts - totalPkts) / totalPkts;
     overallStatsObj["totalRetxRateByte"] = double(totalSentBytes - totalBytes) / totalBytes;
     // Calculate average and percentile FCT
-    std::sort(vFct.begin(), vFct.end());
     uint32_t nFct = vFct.size();
+    if (nFct == 0)
+    {
+        NS_LOG_ERROR("JsonUtil: no flow statistics gathered");
+        return appStatsObj;
+    }
+    std::sort(vFct.begin(), vFct.end());
     // Average FCT is calculated by the total FCT / number of flows
     Time avgFct = std::accumulate(vFct.begin(), vFct.end(), Time(0)) / nFct;
     Time p95Fct = vFct[0.95 * nFct];
@@ -660,12 +703,14 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
     {
         Ptr<TraceApplication> app = DynamicCast<TraceApplication>(apps.Get(i));
         if (app == nullptr)
+            {
             continue;
+            }
         auto appStats = app->GetStats();
 
         // Per flow statistics
         auto mFlowStats = appStats->mFlowStats;
-        for (auto pFlowStats : mFlowStats)
+        for (const auto &pFlowStats : mFlowStats)
         {
             FlowIdentifier flowIdentifier = pFlowStats.first;
             auto flowStats = pFlowStats.second;
@@ -695,7 +740,7 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                 boost::json::array recvEcnArray;
                 boost::json::array sentPktArray;
 
-                for (auto ccRate : flowStats->vCcRate)
+                for (const auto &ccRate : flowStats->vCcRate)
                 {
                     ccRateArray.emplace_back(
                         boost::json::object{{"timeNs", ccRate.first.GetNanoSeconds()},
@@ -707,7 +752,7 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                         boost::json::object{{"timeNs", ccCwnd.first.GetNanoSeconds()},
                                             {"cwndByte", ccCwnd.second}});
                 }
-                for (auto recvEcn : flowStats->vRecvEcn)
+                for (const auto &recvEcn : flowStats->vRecvEcn)
                 {
                     recvEcnArray.emplace_back(
                         boost::json::object{{"timeNs", recvEcn.GetNanoSeconds()}});
@@ -761,9 +806,11 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                     boost::json::object recvAckObj;
                     recvAckObj.emplace("timeNs", expectedPsn.first.GetNanoSeconds());
                     recvAckObj.emplace("expectedPsn", expectedPsn.second);
-                    if (bHasAckedPsn && flowStats->vAckedPsn[ackedPsnIndex].first == expectedPsn.first)
+                    if (bHasAckedPsn &&
+                        flowStats->vAckedPsn[ackedPsnIndex].first == expectedPsn.first)
                     {
-                        recvAckObj.emplace("ackedPsn", flowStats->vAckedPsn[ackedPsnIndex++].second);
+                        recvAckObj.emplace("ackedPsn",
+                                           flowStats->vAckedPsn[ackedPsnIndex++].second);
                     }
                     recvAckArray.emplace_back(recvAckObj);
                 }
@@ -780,7 +827,9 @@ ConstructRealTimeFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowSta
     {
         Ptr<RealTimeApplication> app = DynamicCast<RealTimeApplication>(apps.Get(i));
         if (app == nullptr)
+            {
             continue;
+            }
         auto appStats = app->GetStats();
         std::shared_ptr<RealTimeApplication::Stats> rtaStats =
             std::dynamic_pointer_cast<RealTimeApplication::Stats>(appStats);
@@ -789,7 +838,7 @@ ConstructRealTimeFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowSta
             NS_FATAL_ERROR("Cannot cast to RealTimeApplication::Stats");
         }
 
-        for (auto pFlowStats : rtaStats->mflowStats)
+        for (const auto &pFlowStats : rtaStats->mflowStats)
         {
             FlowIdentifier flowIdentifier = pFlowStats.first;
             auto flowStats = pFlowStats.second;
@@ -835,6 +884,139 @@ ConstructRealTimeFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowSta
             }
         }
     }
+}
+
+/*****************************************************
+ * A series of functions to extract field from json.
+ *****************************************************/
+static inline boost::json::object::const_iterator
+JsonGetFieldOrRaise(const boost::json::object& obj,
+                    const std::string& field,
+                    const std::string& failureMsg)
+{
+    boost::json::object::const_iterator subobj = obj.find(field);
+    if (subobj == obj.end())
+    {
+        NS_FATAL_ERROR(failureMsg);
+    }
+    return subobj;
+}
+
+static inline boost::json::object
+JsonGetObjectOrRaise(const boost::json::object& obj,
+                     const std::string& field,
+                     const std::string& failureMsg)
+{
+    auto subobj = JsonGetFieldOrRaise(obj, field, failureMsg);
+    return subobj->value().get_object();
+}
+
+static inline int64_t
+JsonGetInt64OrRaise(const boost::json::object& obj,
+                    const std::string& field,
+                    const std::string& failureMsg)
+{
+    auto subobj = JsonGetFieldOrRaise(obj, field, failureMsg);
+    try
+    {
+        return subobj->value().as_int64();
+    }
+    catch (const std::exception& err)
+    {
+        NS_FATAL_ERROR("Failed to parse field " << field << " as an int64");
+    }
+}
+
+static inline double
+JsonGetDoubleOrRaise(const boost::json::object& obj,
+                     const std::string& field,
+                     const std::string& failureMsg)
+{
+    auto subobj = JsonGetFieldOrRaise(obj, field, failureMsg);
+    try
+    {
+        return subobj->value().as_double();
+    }
+    catch (const std::exception& err)
+    {
+        NS_FATAL_ERROR("Failed to parse field " << field << " as an int64");
+    }
+}
+
+static inline std::string
+JsonGetStringOrRaise(const boost::json::object& obj,
+                     const std::string& field,
+                     const std::string& failureMsg)
+{
+    auto subobj = JsonGetFieldOrRaise(obj, field, failureMsg);
+    try
+    {
+        return subobj->value().as_string().c_str();
+    }
+    catch (const std::exception& err)
+    {
+        NS_FATAL_ERROR("Failed to parse field " << field << " as a string");
+    }
+}
+
+static inline boost::json::array
+JsonGetArrayOrRaise(const boost::json::object& obj,
+                    const std::string& field,
+                    const std::string& failureMsg)
+{
+    auto subobj = JsonGetFieldOrRaise(obj, field, failureMsg);
+    try
+    {
+        return subobj->value().get_array();
+    }
+    catch (const std::exception& err)
+    {
+        NS_FATAL_ERROR("Failed to parse field " << field << " as array");
+    }
+}
+
+static inline bool
+JsonCallIfExistsString(const boost::json::object& obj,
+                       std::string field,
+                       std::function<void(std::string)> callback)
+{
+    boost::json::object::const_iterator subobj = obj.find(field);
+    if (subobj == obj.end())
+    {
+        return false;
+    }
+    callback(subobj->value().as_string().c_str());
+    return true;
+}
+
+template <typename U>
+static bool
+JsonCallIfExistsInt(const boost::json::object& obj,
+                    std::string field,
+                    std::function<void(U)> callback)
+{
+    static_assert(std::is_integral<U>::value, "Integer type required.");
+    boost::json::object::const_iterator subobj = obj.find(field);
+    if (subobj == obj.end())
+    {
+        return false;
+    }
+    callback(static_cast<U>(subobj->value().as_int64()));
+    return true;
+}
+
+static inline bool
+JsonCallIfExistsBool(const boost::json::object& obj,
+                     std::string field,
+                     std::function<void(bool)> callback)
+{
+    boost::json::object::const_iterator subobj = obj.find(field);
+    if (subobj == obj.end())
+    {
+        return false;
+    }
+    callback(subobj->value().as_bool());
+    return true;
 }
 
 } // namespace json_util

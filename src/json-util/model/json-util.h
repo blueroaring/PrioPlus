@@ -62,13 +62,9 @@ void SetDefault(boost::json::object& defaultObj);
  */
 void SetGlobal(boost::json::object& globalObj);
 
+void SetRuntime(boost::json::object& configJsonObj);
+
 void PrettyPrint(std::ostream& os, const boost::json::value& jv, std::string* indent = nullptr);
-
-void SetRandomSeed(boost::json::object& configJsonObj);
-
-void SetRandomSeed(uint32_t seed);
-
-void SetStopTime(boost::json::object& configJsonObj);
 
 std::shared_ptr<TraceApplicationHelper> ConstructTraceAppHelper(const boost::json::object& conf,
                                                                 Ptr<DcTopology> topology);
