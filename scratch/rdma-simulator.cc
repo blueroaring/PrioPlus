@@ -27,7 +27,7 @@
 #include "ns3/internet-module.h"
 #include "ns3/ipv4-static-routing-helper.h"
 #include "ns3/json-topology-helper.h"
-#include "ns3/json-util.h"
+#include "ns3/json-util-module.h"
 #include "ns3/log.h"
 #include "ns3/network-module.h"
 #include "ns3/nstime.h"
@@ -65,40 +65,44 @@ main(int argc, char* argv[])
 {
     NS_LOG_UNCOND("ScratchSimulator");
 
-    // Statistics about simulation running time
-    clock_t begint, endt;
-    begint = clock();
+    // Statistics about simulation running time using chrono
+    std::chrono::system_clock::time_point tBegin, tEnd;
+    tBegin = std::chrono::system_clock::now();
 
-    std::string config_file = "config/fat4.json";
+    std::string config_file;
     if (argc > 1)
     {
         // Read the configuration file
         config_file = std::string(argv[1]);
+        // std::cout << "Using configuration file: " << config_file << std::endl;
     }
-    // else
-    // {
-    //     std::cout << "Error: require a configuration file\n";
-    //     fflush(stdout);
-    //     return 1;
-    // }
+    else
+    {
+        std::cout << "Error: require a configuration file\n";
+        fflush(stdout);
+        return 1;
+    }
 
     LogComponentEnableAll(LOG_LEVEL_WARN);
     // LogComponentEnable ("PausableQueueDisc", LOG_LEVEL_INFO);
     // LogComponentEnable ("FifoQueueDiscEcn", LOG_LEVEL_INFO);
-    LogComponentEnable("ScratchSimulator", LOG_LEVEL_INFO);
-    LogComponentEnable("JsonUtil", LOG_LEVEL_INFO);
-    // LogComponentEnable("RoCEv2Socket", LOG_DEBUG);
+    LogComponentEnable("ScratchSimulator", LOG_LEVEL_DEBUG);
+    // LogComponentEnable("JsonTopologyHelper", LOG_LEVEL_DEBUG);
+    // LogComponentEnable("RoCEv2Harvest", LOG_DEBUG);
 
     // Read config in json from config file
     boost::json::object configObj = json_util::ReadConfig(config_file);
 
     /***** Automatical settings *****/
     // Automatically set default values using ns3 Config system
-    json_util::SetDefault(configObj);
+    json_util::SetDefault(configObj["defaultConfig"].get_object());
     // Automatically set global values using ns3 GlobalValue system
-    json_util::SetGlobal(configObj);
-    // Set runtime configurations, i.e., random seed, MTP parallel and simulator stop time
-    json_util::SetRuntime(configObj);
+    json_util::SetGlobal(configObj["globalConfig"].get_object());
+    // Set global seed for random generator
+    json_util::SetRandomSeed(
+        configObj["runtimeConfig"].get_object().find("seed")->value().as_int64());
+    // Set the stop time of simulation
+    json_util::SetStopTime(configObj);
 
     /***** Topology and application *****/
     // Build topology from topology file
@@ -107,7 +111,10 @@ main(int argc, char* argv[])
     // Install applications
     ApplicationContainer apps = json_util::InstallApplications(configObj, topology);
 
-    // // Debug trace
+    // Disable the detailed switch stats for some switches if is set
+    json_util::DisableDetailedSwitchStats(configObj, topology);
+
+    // Debug trace
     // Config::ConnectWithoutContext("/NodeList/*/DeviceList/*/PhyTxBeginWithId",
     //                               MakeCallback(&PhyTxBegin));
     // // Bind the callback to the pausable queue disc, no config system can be used
@@ -146,15 +153,13 @@ main(int argc, char* argv[])
     //     }
     // }
 
-    tracer_extension::ConfigOutputDirectory("data");
-    tracer_extension::ConfigTraceFCT(tracer_extension::Protocol::RoCEv2, "fct.csv");
-
     Simulator::Run();
 
-    json_util::OutputStats(configObj, apps, topology);
+    json_util::OutputStats(configObj, apps, topology, config_file);
 
-    endt = clock();
-    std::cout << "Total used time: " << (double)(endt - begint) / CLOCKS_PER_SEC << "s"
+    tEnd = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed_seconds = tEnd - tBegin;
+    std::cout << "Total used time: " << elapsed_seconds.count() << "s"
               << std::endl;
     Simulator::Destroy();
 }
@@ -168,10 +173,11 @@ enum debugType
 
 const debugType debugT = TRACK_PACKET;
 // Variables used for track a packet
+const uint32_t srcAddr = 167772162;
 const uint32_t dstAddr = 167772163;
 const uint32_t dstQp = 100;
-const uint32_t srcQp = 258;
-const uint32_t psn = 43;
+const uint32_t srcQp = 257;
+const uint32_t psn = 3;
 // Variables used for track a port's behavior
 const Time debugFrom = NanoSeconds(115486788) + MicroSeconds(2);
 const uint32_t nodeId = 10;
@@ -218,13 +224,20 @@ PhyTxBegin(Ptr<const Packet> pkt, std::pair<uint32_t, uint32_t> nodeAndPortId)
             RoCEv2Header rocev2Header;
             copy->RemoveHeader(rocev2Header);
             if (
-                // ipv4Header.GetSource().Get() == srcAddr &&
-                ipv4Header.GetDestination().Get() == dstAddr && rocev2Header.GetDestQP() == dstQp &&
-                rocev2Header.GetSrcQP() == srcQp && rocev2Header.GetPSN() == psn)
+                // (ipv4Header.GetSource().Get() == srcAddr &&
+                //  // ipv4Header.GetDestination().Get() == dstAddr &&
+                //  rocev2Header.GetDestQP() == dstQp && rocev2Header.GetSrcQP() == srcQp &&
+                //  rocev2Header.GetPSN() == psn) ||
+                (
+                    // ipv4Header.GetSource().Get() == dstAddr &&
+                    ipv4Header.GetDestination().Get() == srcAddr &&
+                    rocev2Header.GetDestQP() == srcQp && rocev2Header.GetSrcQP() == dstQp &&
+                    rocev2Header.GetPSN() == psn + 1))
             {
-                NS_LOG_DEBUG("Packet send out from node "
-                             << nodeAndPortId.first << " port " << nodeAndPortId.second << " at "
-                             << Simulator::Now().GetNanoSeconds() << "ns");
+                if (nodeAndPortId.first == 7)
+                    NS_LOG_DEBUG("Packet send out from node "
+                                 << nodeAndPortId.first << " port " << nodeAndPortId.second
+                                 << " at " << Simulator::Now().GetNanoSeconds() << "ns");
             }
         }
     }

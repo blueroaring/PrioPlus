@@ -26,15 +26,17 @@
 #include "ns3/hpcc-header.h"
 #include "ns3/rocev2-header.h"
 
+#include <deque>
+
 namespace ns3
 {
 
 class RoCEv2SocketState;
 
 /**
- * The DCQCN implementation according to paper:
- *   Zhu, Yibo, et al. "Congestion control for large-scale RDMA deployments." ACM SIGCOMM.
- *   \url https://dl.acm.org/doi/abs/10.1145/2829988.2787484
+ * The HPCC implementation according to paper:
+ *   Li, Yuliang, et al. "HPCC: high precision congestion control." ACM SIGCOMM.
+ *   \url https://dl.acm.org/doi/10.1145/3341302.3342085
  */
 class RoCEv2Hpcc : public RoCEv2CongestionOps
 {
@@ -74,6 +76,34 @@ class RoCEv2Hpcc : public RoCEv2CongestionOps
 
     std::string GetName() const override;
 
+    class Stats : public RoCEv2CongestionOps::Stats
+    {
+      public:
+        // constructor
+        Stats();
+
+        // Detailed statistics, only enabled if needed
+        bool bDetailedSenderStats;
+        std::deque<std::pair<uint32_t, Time>> m_inflightPkts; //!< sendTs to record RTT.
+        std::vector<std::tuple<Time, Time, Time>>
+            vPacketDelay; //!< The Delay masurement per packet, recorded as send time, recv time and
+                          //!< delay
+        std::vector<std::pair<Time, double>>
+            vU; //!< The inflight utilization measurement per packet
+
+        // Recorder function of the detailed statistics
+        void RecordPacketSend(uint32_t seq, Time sendTs);
+        void RecordPacketDelay(uint32_t seq); // Called when receiving an ACK
+        void RecordU(double u);
+
+        // Collect the statistics and check if the statistics is correct
+        void CollectAndCheck();
+
+        // No getter for simplicity
+    };
+
+    std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const;
+
   private:
     /**
      * \brief Measure the current inflight.
@@ -98,18 +128,20 @@ class RoCEv2Hpcc : public RoCEv2CongestionOps
      */
     void Init();
 
+    std::shared_ptr<Stats> m_stats; //!< Statistics
+
     uint32_t m_lastUpdateSeq; //!< lastUpdateSeq in paper.
 
     uint32_t m_incStage; //!< incStage in paper.
     uint32_t m_maxStage; //!< maxStage in paper. Default to 5.
+
+    double m_cRateRatio; //!< rate-based WC in paper.
 
     double m_raiRatio; //!< RateAI / link rate for additive increase
 
     double m_targetUtil; //!< η in paper. Default to 0.95.
 
     double m_u; //!< U in paper. Current inflight utilization.
-
-    Time m_baseRtt; //!< T in paper. Must be set by user.
 
     IntHop m_hops[HpccHeader::MAX_HOP]; //!< L in paper, storing link feedbacks
 

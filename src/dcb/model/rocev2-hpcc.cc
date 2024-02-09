@@ -22,6 +22,7 @@
 #include "rocev2-socket.h"
 
 #include "ns3/simulator.h"
+#include "ns3/global-value.h"
 
 namespace ns3
 {
@@ -42,11 +43,6 @@ RoCEv2Hpcc::GetTypeId()
                                           DoubleValue(0.95),
                                           MakeDoubleAccessor(&RoCEv2Hpcc::m_targetUtil),
                                           MakeDoubleChecker<double>())
-                            .AddAttribute("MinRateRatio",
-                                          "HPCC's minimum rate ratio",
-                                          DoubleValue(1e-3),
-                                          MakeDoubleAccessor(&RoCEv2Hpcc::m_minRateRatio),
-                                          MakeDoubleChecker<double>())
                             .AddAttribute("MaxStage",
                                           "HPCC's maximum stage",
                                           UintegerValue(5),
@@ -56,12 +52,7 @@ RoCEv2Hpcc::GetTypeId()
                                           "HPCC's RateAI ratio",
                                           DoubleValue(0.0005),
                                           MakeDoubleAccessor(&RoCEv2Hpcc::m_raiRatio),
-                                          MakeDoubleChecker<double>())
-                            .AddAttribute("BaseRTT",
-                                          "HPCC's base RTT",
-                                          TimeValue(MilliSeconds(100)),
-                                          MakeTimeAccessor(&RoCEv2Hpcc::m_baseRtt),
-                                          MakeTimeChecker());
+                                          MakeDoubleChecker<double>());
     return tid;
 }
 
@@ -90,17 +81,26 @@ void
 RoCEv2Hpcc::SetReady()
 {
     NS_LOG_FUNCTION(this);
-    m_sockState->SetRateRatioPercent(m_curRateRatio);
+    // Reload any config before starting
+    SetLimiting(true);
+    SetRateRatio(m_startRateRatio);
 }
 
 void
 RoCEv2Hpcc::UpdateStateSend(Ptr<Packet> packet)
 {
     NS_LOG_FUNCTION(this << packet);
-
+    // Rmove the roceheader
+    RoCEv2Header roceHeader;
+    packet->RemoveHeader(roceHeader);
     // Add an empty HPCC header into packet
     HpccHeader hpccHeader;
     packet->AddHeader(hpccHeader);
+    // Add the roceheader back
+    packet->AddHeader(roceHeader);
+
+    // Record the packet send time, used to calc the RTT
+    m_stats->RecordPacketSend(roceHeader.GetPSN(), Simulator::Now());
 }
 
 void
@@ -149,6 +149,9 @@ RoCEv2Hpcc::UpdateStateWithRcvACK(Ptr<Packet> ack,
         m_lastUpdateSeq = senderNextPSN;
     }
     CopyIntHop(inthop, nhop);
+
+    // Record the packet delay
+    m_stats->RecordPacketDelay(ackSeq);
 }
 
 void
@@ -156,6 +159,7 @@ RoCEv2Hpcc::MeasureInflight(const HpccHeader& hpccHeader)
 {
     double u = 0;
     Time tau;
+    Time baseRtt = m_sockState->GetBaseRtt();
     for (uint32_t i = 0; i < hpccHeader.m_nHop; i++) // Algorithm Line 3
     {
         Time tauPrime = Time(hpccHeader.m_intHops[i].GetTimeDelta(m_hops[i]));
@@ -163,7 +167,7 @@ RoCEv2Hpcc::MeasureInflight(const HpccHeader& hpccHeader)
                         tauPrime.GetSeconds(); // Algorithm Line 4
         double uPrime = txRate / hpccHeader.m_intHops[i].GetLineRate().GetBitRate();
         uPrime += std::min(hpccHeader.m_intHops[i].GetQlen(), m_hops[i].GetQlen()) * 8.0 /
-                  m_baseRtt.GetSeconds() /
+                  baseRtt.GetSeconds() /
                   hpccHeader.m_intHops[i].GetLineRate().GetBitRate(); // Algorithm Line 5
 
         if (uPrime > u) // Algorithm Line 6
@@ -172,12 +176,14 @@ RoCEv2Hpcc::MeasureInflight(const HpccHeader& hpccHeader)
             tau = tauPrime; // Algorithm Line 7
         }
     }
-    if (tau > m_baseRtt) // Algorithm Line 8
+    if (tau > baseRtt) // Algorithm Line 8
     {
-        tau = m_baseRtt;
+        tau = baseRtt;
     }
-    double frab = tau.GetSeconds() / m_baseRtt.GetSeconds();
+    double frab = tau.GetSeconds() / baseRtt.GetSeconds();
     m_u = m_u * (1.0 - frab) + u * frab; // Algorithm Line 9
+
+    m_stats->RecordU(m_u);
 }
 
 void
@@ -188,25 +194,23 @@ RoCEv2Hpcc::UpdateRate(bool updateCurrent)
     uint32_t newIncStage;
     if (uNormal >= 1.0 || m_incStage >= m_maxStage) // Algorithm Line 12
     {
-        newRateRatio = m_curRateRatio / uNormal + m_raiRatio; // Algorithm Line 13
+        newRateRatio = m_cRateRatio / uNormal + m_raiRatio; // Algorithm Line 13
         newIncStage = 0;
     }
     else
     {
-        newRateRatio = m_curRateRatio + m_raiRatio; // Algorithm Line 17
+        newRateRatio = m_cRateRatio + m_raiRatio; // Algorithm Line 17
         newIncStage = m_incStage + 1;
     }
-    // newRateRatio should between m_minRateRatio and 100%
-    newRateRatio = CheckRateRatio(newRateRatio);
+    // Update the rate ratio of the socket state
+    SetRateRatio(newRateRatio);
+
     // Update current rate and incStage if needed
     if (updateCurrent)
     {
-        m_curRateRatio = newRateRatio;
+        m_cRateRatio = m_sockState->CheckRateRatio(newRateRatio);
         m_incStage = newIncStage;
     }
-    // Update the rate ratio of the socket state
-    m_sockState->SetRateRatioPercent(newRateRatio);
-    // TODO： update window size
 }
 
 void
@@ -228,11 +232,66 @@ void
 RoCEv2Hpcc::Init()
 {
     HpccHeader hd;
-    m_headerSize += hd.GetSerializedSize(); // HPCC+Rocev2+UDP+IP+Eth
+    m_extraHeaderSize += hd.GetSerializedSize(); // Packet has extra HPCCHeader
+    m_extraAckSize += hd.GetSerializedSize();    // ACK has extra HPCCHeader
 
     m_lastUpdateSeq = 0;
     m_incStage = 0;
-    m_curRateRatio = 1.;
+    m_cRateRatio = 1.;
     m_u = 1.;
+
+    m_stats = std::make_shared<Stats>();
+
+    RegisterCongestionType(GetTypeId());
+}
+
+std::shared_ptr<RoCEv2CongestionOps::Stats>
+RoCEv2Hpcc::GetStats() const
+{
+    return m_stats;
+}
+
+RoCEv2Hpcc::Stats::Stats()
+{
+    NS_LOG_FUNCTION(this);
+    BooleanValue bv;
+    if (GlobalValue::GetValueByNameFailSafe("detailedSenderStats", bv))
+        bDetailedSenderStats = bv.Get();
+    else
+        bDetailedSenderStats = false;
+}
+
+void 
+RoCEv2Hpcc::Stats::RecordPacketSend(uint32_t seq, Time sendTs)
+{
+    if (bDetailedSenderStats)
+    {
+        m_inflightPkts.push_back(std::make_pair(seq, sendTs));
+    }
+}
+
+void
+RoCEv2Hpcc::Stats::RecordPacketDelay(uint32_t seq)
+{
+    if (bDetailedSenderStats)
+    {
+        auto pkt = m_inflightPkts.front();
+        m_inflightPkts.pop_front();
+        if (pkt.first != seq - 1)
+        {
+            NS_LOG_ERROR("seq mismatch: " << pkt.first << " != " << seq);
+        }
+        Time delay = Simulator::Now() - pkt.second;
+        vPacketDelay.push_back(std::make_tuple(pkt.second, Simulator::Now(), delay));
+    }
+}
+
+void 
+RoCEv2Hpcc::Stats::RecordU(double u)
+{
+    if (bDetailedSenderStats)
+    {
+        vU.push_back(std::make_pair(Simulator::Now(), u));
+    }
 }
 } // namespace ns3

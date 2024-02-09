@@ -27,7 +27,7 @@ NS_LOG_COMPONENT_DEFINE("DcbChannel");
 NS_OBJECT_ENSURE_REGISTERED(DcbChannel);
 
 TypeId
-DcbChannel::GetTypeId()
+DcbChannel::GetTypeId(void)
 {
     static TypeId tid = TypeId("ns3::DcbChannel")
                             .SetParent<Channel>()
@@ -63,7 +63,7 @@ DcbChannel::Attach(Ptr<DcbNetDevice> device)
 {
     NS_LOG_FUNCTION(this << device);
     NS_ASSERT_MSG(m_nDevices < N_DEVICES, "Only two devices permitted");
-    NS_ASSERT(device != nullptr);
+    NS_ASSERT(device != 0);
 
     m_link[m_nDevices++].m_src = device;
     //

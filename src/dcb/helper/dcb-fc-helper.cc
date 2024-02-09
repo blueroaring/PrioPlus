@@ -21,6 +21,8 @@
 
 #include "ns3/assert.h"
 
+#include <vector>
+
 namespace ns3
 {
 
@@ -50,21 +52,28 @@ DcbFcHelper::InstallPFCtoNodePort(Ptr<Node> node,
     // install PFC
     Ptr<DcbPfcPort> pfc = CreateObject<DcbPfcPort>(dev, dcbTc);
     uint8_t enableVec = 0;
+    std::vector<Ptr<DcbFlowControlMmuQueue>> mmuQueues;
     for (const DcbPfcPortConfig::QueueConfig& qConfig : config.queues)
     {
         if (qConfig.priority >= DcbTrafficControl::PRIORITY_NUMBER)
         {
             NS_FATAL_ERROR("PFC priority should be 0~7, your input is " << qConfig.priority);
         }
-        if (qConfig.xon > qConfig.reserve)
+        if (qConfig.resumeOffset > qConfig.reserve)
         {
-            NS_FATAL_ERROR("XON should be less or equal to reserve");
+            NS_FATAL_ERROR("resumeOffset should be less or equal to reserve");
         }
         enableVec |= (1 << qConfig.priority);
-        pfc->ConfigQueue(qConfig.priority, qConfig.reserve, qConfig.xon);
+        // pfc->ConfigQueue(qConfig.priority, qConfig.reserve, qConfig.xon);
+        Ptr<DcbPfcMmuQueue> mmuQueue = CreateObject<DcbPfcMmuQueue>(qConfig.reserve,
+                                                                    qConfig.resumeOffset,
+                                                                    qConfig.headroom,
+                                                                    qConfig.isDynamicThreshold,
+                                                                    qConfig.dtShift);
+        mmuQueues.push_back(mmuQueue);
     }
     pfc->SetEnableVec(enableVec);
-    dcbTc->InstallFCToPort(port, pfc);
+    dcbTc->InstallFCToPort(port, pfc, mmuQueues);
 
     // register protocol handler
     node->RegisterProtocolHandler(MakeCallback(&DcbPfcPort::ReceivePfc, pfc),
@@ -112,22 +121,29 @@ DcbFcHelper::InstallHpccPFCtoNodePort(Ptr<Node> node,
     // install HpccPfc
     Ptr<DcbHpccPort> hpccPfc = CreateObject<DcbHpccPort>(dev, dcbTc);
     uint8_t enableVec = 0;
+    std::vector<Ptr<DcbFlowControlMmuQueue>> mmuQueues;
     for (const DcbPfcPortConfig::QueueConfig& qConfig : config.queues)
     {
         if (qConfig.priority >= DcbTrafficControl::PRIORITY_NUMBER)
         {
             NS_FATAL_ERROR("PFC priority should be 0~7, your input is " << qConfig.priority);
         }
-        if (qConfig.xon > qConfig.reserve)
+        if (qConfig.resumeOffset > qConfig.reserve)
         {
-            NS_FATAL_ERROR("XON should be less or equal to reserve");
+            NS_FATAL_ERROR("resumeOffset should be less or equal to reserve");
         }
         enableVec |= (1 << qConfig.priority);
-        hpccPfc->ConfigQueue(qConfig.priority, qConfig.reserve, qConfig.xon);
+        // pfc->ConfigQueue(qConfig.priority, qConfig.reserve, qConfig.xon);
+        Ptr<DcbPfcMmuQueue> mmuQueue = CreateObject<DcbPfcMmuQueue>(qConfig.reserve,
+                                                                    qConfig.resumeOffset,
+                                                                    qConfig.headroom,
+                                                                    qConfig.isDynamicThreshold,
+                                                                    qConfig.dtShift);
+        mmuQueues.push_back(mmuQueue);
     }
     hpccPfc->SetEnableVec(enableVec);
     hpccPfc->SetFcEgressEnabled(true);
-    dcbTc->InstallFCToPort(port, hpccPfc);
+    dcbTc->InstallFCToPort(port, hpccPfc, mmuQueues);
 
     // register protocol handler
     node->RegisterProtocolHandler(MakeCallback(&DcbPfcPort::ReceivePfc, hpccPfc),

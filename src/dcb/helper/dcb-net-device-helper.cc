@@ -44,7 +44,7 @@ DcbNetDeviceHelper::EnablePcapInternal(std::string prefix,
     // the system.  We can only deal with devices of type PointToPointNetDevice.
     //
     Ptr<DcbNetDevice> device = nd->GetObject<DcbNetDevice>();
-    if (device == nullptr)
+    if (device == 0)
     {
         NS_LOG_INFO("PointToPointHelper::EnablePcapInternal(): Device "
                     << device << " not of type ns3::PointToPointNetDevice");
@@ -80,7 +80,7 @@ DcbNetDeviceHelper::EnableAsciiInternal(Ptr<OutputStreamWrapper> stream,
     // the system.  We can only deal with devices of type PointToPointNetDevice.
     //
     Ptr<DcbNetDevice> device = nd->GetObject<DcbNetDevice>();
-    if (device == nullptr)
+    if (device == 0)
     {
         NS_LOG_INFO("PointToPointHelper::EnableAsciiInternal(): Device "
                     << device << " not of type ns3::PointToPointNetDevice");
@@ -99,7 +99,7 @@ DcbNetDeviceHelper::EnableAsciiInternal(Ptr<OutputStreamWrapper> stream,
     // since there will be one file per context and therefore the context would
     // be redundant.
     //
-    if (stream == nullptr)
+    if (stream == 0)
     {
         //
         // Set up an output stream object to deal with private ofstream copy

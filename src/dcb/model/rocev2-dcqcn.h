@@ -66,6 +66,12 @@ class RoCEv2Dcqcn : public RoCEv2CongestionOps
 
     std::string GetName() const override;
 
+    inline std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const
+    {
+        // This has no Stats now
+        return nullptr;
+    }
+
   private:
     void UpdateAlpha();
 

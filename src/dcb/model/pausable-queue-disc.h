@@ -20,10 +20,12 @@
 #ifndef PAUSABLE_QUEUE_DISC_H
 #define PAUSABLE_QUEUE_DISC_H
 
+#include "fifo-queue-disc-ecn.h"
+
+#include "ns3/node.h"
 #include "ns3/queue-disc.h"
 #include "ns3/queue-item.h"
 #include "ns3/type-id.h"
-#include "ns3/node.h"
 
 namespace ns3
 {
@@ -75,7 +77,8 @@ class PausableQueueDisc : public QueueDisc
     typedef Callback<void, uint32_t, uint8_t, Ptr<Packet>> TCEgressCallback;
 
     /**
-     * \brief Called when install the qdisc, to register the callback called after packet is dequeued
+     * \brief Called when install the qdisc, to register the callback called after packet is
+     * dequeued
      */
     void RegisterTrafficControlCallback(TCEgressCallback cb);
 
@@ -86,6 +89,48 @@ class PausableQueueDisc : public QueueDisc
     QueueSize GetInnerQueueSize(uint8_t priority) const;
 
     std::pair<uint32_t, uint32_t> GetNodeAndPortId() const;
+
+    /**
+     * \brief Called by RoCEv2L4Protocol to register a callback function to notify the RoCEv2L4Proto
+     * to send a packet down.
+     */
+    void RegisterSendDataCallback(Callback<void, uint32_t, uint32_t> cb);
+
+    class Stats
+    {
+      public:
+        // constructor
+        Stats(Ptr<PausableQueueDisc> qdisc);
+
+        Ptr<PausableQueueDisc> m_qdisc;
+
+        bool bDetailedSwitchStats;
+        std::vector<std::tuple<Time, uint8_t, bool>>
+            vPauseResumeTime; //<! Record the pause/resume time and the priority, true for paused,
+                              // false for resumed
+
+        // For now we only support FifoQueueDiscEcn as inner queue
+        std::vector<std::shared_ptr<FifoQueueDiscEcn::Stats>>
+            vQueueStats; //<! The queue statistics for each inner queue
+        // Recorder function
+        void RecordPauseResume(uint8_t prio, bool paused);
+
+        // Collect the statistics and check if the statistics is correct
+        void CollectAndCheck();
+
+        // No getter for simplicity
+    };
+
+    std::shared_ptr<Stats> GetStats() const;
+
+    /**
+     * \brief Set the detailedSwitchStats for the queue disc and inner queue.
+     *
+     * This function is often used to disable the statistics collection for the queue disc and inner
+     * queue. It will break the design of stats configuration, but the switch's stats is so heavy
+     * that we have to do this. Sorry for that.
+     */
+    void SetDetailedSwitchStats(bool bDetailedSwitchStats);
 
   private:
     virtual bool DoEnqueue(Ptr<QueueDiscItem> item) override;
@@ -98,9 +143,12 @@ class PausableQueueDisc : public QueueDisc
 
     virtual void InitializeParams(void) override;
 
-    Ptr<Node> m_node;       //!< Node owning this NetDevice
+    std::shared_ptr<Stats> m_stats;
 
-    bool m_fcEnabled; // Whether flow control is enabled, once enabled, the queue disc will be pausable
+    Ptr<Node> m_node; //!< Node owning this NetDevice
+
+    bool m_fcEnabled; // Whether flow control is enabled, once enabled, the queue disc will be
+                      // pausable
 
     TCEgressCallback m_tcEgress; // Costum callback, called after packet is dequeued
 
@@ -108,8 +156,13 @@ class PausableQueueDisc : public QueueDisc
 
     QueueSize m_queueSize;
 
-    /// Traced callback: fired when a packet is enqueued, trace with item, host and port id, priority
-    TracedCallback<Ptr<const QueueDiscItem>, std::pair<uint32_t, uint32_t>, uint8_t> m_traceEnqueueWithId;
+    /// Traced callback: fired when a packet is enqueued, trace with item, host and port id,
+    /// priority
+    TracedCallback<Ptr<const QueueDiscItem>, std::pair<uint32_t, uint32_t>, uint8_t>
+        m_traceEnqueueWithId;
+
+    Callback<void, uint32_t, uint32_t> m_sendDataCallback; //<! Callback function to notify the RoCEv2L4Proto
+                                                 // to send a packet down
 
 }; // class PausableQueueDisc
 

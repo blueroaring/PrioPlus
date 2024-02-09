@@ -26,6 +26,7 @@
 #include "ns3/dcb-trace-application.h"
 #include "ns3/net-device.h"
 #include "ns3/object-factory.h"
+#include "ns3/string.h"
 
 namespace ns3
 {
@@ -55,7 +56,15 @@ class TraceApplicationHelper
     void SetStaticFlowInterval(bool staticFlowInterval);
     void SetSendOnce(bool sendOnce);
     void SetStartAndStopTime(Time start, Time stop);
+    void SetStartTime(Time start);
     void SetRealTimeApp(bool realTimeApp);
+    void SetCongestionType(StringValue congestionType);
+    // Use move semantics to avoid copying the vector
+    typedef std::pair<std::string, Ptr<AttributeValue>> ConfigEntry_t;
+    void SetCcAttributes(std::vector<ConfigEntry_t>&& ccAttributes);
+    void SetCcAttribute(ConfigEntry_t ccAttribute);
+    void SetAppAttributes(std::vector<ConfigEntry_t>&& appAttributes);
+    void SetSocketAttributes(std::vector<ConfigEntry_t>&& socketAttributes);
 
     /**
      * \brief Create an application according to the configuration.
@@ -133,6 +142,13 @@ class TraceApplicationHelper
     Time m_startTime;
     Time m_stopTime;
     bool m_realTimeApp;
+    StringValue m_congestionType;
+    
+    // The attributes to be set to the ccOps
+    std::vector<ConfigEntry_t> m_ccAttributes;
+    // The attributes to be set to the application
+    std::vector<ConfigEntry_t> m_appAttributes;
+    std::vector<ConfigEntry_t> m_socketAttributes;
 }; // class TraceApplicationHelper
 
 } // namespace ns3

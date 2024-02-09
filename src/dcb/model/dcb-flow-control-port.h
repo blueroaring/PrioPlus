@@ -46,11 +46,7 @@ class DcbFlowControlPort : public Object
     /**
      * \brief Process when a packet come in.
      */
-    void IngressProcess(Ptr<const Packet> packet,
-                        uint16_t protocol,
-                        const Address& from,
-                        const Address& to,
-                        NetDevice::PacketType packetType);
+    void IngressProcess(Ptr<NetDevice> outDev, Ptr<QueueDiscItem> item);
     /**
      * \brief Process when a packet previously came from this port is going to send
      * out through other port.
@@ -66,11 +62,7 @@ class DcbFlowControlPort : public Object
     void SetFcEgressEnabled(bool enable);
 
   protected:
-    virtual void DoIngressProcess(Ptr<const Packet> packet,
-                                  uint16_t protocol,
-                                  const Address& from,
-                                  const Address& to,
-                                  NetDevice::PacketType packetType) = 0;
+    virtual void DoIngressProcess(Ptr<NetDevice> outDev, Ptr<QueueDiscItem> item) = 0;
 
     virtual void DoPacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet) = 0;
     virtual void DoEgressProcess(Ptr<Packet> packet) = 0;

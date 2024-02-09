@@ -17,8 +17,10 @@ build_lib(
 	  model/dcb-trace-application.cc
 	  model/real-time-application.cc
 	  model/dcb-flow-control-port.cc
+	  model/dcb-flow-control-mmu-queue.cc
 	  model/dcb-hpcc-port.cc
 	  model/dcb-pfc-port.cc
+	  model/dcb-pfc-mmu-queue.cc
 	  model/udp-based-l4-protocol.cc
 	  model/udp-based-socket.cc
 	  model/rocev2-l4-protocol.cc
@@ -27,6 +29,8 @@ build_lib(
 	  model/rocev2-dcqcn.cc
 	  model/rocev2-hpcc.cc
 	  model/rocev2-timely.cc
+	  model/rocev2-swift.cc
+	  model/rocev2-ledbat.cc
 	  utils/hpcc-header.cc
 	  utils/pfc-frame.cc
 	  utils/real-time-stats-tag.cc
@@ -47,8 +51,10 @@ build_lib(
 	  model/dcb-trace-application.h
 	  model/real-time-application.h
 	  model/dcb-flow-control-port.h
+	  model/dcb-flow-control-mmu-queue.h
 	  model/dcb-hpcc-port.h
 	  model/dcb-pfc-port.h
+	  model/dcb-pfc-mmu-queue.h
 	  model/udp-based-l4-protocol.h
 	  model/udp-based-socket.h
 	  model/rocev2-l4-protocol.h
@@ -57,6 +63,8 @@ build_lib(
 	  model/rocev2-dcqcn.h
 	  model/rocev2-hpcc.h
 	  model/rocev2-timely.h
+	  model/rocev2-swift.h
+	  model/rocev2-ledbat.h
 	  utils/hpcc-header.h
 	  utils/pfc-frame.h
 	  utils/real-time-stats-tag.h

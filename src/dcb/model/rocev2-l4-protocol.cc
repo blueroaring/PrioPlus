@@ -19,6 +19,8 @@
 
 #include "rocev2-l4-protocol.h"
 
+#include "dcb-net-device.h"
+#include "pausable-queue-disc.h"
 #include "rocev2-socket.h"
 
 #include "ns3/ipv4-end-point.h"
@@ -49,7 +51,7 @@ RoCEv2L4Protocol::GetTypeId(void)
 RoCEv2L4Protocol::RoCEv2L4Protocol()
 {
     NS_LOG_FUNCTION(this);
-    m_innerEndPoints = new InnerEndPointDemux(0x100, 0x7fffff);
+    m_innerEndPoints = new InnerEndPointDemux(1, 0xffff);
 
     // InnerEndPoint *endPoint =
     //     m_innerEndPoints->Allocate (GetDefaultServicePort (), 0); // as a receive service
@@ -109,7 +111,7 @@ RoCEv2L4Protocol::GetInnerProtocolHeaderSize() const
 uint32_t
 RoCEv2L4Protocol::GetHeaderSize() const
 {
-    static uint32_t sz = 8 + 20 + 14 + GetInnerProtocolHeaderSize();
+    static uint32_t sz = 8 + 20 + 14 + GetInnerProtocolHeaderSize(); // UDP + IP + Eth + RoCEv2
     return sz;
 }
 
@@ -144,6 +146,13 @@ RoCEv2L4Protocol::Allocate(uint32_t srcPort, uint32_t dstPort)
 {
     NS_LOG_FUNCTION(this << srcPort << dstPort);
     return m_innerEndPoints->Allocate(srcPort, dstPort);
+}
+
+bool
+RoCEv2L4Protocol::CheckLocalPortExist(uint32_t localPort)
+{
+    NS_LOG_FUNCTION(this << localPort);
+    return m_innerEndPoints->LookupPortLocal(localPort);
 }
 
 uint32_t
@@ -209,7 +218,10 @@ RoCEv2L4Protocol::GenerateCNP(uint32_t srcQP, uint32_t dstQP)
 
 // static
 Ptr<Packet>
-RoCEv2L4Protocol::GenerateACK(uint32_t srcQP, uint32_t dstQP, uint32_t expectedPSN)
+RoCEv2L4Protocol::GenerateACK(uint32_t srcQP,
+                              uint32_t dstQP,
+                              uint32_t expectedPSN,
+                              const uint32_t payloadSize)
 {
     RoCEv2Header rocev2Header{};
     rocev2Header.SetOpcode(RoCEv2Header::Opcode::RC_ACK);
@@ -218,7 +230,7 @@ RoCEv2L4Protocol::GenerateACK(uint32_t srcQP, uint32_t dstQP, uint32_t expectedP
     rocev2Header.SetPSN(expectedPSN);
     AETHeader aeth;
     aeth.SetSyndromeType(AETHeader::SyndromeType::FC_DISABLED); // TODO: support flow control
-    Ptr<Packet> packet = Create<Packet>(12);
+    Ptr<Packet> packet = Create<Packet>(payloadSize);
     packet->AddHeader(aeth);
     packet->AddHeader(rocev2Header);
     return packet;
@@ -226,7 +238,10 @@ RoCEv2L4Protocol::GenerateACK(uint32_t srcQP, uint32_t dstQP, uint32_t expectedP
 
 // static
 Ptr<Packet>
-RoCEv2L4Protocol::GenerateNACK(uint32_t srcQP, uint32_t dstQP, uint32_t expectedPSN)
+RoCEv2L4Protocol::GenerateNACK(uint32_t srcQP,
+                               uint32_t dstQP,
+                               uint32_t expectedPSN,
+                               const uint32_t payloadSize)
 {
     RoCEv2Header rocev2Header{};
     rocev2Header.SetOpcode(RoCEv2Header::Opcode::RC_ACK);
@@ -235,7 +250,7 @@ RoCEv2L4Protocol::GenerateNACK(uint32_t srcQP, uint32_t dstQP, uint32_t expected
     rocev2Header.SetPSN(expectedPSN);
     AETHeader aeth;
     aeth.SetSyndromeType(AETHeader::SyndromeType::NACK);
-    Ptr<Packet> packet = Create<Packet>(12);
+    Ptr<Packet> packet = Create<Packet>(payloadSize);
     packet->AddHeader(aeth);
     packet->AddHeader(rocev2Header);
     return packet;
@@ -248,6 +263,60 @@ RoCEv2L4Protocol::IsCNP(Ptr<Packet> packet)
     RoCEv2Header rocev2Header;
     packet->PeekHeader(rocev2Header);
     return rocev2Header.GetOpcode() == RoCEv2Header::Opcode::CNP;
+}
+
+bool
+RoCEv2L4Protocol::CheckCouldSend(uint32_t portIdx, uint32_t priority) const
+{
+    // Get device from port index
+    Ptr<Node> node = this->GetObject<Node>();
+    Ptr<NetDevice> netDevice = node->GetDevice(portIdx);
+
+    Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(netDevice);
+    if (dcbDev == nullptr)
+    {
+        return true;
+    }
+
+    Ptr<PausableQueueDisc> qdisc = DynamicCast<PausableQueueDisc>(dcbDev->GetQueueDisc());
+    if (qdisc == nullptr)
+    {
+        return true;
+    }
+
+    QueueSize qsize = qdisc->GetInnerQueueSize(priority);
+
+    return qsize.GetValue() == 0;
+}
+
+void
+RoCEv2L4Protocol::RegisterSendPendingDataCallback(uint32_t portIdx,
+                                                  uint32_t priority,
+                                                  uint32_t innerPrio,
+                                                  Callback<void> cb)
+{
+    // Add the cb to the m_sendCbQueue
+    m_sendCbQueue[portIdx][priority][innerPrio].push_back(cb);
+}
+
+void 
+RoCEv2L4Protocol::NotifyCouldSend(uint32_t portIdx, uint32_t priority)
+{
+    // Find the corresponding InnerPrioritySendCbQueue
+    InnerPrioritySendCbQueue& innerPrioritySendCbQueue = m_sendCbQueue[portIdx][priority];
+
+    // Find the first InnerPrioritySendCbQueue that is not empty
+    for (auto& [innerPrio, sendCbQueue] : innerPrioritySendCbQueue)
+    {
+        if (!sendCbQueue.empty())
+        {
+            // Call the callback function
+            sendCbQueue.front()();
+            // Remove the callback function
+            sendCbQueue.pop_front();
+            return;
+        }
+    }
 }
 
 } // namespace ns3

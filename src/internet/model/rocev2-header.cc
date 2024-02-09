@@ -67,9 +67,11 @@ RoCEv2Header::Serialize(Buffer::Iterator start) const
     i.WriteU8(m_opcode);
     i.WriteU8((m_ua.se << 7) | (m_ua.m << 6) | (m_ua.padCnt << 4) | (m_ua.tVer));
     i.WriteHtonU16(m_pKey);
-    uint8_t h = (m_ub.fr << 7) | (m_ub.br << 6) | (m_ub.reserved);
-    i.WriteHtonU32((h << 24) | m_ub.destQP);
-    h = (m_uc.ackQ << 7) | (m_uc.reserved);
+    // uint8_t h = (m_ub.fr << 7) | (m_ub.br << 6) | (m_ub.reserved);
+    // i.WriteHtonU32((h << 24) | m_ub.destQ);
+    i.WriteHtonU32((m_ub.srcQP << 16) | m_ub.destQP);
+
+    uint8_t h = (m_uc.ackQ << 7) | (m_uc.reserved);
     i.WriteHtonU32((h << 24) | m_uc.psn);
 }
 
@@ -88,14 +90,16 @@ RoCEv2Header::Deserialize(Buffer::Iterator start)
     m_pKey = i.ReadNtohU16();
 
     uint32_t u = i.ReadNtohU32();
-    uint8_t h = u >> 24;
-    m_ub.fr = h >> 7;
-    m_ub.br = (h >> 6) & 0b1;
-    m_ub.reserved = h & 0b11'1111;
-    m_ub.destQP = u & 0xffffff;
+    // uint8_t h = u >> 24;
+    // m_ub.fr = h >> 7;
+    // m_ub.br = (h >> 6) & 0b1;
+    // m_ub.reserved = h & 0b11'1111;
+    // m_ub.destQP = u & 0xffffff;
+    m_ub.srcQP = u >> 16;
+    m_ub.destQP = u & 0xffff;
 
     u = i.ReadNtohU32();
-    h = u >> 24;
+    uint8_t h = u >> 24;
     m_uc.ackQ = h >> 7;
     m_uc.reserved = h & 0b111'1111;
     m_uc.psn = u & 0xffffff;
@@ -141,27 +145,31 @@ RoCEv2Header::SetOpcode(RoCEv2Header::Opcode opcode)
 uint32_t
 RoCEv2Header::GetDestQP() const
 {
-    return m_ub.destQP & 0xfff;
+    // return m_ub.destQP & 0xfff;
+    return m_ub.destQP;
 }
 
 void
 RoCEv2Header::SetDestQP(uint32_t destQP)
 {
-    m_ub.destQP &= 0xfff000;
-    m_ub.destQP |= destQP;
+    // m_ub.destQP &= 0xfff000;
+    // m_ub.destQP |= destQP;
+    m_ub.destQP = destQP & 0x0000ffff;
 }
 
 uint32_t
 RoCEv2Header::GetSrcQP() const
 {
-    return m_ub.destQP >> 12;
+    // return m_ub.destQP >> 12;
+    return m_ub.srcQP;
 }
 
 void
 RoCEv2Header::SetSrcQP(uint32_t srcQP)
 {
-    m_ub.destQP &= 0x000fff;
-    m_ub.destQP |= srcQP << 12;
+    // m_ub.destQP &= 0x000fff;
+    // m_ub.destQP |= srcQP << 12;
+    m_ub.srcQP = srcQP & 0x0000ffff;
 }
 
 uint32_t

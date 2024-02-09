@@ -134,38 +134,77 @@ TraceApplicationHelper::SetStartAndStopTime(Time start, Time stop)
 }
 
 void
+TraceApplicationHelper::SetStartTime(Time start)
+{
+    m_startTime = start;
+}
+
+void
 TraceApplicationHelper::SetRealTimeApp(bool realTimeApp)
 {
     m_realTimeApp = realTimeApp;
 }
 
+void
+TraceApplicationHelper::SetCongestionType(StringValue congestionType)
+{
+    m_congestionType = congestionType;
+}
+
+void
+TraceApplicationHelper::SetCcAttributes(std::vector<ConfigEntry_t>&& ccAttributes)
+{
+    m_ccAttributes = std::move(ccAttributes);
+}
+
+void
+TraceApplicationHelper::SetCcAttribute(ConfigEntry_t ccAttribute)
+{
+    // If the attribute already exists, replace it. If not, add it.
+    for (auto& [name, value] : m_ccAttributes)
+    {
+        if (name == ccAttribute.first)
+        {
+            value = ccAttribute.second;
+            return;
+        }
+    }
+    m_ccAttributes.push_back(ccAttribute);
+}
+
+void
+TraceApplicationHelper::SetAppAttributes(std::vector<ConfigEntry_t>&& appAttributes)
+{
+    m_appAttributes = std::move(appAttributes);
+}
+
+void
+TraceApplicationHelper::SetSocketAttributes(std::vector<ConfigEntry_t>&& socketAttributes)
+{
+    m_socketAttributes = std::move(socketAttributes);
+}
+
 ApplicationContainer
 TraceApplicationHelper::Install(Ptr<Node> node)
 {
-    if (m_sendEnabled && m_flowMeanInterval == 0.)
-    {
-        // The flow interval is not set
-        // Here we assume the first device of the node is the host's DcbNetDevice
-        SetLoad(DynamicCast<DcbNetDevice>(node->GetDevice(1)), m_load);
-    }
+    // if (m_sendEnabled && !m_sendOnce && m_flowMeanInterval == 0.)
+    // {
+    //     // The flow interval is not set
+    //     // Here we assume the first device of the node is the host's DcbNetDevice
+    //     SetLoad(DynamicCast<DcbNetDevice>(node->GetDevice(1)), m_load);
+    // }
 
     // The cdf is not needed to set if the send is disabled.
-    NS_ASSERT_MSG(!m_sendEnabled || m_cdf,
-                  "[TraceApplicationHelper] CDF not set, please call SetCdf ().");
-    NS_ASSERT_MSG(m_flowMeanInterval > 0 || !m_sendEnabled,
-                  "[TraceApplicationHelper] Load not set, please call SetLoad ().");
+    // NS_ASSERT_MSG(!m_sendEnabled || m_sendOnce || m_cdf,
+    //               "[TraceApplicationHelper] CDF not set, please call SetCdf ().");
+    // NS_ASSERT_MSG(m_flowMeanInterval > 0 || !m_sendEnabled || m_sendOnce,
+    //               "[TraceApplicationHelper] Load not set, please call SetLoad ().");
 
     ApplicationContainer app = ApplicationContainer(InstallPriv(node));
-    // If start time and stop time has been specified, set them.
-    if (m_startTime != Time(0))
-    {
-        app.Start(m_startTime);
-    }
-    if (m_stopTime != Time(0) && m_sendEnabled)
-    {
-        // Only stop the application if the send is enabled.
-        app.Stop(m_stopTime);
-    }
+
+    // Set start time and stop time, note that stop time is 0 means infinite
+    app.Start(m_startTime);
+    app.Stop(m_stopTime);
 
     return app;
 }
@@ -175,19 +214,20 @@ TraceApplicationHelper::InstallPriv(Ptr<Node> node)
 {
     Ptr<TraceApplication> app = CreateApplication(node);
 
-    if (m_sendEnabled)
+    // Set app attributes in m_appAttributes
+    for (const auto& [name, value] : m_appAttributes)
+    {
+        app->SetAttribute(name, *value);
+    }
+    // Set socket attributes in m_socketAttributes
+    app->SetSocketAttributes(m_socketAttributes);
+    app->SetCcOpsAttributes(m_ccAttributes);
+
+    // Set cdf and average size of CDF as traffic size
+    if (m_cdf)
     {
         app->SetFlowCdf(*m_cdf);
-        app->SetFlowMeanArriveInterval(m_flowMeanInterval, m_staticFlowInterval);
-        app->SetAttribute("SendOnce", BooleanValue(m_sendOnce));
-    }
-    else
-    {
-        Ptr<TraceApplication> appt = DynamicCast<TraceApplication>(app);
-        if (appt)
-        {
-            appt->SetSendEnabled(false);
-        }
+        app->SetAttribute("TrafficSizeBytes", UintegerValue(CalculateCdfMeanSize(m_cdf.get())));
     }
 
     node->AddApplication(app);
@@ -210,41 +250,16 @@ Ptr<TraceApplication>
 TraceApplicationHelper::CreateApplication(Ptr<Node> node)
 {
     Ptr<TraceApplication> app;
-    if (m_topology == nullptr)
-    { // the topo is not set
-        // The dest must be set in this case, unless the send is disabled.
-        NS_ASSERT(m_destAddr.GetPort() != 0 || !m_sendEnabled);
-        if (m_realTimeApp)
-        {
-            app = CreateObject<RealTimeApplication>(m_topology, node, m_destAddr);
-        }
-        else
-        {
-            app = CreateObject<TraceApplication>(m_topology, node, m_destAddr);
-        }
-    }
-    else if (m_destNode < 0)
-    { // random destination flows application
-        if (m_realTimeApp)
-        {
-            app = CreateObject<RealTimeApplication>(m_topology, node->GetId());
-        }
-        else
-        {
-            app = CreateObject<TraceApplication>(m_topology, node->GetId());
-        }
+
+    if (m_realTimeApp)
+    {
+        app = CreateObject<RealTimeApplication>(m_topology, node->GetId());
     }
     else
-    { // fixed destination flows application
-        if (m_realTimeApp)
-        {
-            app = CreateObject<RealTimeApplication>(m_topology, node->GetId(), m_destNode);
-        }
-        else
-        {
-            app = CreateObject<TraceApplication>(m_topology, node->GetId(), m_destNode);
-        }
+    {
+        app = CreateObject<TraceApplication>(m_topology, node->GetId());
     }
+
     return app;
 }
 

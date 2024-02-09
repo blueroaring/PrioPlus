@@ -21,6 +21,7 @@
 #define DCB_FC_HELPER_H
 
 #include "ns3/dcb-hpcc-port.h"
+#include "ns3/dcb-pfc-mmu-queue.h"
 #include "ns3/dcb-pfc-port.h"
 
 namespace ns3

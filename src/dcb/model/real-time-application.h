@@ -48,8 +48,7 @@ class RealTimeApplication : public TraceApplication
      * * If the destIndex is negative, the application will randomly choose a node as the
      * destination.
      */
-    RealTimeApplication(Ptr<DcTopology> topology, uint32_t nodeIndex, int32_t destIndex = -1);
-    RealTimeApplication(Ptr<DcTopology> topology, Ptr<Node> node, InetSocketAddress destAddr);
+    RealTimeApplication(Ptr<DcTopology> topology, uint32_t nodeIndex);
     virtual ~RealTimeApplication();
 
     /**

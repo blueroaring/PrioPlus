@@ -204,35 +204,35 @@ DcbSwitchStackHelper::AssignStreams(NodeContainer c, int64_t stream)
     {
         Ptr<Node> node = *i;
         Ptr<GlobalRouter> router = node->GetObject<GlobalRouter>();
-        if (router != nullptr)
+        if (router != 0)
         {
             Ptr<Ipv4GlobalRouting> gr = router->GetRoutingProtocol();
-            if (gr != nullptr)
+            if (gr != 0)
             {
                 currentStream += gr->AssignStreams(currentStream);
             }
         }
         Ptr<Ipv6ExtensionDemux> demux = node->GetObject<Ipv6ExtensionDemux>();
-        if (demux != nullptr)
+        if (demux != 0)
         {
             Ptr<Ipv6Extension> fe = demux->GetExtension(Ipv6ExtensionFragment::EXT_NUMBER);
             NS_ASSERT(fe); // should always exist in the demux
             currentStream += fe->AssignStreams(currentStream);
         }
         Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
-        if (ipv4 != nullptr)
+        if (ipv4 != 0)
         {
             Ptr<ArpL3Protocol> arpL3Protocol = ipv4->GetObject<ArpL3Protocol>();
-            if (arpL3Protocol != nullptr)
+            if (arpL3Protocol != 0)
             {
                 currentStream += arpL3Protocol->AssignStreams(currentStream);
             }
         }
         Ptr<Ipv6> ipv6 = node->GetObject<Ipv6>();
-        if (ipv6 != nullptr)
+        if (ipv6 != 0)
         {
             Ptr<Icmpv6L4Protocol> icmpv6L4Protocol = ipv6->GetObject<Icmpv6L4Protocol>();
-            if (icmpv6L4Protocol != nullptr)
+            if (icmpv6L4Protocol != 0)
             {
                 currentStream += icmpv6L4Protocol->AssignStreams(currentStream);
             }
@@ -268,7 +268,7 @@ DcbSwitchStackHelper::CreateAndAggregateObjectFromTypeId(Ptr<Node> node, const s
 void
 DcbSwitchStackHelper::Install(Ptr<Node> node) const
 {
-    if (node->GetObject<Ipv4>() != nullptr)
+    if (node->GetObject<Ipv4>() != 0)
     {
         NS_FATAL_ERROR("DcbSwitchStackHelper::Install (): Aggregating "
                        "an InternetStack to a node with an existing Ipv4 object");
@@ -296,7 +296,7 @@ DcbSwitchStackHelper::Install(Ptr<Node> node) const
     if (m_ipv6Enabled)
     {
         /* IPv6 stack */
-        if (node->GetObject<Ipv6>() != nullptr)
+        if (node->GetObject<Ipv6>() != 0)
         {
             NS_FATAL_ERROR("DcbSwitchStackHelper::Install (): Aggregating "
                            "an InternetStack to a node with an existing Ipv6 object");
@@ -379,7 +379,7 @@ DcbSwitchStackHelper::Install(Ptr<Node> node) const
 void
 DcbSwitchStackHelper::InstallSwitchProtos(Ptr<Node> node) const
 {
-    if (node->GetObject<Ipv4>() != nullptr)
+    if (node->GetObject<Ipv4>() != 0)
     {
         NS_FATAL_ERROR("DcbSwitchStackHelper::Install (): Aggregating "
                        "an InternetStack to a node with an existing Ipv4 object");
@@ -407,7 +407,7 @@ DcbSwitchStackHelper::InstallSwitchProtos(Ptr<Node> node) const
     if (m_ipv6Enabled)
     {
         /* IPv6 stack */
-        if (node->GetObject<Ipv6>() != nullptr)
+        if (node->GetObject<Ipv6>() != 0)
         {
             NS_FATAL_ERROR("DcbSwitchStackHelper::Install (): Aggregating "
                            "an InternetStack to a node with an existing Ipv6 object");
@@ -933,7 +933,7 @@ DcbSwitchStackHelper::EnableAsciiIpv4Internal(Ptr<OutputStreamWrapper> stream,
     // since there will be one file per context and therefore the context would
     // be redundant.
     //
-    if (stream == nullptr)
+    if (stream == 0)
     {
         //
         // Set up an output stream object to deal with private ofstream copy
@@ -1276,7 +1276,7 @@ DcbSwitchStackHelper::EnableAsciiIpv6Internal(Ptr<OutputStreamWrapper> stream,
     // since there will be one file per context and therefore the context would
     // be redundant.
     //
-    if (stream == nullptr)
+    if (stream == 0)
     {
         //
         // Set up an output stream object to deal with private ofstream copy

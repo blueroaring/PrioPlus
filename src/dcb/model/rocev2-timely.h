@@ -25,16 +25,17 @@
 #include "ns3/data-rate.h"
 #include "ns3/rocev2-header.h"
 
+#include <map>
+
 namespace ns3
 {
 
 class RoCEv2SocketState;
-class TimelyHeader;
 
 /**
- * The DCQCN implementation according to paper:
- *   Zhu, Yibo, et al. "Congestion control for large-scale RDMA deployments." ACM SIGCOMM.
- *   \url https://dl.acm.org/doi/abs/10.1145/2829988.2787484
+ * The Timely implementation according to paper:
+ *   Radhika Mittal, et al. "TIMELY: RTT-based Congestion Control for the Datacenter." ACM SIGCOMM.
+ *   \url https://dl.acm.org/doi/10.1145/2785956.2787510
  */
 class RoCEv2Timely : public RoCEv2CongestionOps
 {
@@ -59,15 +60,9 @@ class RoCEv2Timely : public RoCEv2CongestionOps
     void SetReady() override;
 
     /**
-     * When the sender sending out a packet, add a SeqTsHeader into packet, in order to store
-     * timestamp.
+     * When the sender sending out a packet, recover a timeslot into the map.
      */
     void UpdateStateSend(Ptr<Packet> packet) override;
-
-    /**
-     * When the receiver generating an ACK, move the SeqTsHeade from packet to ack.
-     */
-    void UpdateStateWithGenACK(Ptr<Packet> packet, Ptr<Packet> ack) override;
 
     /**
      * When the sender receiving an ACK, do what Timely does.
@@ -78,12 +73,44 @@ class RoCEv2Timely : public RoCEv2CongestionOps
 
     std::string GetName() const override;
 
+        class Stats : public RoCEv2CongestionOps::Stats
+    {
+      public:
+        // constructor
+        Stats();
+
+        // Detailed statistics, only enabled if needed
+        bool bDetailedSenderStats;
+        std::vector<std::tuple<Time, Time, Time>>
+            vPacketDelay; //!< The Delay masurement per packet, recorded as send time, recv time and
+                          //!< delay
+        std::vector<std::tuple<Time, Time, double>>
+            vPacketDelayGradient; //!< The Delay Gradient masurement per packet, recorded as send time,
+                                  //!< recv time and delay gradient
+
+        // Recorder function of the detailed statistics
+        void RecordPacketDelay(Time sendTs, Time recvTs, Time delay); 
+        void RecordPacketDelayGradient(Time sendTs, Time recvTs, double gradient);
+
+        // Collect the statistics and check if the statistics is correct
+        void CollectAndCheck();
+
+        // No getter for simplicity
+    };
+
+    inline std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const
+    {
+        return m_stats;
+    }
+
   private:
     /**
      * Initialize the state.
      */
     void Init();
 
+    std::shared_ptr<Stats> m_stats; //!< Statistics
+    
     double m_alpha;    //!< α in paper. EWMA weight parameter
     double m_mdFactor; //!< β in paper. Multiplicative Decrement factor
 
@@ -97,65 +124,23 @@ class RoCEv2Timely : public RoCEv2CongestionOps
     Time m_prevRtt; //!< prev_rtt in paper.
     Time m_rttDiff; //!< rtt_diff in paper.
 
-    Time m_minRtt; //!< minRTT in paper.
-    Time m_tLow;   //!< Tlow in paper.
-    Time m_tHigh;  //!< Thigh in paper.
+    Time m_minRtt;                    //!< minRTT in paper.
+    Time m_tLow;                      //!< Tlow in paper.
+    Time m_tHigh;                     //!< Thigh in paper.
+    std::map<uint32_t, Time> m_tsMap; //!< To store timeslot of each PSN.
+
+    uint32_t m_nextUpdateSeq; //!< nextUpdateSeq for controlling updating frequency.
+    uint32_t m_perpackets; //!< Update frequency.
+
+    enum UpdateFreq
+    {
+        PER_RTT,
+        PER_SEVERAL_PKTS
+    }; //!< Update
+
+    UpdateFreq m_updateFreq; //!< Update frequency.
 
 }; // class RoCEv2Timely
-
-class TimelyHeader : public Header
-{
-    // Timely Header with only one Timeslot
-  public:
-    TimelyHeader()
-        : m_ts(Simulator::Now().GetTimeStep())
-    {
-    }
-
-    static TypeId GetTypeId(void)
-    {
-        static TypeId tid = TypeId("ns3::TimelyHeader")
-                                .SetParent<Header>()
-                                .SetGroupName("Dcb")
-                                .AddConstructor<TimelyHeader>();
-        return tid;
-    }
-
-    TypeId GetInstanceTypeId(void) const override
-    {
-        return GetTypeId();
-    }
-
-    inline uint32_t GetSerializedSize(void) const override
-    {
-        return 8;
-    }
-
-    void Serialize(Buffer::Iterator start) const override
-    {
-        Buffer::Iterator i = start;
-        i.WriteHtonU64(m_ts);
-    }
-
-    uint32_t Deserialize(Buffer::Iterator start) override
-    {
-        Buffer::Iterator i = start;
-        m_ts = i.ReadNtohU64();
-        return GetSerializedSize();
-    }
-
-    void Print(std::ostream& os) const override
-    {
-        os << "time=" << TimeStep(m_ts).As(Time::S) << "";
-    }
-
-    Time GetTs() const
-    {
-        return TimeStep(m_ts);
-    }
-
-    uint64_t m_ts; //!< Timestamp
-};
 
 } // namespace ns3
 

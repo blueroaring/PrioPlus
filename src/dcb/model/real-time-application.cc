@@ -36,9 +36,8 @@ RealTimeApplication::GetTypeId()
 }
 
 RealTimeApplication::RealTimeApplication(Ptr<DcTopology> topology,
-                                         uint32_t nodeIndex,
-                                         int32_t destIndex /* = -1 */)
-    : TraceApplication(topology, nodeIndex, destIndex),
+                                         uint32_t nodeIndex)
+    : TraceApplication(topology, nodeIndex),
       m_pktSeq(0)
 {
     NS_LOG_FUNCTION(this);
@@ -47,17 +46,6 @@ RealTimeApplication::RealTimeApplication(Ptr<DcTopology> topology,
     m_stats = std::make_shared<Stats>();
 }
 
-RealTimeApplication::RealTimeApplication(Ptr<DcTopology> topology,
-                                         Ptr<Node> node,
-                                         InetSocketAddress destAddr)
-    : TraceApplication(topology, node, destAddr),
-      m_pktSeq(0)
-{
-    NS_LOG_FUNCTION(this);
-
-    // This will replace the base class's m_stats
-    m_stats = std::make_shared<Stats>();
-}
 
 RealTimeApplication::~RealTimeApplication()
 {
@@ -151,7 +139,9 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
             InetSocketAddress inetFrom = InetSocketAddress::ConvertFrom(from);
             Ipv4Address srcAddr = inetFrom.GetIpv4();
             uint32_t srcPort = inetFrom.GetPort();
-            Ipv4Address dstAddr = m_receiverSocket->GetLocalAddress();
+            Ptr<RoCEv2Socket> roceSocket =
+                DynamicCast<RoCEv2Socket>(m_receiverSocket); // XXX Not a good way
+            Ipv4Address dstAddr = roceSocket->GetLocalAddress();
             uint32_t dstPort = 100; // XXX Static for now
             FlowIdentifier flowId(srcAddr, dstAddr, srcPort, dstPort);
 

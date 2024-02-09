@@ -24,9 +24,11 @@
 #include "ns3/net-device.h"
 #include "ns3/object.h"
 #include "ns3/random-variable-stream.h"
+#include "ns3/timer.h"
 
 #include <cstddef>
 #include <iterator>
+#include <map>
 #include <vector>
 
 /**
@@ -88,6 +90,29 @@ class DcTopology : public Object
     bool IsHost(const uint32_t index) const;
     bool IsSwitch(const uint32_t index) const;
 
+    uint32_t GetNHosts() const;
+    uint32_t GetNNodes() const;
+
+    /**
+     * \brief Add a key-value to the delay map.
+     */
+    void AddDelay(const Ipv4Address src, const Ipv4Address dst, const uint32_t hops, Time delay);
+
+    /**
+     * \brief Get the propagation delay between two nodes.
+     */
+    const Time GetDelay(const Ipv4Address src, const Ipv4Address dst) const;
+
+    /**
+     * \brief Get the number of hops between two nodes.
+     */
+    const uint32_t GetHops(const Ipv4Address src, const Ipv4Address dst) const;
+
+    /**
+     * \brief Log the delay map.
+     */
+    void LogDelayMap() const;
+
     /**
      * \brief Create a configured host index random number generator.
      * Used by applications to find a random destination.
@@ -103,6 +128,10 @@ class DcTopology : public Object
     std::vector<TopoNode> m_nodes;
     std::vector<std::vector<uint32_t>> m_links;
     uint32_t m_nHosts;
+
+    // std::map<std::pair<uint32_t, uint32_t>, Time> m_delayMap; // <src, dst> -> propagation delay
+    std::map<std::pair<Ipv4Address, Ipv4Address>, std::pair<uint32_t, Time>>
+        m_delayMap; // <src, dst> -> <hops, propagation delay>
 
   public:
     /**

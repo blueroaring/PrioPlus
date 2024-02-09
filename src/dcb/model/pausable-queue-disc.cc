@@ -25,6 +25,7 @@
 #include "ns3/assert.h"
 #include "ns3/boolean.h"
 #include "ns3/fatal-error.h"
+#include "ns3/global-value.h"
 #include "ns3/integer.h"
 #include "ns3/log-macros-enabled.h"
 #include "ns3/log.h"
@@ -72,7 +73,8 @@ PausableQueueDisc::GetTypeId()
 }
 
 PausableQueueDisc::PausableQueueDisc()
-    : m_node(0),
+    : m_stats(std::make_shared<Stats>(this)),
+      m_node(0),
       m_fcEnabled(false),
       m_portIndex(0x7fffffff),
       m_queueSize("1000p")
@@ -81,7 +83,8 @@ PausableQueueDisc::PausableQueueDisc()
 }
 
 PausableQueueDisc::PausableQueueDisc(uint32_t port)
-    : m_node(0),
+    : m_stats(std::make_shared<Stats>(this)),
+      m_node(0),
       m_fcEnabled(false),
       m_portIndex(port),
       m_queueSize("1000p")
@@ -90,7 +93,8 @@ PausableQueueDisc::PausableQueueDisc(uint32_t port)
 }
 
 PausableQueueDisc::PausableQueueDisc(Ptr<Node> node, uint32_t port)
-    : m_node(node),
+    : m_stats(std::make_shared<Stats>(this)),
+      m_node(node),
       m_fcEnabled(false),
       m_portIndex(port),
       m_queueSize("1000p")
@@ -191,7 +195,8 @@ PausableQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
     // we can use different strategies to set priority.
     CoSTag cosTag;
     uint8_t priority;
-    if (item->GetPacket()->RemovePacketTag(cosTag))
+    if (item->GetPacket()->PeekPacketTag(
+            cosTag)) // costag should be removed in DcbTrafficControl::EgressProcess
     {
         priority = cosTag.GetCoS() & 0x0f;
     }
@@ -233,9 +238,19 @@ PausableQueueDisc::DoDequeue()
     {
         Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(i);
         if ((!m_fcEnabled || !qdclass->IsPaused()) &&
-            (item = qdclass->GetQueueDisc()->Dequeue()) != nullptr)
+            (item = qdclass->GetQueueDisc()->Dequeue()) != 0)
         {
             NS_LOG_LOGIC("Popoed from priority " << i << ": " << item);
+
+            // If the qdice is empty after dequeue, try to call the m_sendDataCb
+            if (qdclass->GetQueueDisc()->GetNBytes() == 0)
+            {
+                // If we are at switch, the m_sendData Callback is null
+                if (!m_sendDataCallback.IsNull())
+                    // Note that the first device is LoopbackNetDevice, but this is not safe
+                    m_sendDataCallback(m_portIndex + 1, i);
+            }
+
             if (!m_tcEgress.IsNull())
                 m_tcEgress(m_portIndex, i, item->GetPacket());
             return item;
@@ -255,7 +270,7 @@ PausableQueueDisc::DoPeek()
     {
         Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(i);
         if ((!m_fcEnabled || !qdclass->IsPaused()) &&
-            (item = qdclass->GetQueueDisc()->Dequeue()) != nullptr)
+            (item = qdclass->GetQueueDisc()->Dequeue()) != 0)
         {
             NS_LOG_LOGIC("Peeked from priority " << i << ": " << item);
             return item;
@@ -311,6 +326,76 @@ void
 PausableQueueDisc::InitializeParams(void)
 {
     NS_LOG_FUNCTION(this);
+}
+
+void
+PausableQueueDisc::RegisterSendDataCallback(Callback<void, uint32_t, uint32_t> cb)
+{
+    NS_LOG_FUNCTION(this);
+    m_sendDataCallback = cb;
+}
+
+std::shared_ptr<PausableQueueDisc::Stats>
+PausableQueueDisc::GetStats() const
+{
+    m_stats->CollectAndCheck();
+    return m_stats;
+}
+
+void
+PausableQueueDisc::SetDetailedSwitchStats(bool bDetailedSwitchStats)
+{
+    m_stats->bDetailedSwitchStats = bDetailedSwitchStats;
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        Ptr<FifoQueueDiscEcn> qd =
+            DynamicCast<FifoQueueDiscEcn>(GetQueueDiscClass(i)->GetQueueDisc());
+        if (qd == nullptr)
+        {
+            // Here we assume the inner queue is FifoQueueDiscEcn
+            NS_LOG_ERROR("PausableQueueDisc: cannot cast inner queue to FifoQueueDiscEcn");
+            return;
+        }
+        qd->GetStatsWithoutCollect()->bDetailedSwitchStats = bDetailedSwitchStats;
+    }
+}
+
+PausableQueueDisc::Stats::Stats(Ptr<PausableQueueDisc> qdisc)
+    : m_qdisc(qdisc)
+{
+    // Retrieve the global config values
+    BooleanValue bv;
+    if (GlobalValue::GetValueByNameFailSafe("detailedSwitchStats", bv))
+        bDetailedSwitchStats = bv.Get();
+    else
+        bDetailedSwitchStats = false;
+}
+
+void
+PausableQueueDisc::Stats::RecordPauseResume(uint8_t prio, bool paused)
+{
+    if (bDetailedSwitchStats)
+    {
+        vPauseResumeTime.emplace_back(Simulator::Now(), prio, paused);
+    }
+}
+
+void
+PausableQueueDisc::Stats::CollectAndCheck()
+{
+    // Collect the statistics from each inner queue
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        Ptr<FifoQueueDiscEcn> qd =
+            DynamicCast<FifoQueueDiscEcn>(m_qdisc->GetQueueDiscClass(i)->GetQueueDisc());
+        if (qd == nullptr)
+        {
+            // Here we assume the inner queue is FifoQueueDiscEcn
+            NS_LOG_ERROR("PausableQueueDisc: cannot cast inner queue to FifoQueueDiscEcn");
+            return;
+        }
+        vQueueStats.emplace_back(qd->GetStats());
+    }
 }
 
 TypeId

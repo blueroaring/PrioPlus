@@ -46,7 +46,7 @@ RoCEv2Dcqcn::GetTypeId()
                           MakeDoubleChecker<double>())
             .AddAttribute("G",
                           "DCQCN's g",
-                          DoubleValue(1 / 16),
+                          DoubleValue(1. / 16.),
                           MakeDoubleAccessor(&RoCEv2Dcqcn::m_g),
                           MakeDoubleChecker<double>())
             .AddAttribute("RateAIRatio",
@@ -69,11 +69,6 @@ RoCEv2Dcqcn::GetTypeId()
                           UintegerValue(5),
                           MakeUintegerAccessor(&RoCEv2Dcqcn::m_F),
                           MakeUintegerChecker<uint32_t>())
-            .AddAttribute("MinRateRatio",
-                          "DCQCN's minRateRatio",
-                          DoubleValue(5e-4),
-                          MakeDoubleAccessor(&RoCEv2Dcqcn::m_minRateRatio),
-                          MakeDoubleChecker<double>())
             .AddAttribute("AlphaTimerDelay",
                           "DCQCN's alpha timer delay",
                           TimeValue(MicroSeconds(55)),
@@ -110,6 +105,7 @@ void
 RoCEv2Dcqcn::SetReady()
 {
     NS_LOG_FUNCTION(this);
+    SetRateRatio(m_startRateRatio);
     m_alphaTimer.SetDelay(m_alphaTimerDelay); // 55
     m_rateTimer.SetDelay(m_rateTimerDelay);   // 1500
     m_rateTimer.Schedule();
@@ -120,7 +116,11 @@ RoCEv2Dcqcn::UpdateStateSend(Ptr<Packet> packet)
 {
     NS_LOG_FUNCTION(this << packet);
 
-    m_bytesCounter += packet->GetSize();
+    // Calculate the bytes without roceheader
+    Ptr<Packet> copy = packet->Copy();
+    RoCEv2Header roce;
+    copy->RemoveHeader(roce);
+    m_bytesCounter += copy->GetSize();
     if (m_bytesCounter >= m_bytesThreshold)
     {
         m_bytesCounter = 0;
@@ -134,13 +134,14 @@ RoCEv2Dcqcn::UpdateStateWithCNP()
 {
     NS_LOG_FUNCTION(this);
 
-    m_targetRateRatio = m_curRateRatio;
-    m_curRateRatio = CheckRateRatio(m_curRateRatio * (1 - m_alpha / 2));
-    m_sockState->SetRateRatioPercent(m_curRateRatio);
+    double curRateRatio = m_sockState->GetRateRatioPercent();
+    m_targetRateRatio = curRateRatio;
+    SetRateRatio(curRateRatio * (1 - m_alpha / 2));
+
     m_alpha = (1 - m_g) * m_alpha + m_g;
 
     m_alphaTimer.Cancel(); // re-schedule timer
-    if (CheckStopCondition())
+    if (!CheckStopCondition())
     {
         m_alphaTimer.Schedule();
         m_rateTimer.Cancel(); // re-schedule timer
@@ -157,7 +158,7 @@ RoCEv2Dcqcn::UpdateAlpha()
     NS_LOG_FUNCTION(this);
 
     m_alpha *= 1 - m_g;
-    if (CheckStopCondition())
+    if (!CheckStopCondition())
     {
         m_alphaTimer.Schedule();
     }
@@ -170,7 +171,7 @@ RoCEv2Dcqcn::RateTimerTriggered()
 
     m_rateUpdateIter++;
     UpdateRate();
-    if (CheckStopCondition())
+    if (!CheckStopCondition())
     {
         m_rateTimer.Schedule();
     }
@@ -181,7 +182,8 @@ RoCEv2Dcqcn::UpdateRate()
 {
     NS_LOG_FUNCTION(this);
 
-    double old = m_curRateRatio;
+    double curRateRatio = m_sockState->GetRateRatioPercent();
+    double old = curRateRatio;
     if (m_rateUpdateIter > m_F && m_bytesUpdateIter > m_F)
     { // Hyper increase
         uint32_t i = std::min(m_rateUpdateIter, m_bytesUpdateIter) - m_F + 1;
@@ -194,11 +196,10 @@ RoCEv2Dcqcn::UpdateRate()
     // else m_rateUpdateIter < m_F && m_bytesUpdateIter < m_F
     // Fast recovery: don't need to update target rate
 
-    m_curRateRatio = CheckRateRatio((m_targetRateRatio + m_curRateRatio) / 2);
-    m_sockState->SetRateRatioPercent(m_curRateRatio);
+    SetRateRatio((m_targetRateRatio + curRateRatio) / 2);
     if (old < 1.)
     {
-        NS_LOG_DEBUG("DCQCN: Rate update from " << old * 100 << "% to " << m_curRateRatio * 100
+        NS_LOG_DEBUG("DCQCN: Rate update from " << old * 100 << "% to " << curRateRatio * 100
                                                 << "% at time "
                                                 << Simulator::Now().GetMicroSeconds() << "us");
     }
@@ -217,7 +218,7 @@ RoCEv2Dcqcn::Init()
     m_rateUpdateIter = 0;
     m_bytesUpdateIter = 0;
     m_targetRateRatio = 1.;
-    m_curRateRatio = 1.;
+    RegisterCongestionType(GetTypeId());
 }
 
 void

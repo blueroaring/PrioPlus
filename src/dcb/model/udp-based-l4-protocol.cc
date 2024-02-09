@@ -19,6 +19,7 @@
 
 #include "udp-based-l4-protocol.h"
 
+#include "rocev2-l4-protocol.h"
 #include "udp-based-socket.h"
 
 #include "ns3/fatal-error.h"
@@ -32,7 +33,6 @@
 #include "ns3/simulator.h"
 #include "ns3/udp-header.h"
 #include "ns3/udp-l4-protocol.h"
-#include "ns3/rocev2-l4-protocol.h"
 
 namespace ns3
 {
@@ -83,16 +83,18 @@ UdpBasedL4Protocol::GetProtocolNumber(void) const
 void
 UdpBasedL4Protocol::NotifyNewAggregate()
 {
-    NS_FATAL_ERROR("Not here");
+    // NS_FATAL_ERROR("Not here");
+    // Do nothing as the configuration is done otherwhere
     NS_LOG_FUNCTION(this);
 
+    /* Previous code, just keep it here for reference
     Ptr<Node> node = this->GetObject<Node>();
     Ptr<UdpL4Protocol> udp = this->GetObject<UdpL4Protocol>();
-    if (udp == nullptr)
+    if (udp == 0)
     {
         NS_FATAL_ERROR("UdpBasedL4Protocol must be aggregated after aggregating UdpL4Protocol");
     }
-    if (m_node == nullptr && node && node->GetObject<UdpBasedSocketFactory>() == nullptr)
+    if (m_node == 0 && node && node->GetObject<UdpBasedSocketFactory>() == 0)
     {
         // Aggregate UdpBasedSocketFacoty to the node
         m_node = node;
@@ -100,6 +102,7 @@ UdpBasedL4Protocol::NotifyNewAggregate()
         Ptr<UdpBasedSocketFactory> socketFactory = CreateObject<UdpBasedSocketFactory>();
         node->AggregateObject(socketFactory);
     }
+    */
 
     Object::NotifyNewAggregate();
 }
@@ -340,6 +343,18 @@ InnerEndPointDemux::AllocateEphemeralPort()
             return 0;
         }
         port++;
+        if (port > m_innerPortLast)
+        {
+            /*TODO
+             * SrcQp wrap problem has not been solved.
+             * We have found these problems:
+             * 1. Stats uses flowId to identify flows, but flowId is not unique.
+             * 2. Receiver uses flowId to identify the sender, but flowId is not unique.
+             * Therefore, for now, we just log the error.
+             */
+            NS_FATAL_ERROR("SrcQp wrap around. First is " << m_innerPortFirst << ", Last is "
+                                                          << m_innerPortLast);
+        }
         // Wrap around if we reach the end of the range
         if (port < m_innerPortFirst || port > m_innerPortLast)
         {

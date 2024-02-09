@@ -112,8 +112,33 @@ ConfigureSwitch(boost::json::object& configObj, Ptr<Node> sw)
     // 1. all ports has been added to switch
     // 2. the switch protocols have been installed
     DcbSwitchStackHelper switchStack;
-    switchStack.SetBufferSize(
-        QueueSize(std::string(switchConfigObj.find("bufferSize")->value().as_string().c_str())));
+
+    // read bufferSize, which is optional
+    bool hasBufferSize = switchConfigObj.find("bufferSize") != switchConfigObj.end();
+    QueueSize bufferSize;
+    if (hasBufferSize)
+    {
+        bufferSize =
+            QueueSize(std::string(switchConfigObj.find("bufferSize")->value().as_string().c_str()));
+    }
+    else
+    {
+        // FIXME default buffer size is 0.625MB + 1.5*6(priorities that should not have headroom)=9
+        // BDP per port
+
+        // default headroom is 1.5BDP, according to HPCC
+        boost::json::object linkConfigObj =
+            configObj["topologyConfig"].get_object().find("link")->value().get_object();
+
+        std::string rate = linkConfigObj.find("rate")->value().as_string().c_str();
+        std::string delay = linkConfigObj.find("delay")->value().as_string().c_str();
+        uint32_t headroom = DataRate(rate).GetBitRate() * Time(delay).GetSeconds() * 3 / 8;
+
+        uint32_t portsCnt = sw->GetNDevices() - 1;
+        uint32_t bufferSizeBytes = static_cast<uint32_t>((0.625 * 1e6 + 6 * headroom) * portsCnt);
+        bufferSize = QueueSize(QueueSizeUnit::BYTES, bufferSizeBytes);
+    }
+    switchStack.SetBufferSize(bufferSize);
     switchStack.InstallPortsProtos(sw);
 
     // Configure the port and its queues according to the config object
@@ -140,17 +165,71 @@ ConfigureSwitch(boost::json::object& configObj, Ptr<Node> sw)
         bool pfcEnabled = switchPortConfigObj.find("pfcEnabled")->value().as_bool();
         if (pfcEnabled)
         {
+            // read reserve
             std::string sPfcReserve(
                 switchPortQueueConfigObj.find("pfcReserve")->value().as_string().c_str());
-            std::string sPfcXon(
-                switchPortQueueConfigObj.find("pfcXon")->value().as_string().c_str());
+            const uint32_t reserve = QueueSize(sPfcReserve).GetValue();
+
+            // read resumeOffset, which is optional
+            bool hasPfcResumeOffset =
+                switchPortQueueConfigObj.find("pfcResumeOffset") != switchPortQueueConfigObj.end();
+            uint32_t resumeOffset = 0;
+            if (hasPfcResumeOffset)
+            {
+                std::string sPfcResumeOffset(
+                    switchPortQueueConfigObj.find("pfcResumeOffset")->value().as_string().c_str());
+                resumeOffset = QueueSize(sPfcResumeOffset).GetValue();
+            }
+
+            // read headroom, which is optional
+            bool hasPfcHeadroom =
+                switchPortQueueConfigObj.find("pfcHeadroom") != switchPortQueueConfigObj.end();
+            uint32_t headroom = 0;
+            if (hasPfcHeadroom)
+            {
+                std::string sPfcHeadroom(
+                    switchPortQueueConfigObj.find("pfcHeadroom")->value().as_string().c_str());
+                headroom = QueueSize(sPfcHeadroom).GetValue();
+            }
+            else
+            {
+                // default headroom is 1.5BDP, according to HPCC
+                boost::json::object linkConfigObj =
+                    configObj["topologyConfig"].get_object().find("link")->value().get_object();
+
+                std::string rate = linkConfigObj.find("rate")->value().as_string().c_str();
+                std::string delay = linkConfigObj.find("delay")->value().as_string().c_str();
+                headroom = DataRate(rate).GetBitRate() * Time(delay).GetSeconds() * 3 / 8;
+            }
+
+            // read isDynamicThreshold and dtShift, which is optional
+            bool hasPfcDynamicThreshold = switchPortQueueConfigObj.find("pfcDynamicThreshold") !=
+                                          switchPortQueueConfigObj.end();
+            bool isDynamicThreshold = false;
+            uint32_t dtShift = 2;
+            if (hasPfcDynamicThreshold)
+            {
+                isDynamicThreshold =
+                    switchPortQueueConfigObj.find("pfcDynamicThreshold")->value().as_bool();
+                if (isDynamicThreshold)
+                {
+                    // read dtShift, which is optional
+                    bool hasPfcDtShift = switchPortQueueConfigObj.find("pfcDtShift") !=
+                                         switchPortQueueConfigObj.end();
+                    if (hasPfcDtShift)
+                        dtShift = switchPortQueueConfigObj.find("pfcDtShift")->value().as_int64();
+                }
+            }
 
             DcbPfcPortConfig pfcConfig;
             for (uint32_t qi = 0; qi < nPortQueues; qi++)
             {
-                const uint32_t reserve = QueueSize(sPfcReserve).GetValue();
-                const uint32_t xon = QueueSize(sPfcXon).GetValue();
-                pfcConfig.AddQueueConfig(qi, reserve, xon);
+                pfcConfig.AddQueueConfig(qi,
+                                         reserve,
+                                         resumeOffset,
+                                         headroom,
+                                         isDynamicThreshold,
+                                         dtShift);
             }
 
             // PFC based Port Protocol
@@ -184,15 +263,6 @@ ConfigureSwitch(boost::json::object& configObj, Ptr<Node> sw)
             std::string sEcnKMax(
                 switchPortQueueConfigObj.find("ecnKMax")->value().as_string().c_str());
             double ecnPMax = switchPortQueueConfigObj.find("ecnPMax")->value().as_double();
-            std::string sSwitchBufferSize = configObj["topologyConfig"]
-                                                .get_object()
-                                                .find("switch")
-                                                ->value()
-                                                .get_object()
-                                                .find("bufferSize")
-                                                ->value()
-                                                .get_string()
-                                                .c_str();
 
             ObjectFactory factory;
             factory.SetTypeId("ns3::FifoQueueDiscEcn");
@@ -208,7 +278,7 @@ ConfigureSwitch(boost::json::object& configObj, Ptr<Node> sw)
                 qd->Initialize();
                 qd->ConfigECN(ecnKMin, ecnKMax, ecnPMax);
                 // TODO Why this value?
-                qd->SetMaxSize(QueueSize(sSwitchBufferSize));
+                qd->SetMaxSize(bufferSize);
                 Ptr<PausableQueueDiscClass> c = CreateObject<PausableQueueDiscClass>();
                 c->SetQueueDisc(qd);
                 dev->AddQueueDiscClass(c);
@@ -472,6 +542,77 @@ BuildTopology(boost::json::object& configObj)
     LogAllRoutes(topology);
 
     topof.close();
+
+    // Calculate the propagation delay between each pair of hosts, and store it in the topology
+    for (DcTopology::HostIterator hostSrc = topology->hosts_begin();
+         hostSrc != topology->hosts_end();
+         hostSrc++)
+    {
+        // traverse hostDst
+        for (DcTopology::HostIterator hostDst = topology->hosts_begin();
+             hostDst != topology->hosts_end();
+             hostDst++)
+        {
+            if (hostSrc == hostDst)
+            {
+                continue;
+            }
+            Ptr<GlobalRouter> router = (*hostSrc)->GetObject<GlobalRouter>();
+            Ptr<Ipv4GlobalRouting> route = router->GetRoutingProtocol();
+            // assert if n > 1
+            NS_ASSERT(route->GetNRoutes() == 1);
+            // XXX Not support multiple interfaces
+            Ipv4Address srcAddr = (*hostSrc)->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
+            Ipv4Address dstAddr = (*hostDst)->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
+            // create an Ipv4Header and set the destination address
+            Ipv4Header ipHdr;
+            ipHdr.SetDestination(dstAddr);
+            // create a packet
+            Ptr<Packet> packet = Create<Packet>();
+            NS_LOG_DEBUG("======== Route from hostSrc "
+                         << (*hostSrc)->GetId() << " srcAddr " << srcAddr << " hostDst "
+                         << (*hostDst)->GetId() << " dstAddr " << dstAddr << " ========");
+            Time delays = Seconds(0);
+            uint32_t hops = 0;
+            while (1)
+            {
+                Socket::SocketErrno theerrno;
+                // find the route by using RouteOutput
+                Ptr<Ipv4Route> found = route->RouteOutput(packet, ipHdr, 0, theerrno);
+                if (theerrno == Socket::ERROR_NOTERROR)
+                {
+                    NS_LOG_DEBUG("found " << *found);
+                    Ptr<DcbChannel> channel =
+                        DynamicCast<DcbChannel>(found->GetOutputDevice()->GetChannel());
+                    hops++;
+                    delays += channel->GetDelay();
+                    if (found->GetGateway() == dstAddr)
+                    {
+                        break;
+                    }
+                    // traverse channel's devices and find another one
+                    for (uint32_t i = 0; i < channel->GetNDevices(); i++)
+                    {
+                        Ptr<NetDevice> dev = channel->GetDevice(i);
+                        if (dev != found->GetOutputDevice()) // find the other head of device
+                        {
+                            route = dev->GetNode()->GetObject<GlobalRouter>()->GetRoutingProtocol();
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    NS_LOG_DEBUG("not found");
+                    break;
+                }
+            }
+            // NS_LOG_DEBUG("hops " << hops);
+            topology->AddDelay(srcAddr, dstAddr, hops, delays);
+        }
+    }
+
+    topology->LogDelayMap();
 
     return topology;
 }

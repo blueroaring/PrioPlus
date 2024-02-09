@@ -35,6 +35,8 @@
 #include "ns3/traced-callback.h"
 
 #include <map>
+#include <set>
+#include <string>
 
 namespace ns3
 {
@@ -62,8 +64,7 @@ class TraceApplication : public Application
      * * If the destIndex is negative, the application will randomly choose a node as the
      * destination.
      */
-    TraceApplication(Ptr<DcTopology> topology, uint32_t nodeIndex, int32_t destIndex = -1);
-    TraceApplication(Ptr<DcTopology> topology, Ptr<Node> node, InetSocketAddress destAddr);
+    TraceApplication(Ptr<DcTopology> topology, uint32_t nodeIndex);
     virtual ~TraceApplication();
 
     enum ProtocolGroup
@@ -120,13 +121,6 @@ class TraceApplication : public Application
     void SetFlowCdf(const TraceCdf& cdf);
 
     void SetFlowMeanArriveInterval(double interval);
-    /**
-     * \brief Set mean arrive interval
-     *
-     * \param iterval The mean interval in ms.
-     * \param staticFlowInterval Whether the flow interval is static.
-     */
-    void SetFlowMeanArriveInterval(double interval, bool staticFlowInterval);
 
     void SetEcnEnabled(bool enabled);
 
@@ -135,28 +129,21 @@ class TraceApplication : public Application
 
     void FlowCompletes(Ptr<UdpBasedSocket> socket);
 
-    void SetDestAddr(InetSocketAddress destAddr);
+    typedef std::pair<std::string, Ptr<AttributeValue>> ConfigEntry_t;
+    void SetCcOpsAttributes(const std::vector<ConfigEntry_t>& configs);
+    void SetSocketAttributes(const std::vector<ConfigEntry_t>& configs);
 
     constexpr static inline const uint64_t MSS = 1000; // bytes
 
-    static inline TraceCdf TRACE_WEBSEARCH_CDF = {{0., 0.00},
-                                                  {10000., 0.15},
-                                                  {20000., 0.20},
-                                                  {30000., 0.30},
-                                                  {50000., 0.40},
-                                                  {80000., 0.53},
-                                                  {200000., 0.60},
-                                                  {1000000., 0.70},
-                                                  {2000000., 0.80},
-                                                  {5000000., 0.90},
-                                                  {10000000., 0.97},
-                                                  {30000000., 1.00}};
-
-    static inline TraceCdf TRACE_FDHADOOP_CDF = {
-        {0., 0.00},      {100., 0.10},    {200., 0.20},      {300., 0.50},     {350., 0.15},
-        {400., 0.20},    {500., 0.30},    {600., 0.40},      {700., 0.50},     {1000., 0.60},
-        {2000., 0.67},   {7000., 0.70},   {30000., 0.72},    {50000., 0.82},   {80000., 0.87},
-        {120000., 0.90}, {300000., 0.95}, {1000000., 0.975}, {2000000., 0.99}, {10000000., 1.00}};
+    enum TrafficPattern
+    {
+        CDF,
+        SEND_ONCE,
+        RECOVERY,
+        FILE_REQUEST,
+        CHECKPOINT,
+        RING
+    };
 
     class Stats
     {
@@ -176,11 +163,12 @@ class TraceApplication : public Application
         uint64_t nTotalSentBytes;
         uint32_t nTotalDeliverPkts; //<! Data pkts successfully delivered to peer upper layer
         uint64_t nTotalDeliverBytes;
-        uint32_t nRetxCount;  //<! Number of retransmission
-        Time tStart;          //<! Time of the first flow start
-        Time tFinish;         //<! Time of the last flow finish
-        DataRate overallRate; //<! overall rate, calculate by total size / (first flow arrive -
-                              // last flow finish)
+        uint32_t nRetxCount;     //<! Number of retransmission
+        Time tStart;             //<! Time of the first flow start
+        Time tFinish;            //<! Time of the last flow finish
+        DataRate overallRate;    //<! overall rate, calculate by total size / (first flow arrive -
+                                 // last flow finish)
+        std::string appFlowType; //<! The type of the application flow
 
         // Detailed statistics, only enabled if needed
         bool bDetailedSenderStats;
@@ -202,7 +190,8 @@ class TraceApplication : public Application
     uint64_t m_totBytes;       //!< Total bytes sent so far
     uint32_t m_headerSize;     //!< total header bytes of a packet
     std::map<Ptr<Socket>, Flow*> m_flows;
-    Ptr<RoCEv2Socket> m_receiverSocket;
+    // Ptr<RoCEv2Socket> m_receiverSocket;
+    Ptr<Socket> m_receiverSocket;
 
   private:
     /**
@@ -222,7 +211,7 @@ class TraceApplication : public Application
     /**
      * \brief Create a new RoCEv2 socket using the TypeId set by SocketType attribute
      * Call this function requires m_topology set.
-     * 
+     *
      * \return A smart Socket pointer to a RoCEv2Socket
      *
      * \param destNode the destionation Node ID
@@ -233,16 +222,6 @@ class TraceApplication : public Application
      * \brief Create new socket send to the destAddr.
      */
     Ptr<Socket> CreateNewSocket(InetSocketAddress destAddr);
-
-    /**
-     * \brief Create a new RoCEv2 socket using the specified congestion control algorithm TypeId
-     */
-    Ptr<Socket> CreateNewSocket(uint32_t destNode, TypeId congestionTypeId);
-
-    /**
-     * \brief Create a new RoCEv2 socket send to the destAddr using the specified congestion control algorithm TypeId
-     */
-    Ptr<Socket> CreateNewSocket(InetSocketAddress destAddr, TypeId congestionTypeId);
 
     /**
      * \brief Get destination node index of one flow.
@@ -298,6 +277,22 @@ class TraceApplication : public Application
      */
     virtual void HandleRead(Ptr<Socket> socket);
 
+    /** TCP Socket callback handler **/
+
+    /**
+     * \brief Handle a connection request.
+     *
+     * This function is called by lower layers.
+     *
+     * \param socket the socket the packet was received to.
+     * \param from the address of the peer
+     */
+    virtual void HandleTcpAccept(Ptr<Socket> socket, const Address& from);
+
+    virtual void HandleTcpPeerClose(Ptr<Socket> socket);
+
+    virtual void HandleTcpPeerError(Ptr<Socket> socket);
+
     /**
      * \brief Find a outbound net device (i.e., not a loopback net device) for the application's
      * node.
@@ -308,9 +303,31 @@ class TraceApplication : public Application
     void SetFlowIdentifier(Flow* flow, Ptr<Socket> socket);
 
     /**
-     * \brief Schedule a flow, send from the start time to the stop time in the given rate.
+     * \brief Schedule a flow until the stop condition is satisfied.
+     *
+     * Now this function is only used for foreground flows.
      */
-    void ScheduleOnlyOnce();
+    void ScheduleAForegroundFlow();
+
+    /**
+     * \brief Initialize the socket line rate.
+     */
+    void InitSocketLineRate();
+
+    /**
+     * \brief Setup receiver socket
+     */
+    void SetupReceiverSocket();
+
+    /**
+     * \brief Generate traffic according to the traffic pattern.
+     */
+    void GenerateTraffic();
+
+    /**
+     * \brief Calculate parameters of traffic.
+     */
+    void CalcTrafficParameters();
 
     std::shared_ptr<Stats> m_stats;
 
@@ -325,17 +342,78 @@ class TraceApplication : public Application
     ProtocolGroup m_protoGroup; //!< Protocol group
     TypeId m_innerUdpProtocol;  //!< inner-UDP protocol type id
 
-    Ptr<EmpiricalRandomVariable> m_flowSizeRng;         //!< Flow size random generator
-    Time m_staticFlowArriveInterval;                    //!< Static flow arrive interval
+    Ptr<EmpiricalRandomVariable> m_flowSizeRng; //!< Flow size random generator
+    bool m_isFixedFlowArrive;                   //!< Whether the flow arrive interval is fixed
+    Time m_fixedFlowArriveInterval;             //!< Fixed flow arrive interval
     Ptr<ExponentialRandomVariable> m_flowArriveTimeRng; //!< Flow arrive time random generator
     Ptr<UniformRandomVariable> m_hostIndexRng;          //!< Host index random generator
-    int32_t m_destNode; //!< if not choosing random destination, store the destined node index here
-    InetSocketAddress
-        m_destAddr;  //!< if not choosing random destination, store the destined address here
-    bool m_sendOnce; //!< Whether the application only send one flow, if true, the application will
-                     //!< send form the start time to the end time in the given rate.
+    uint32_t m_destNode; //!< if not choosing random destination, store the destined node index here
+    bool m_isFixedDest;  //!< Whether the destination is fixed
+    bool m_interpolate; //!< Whether the application interpolate the flow size
 
+    std::vector<ConfigEntry_t> m_socketAttributes;
     TypeId m_congestionTypeId; //!< The socket's congestion control TypeId
+    std::vector<RoCEv2CongestionOps::CcOpsConfigPair_t> m_ccAttributes; //!< The attributes to be
+                                                                        //!< set to the ccOps
+
+    /*********************************
+     * Members for traffic patterns
+     *********************************/
+    enum TrafficPattern m_trafficPattern; //!< The traffic pattern of the application
+    uint64_t m_trafficSize;               //!< The total size of the traffic
+    double m_trafficLoad;                 //!< The traffic load
+
+    /***** Members for data recovery in storage cluster *****/
+    double m_recoveryNodeRatio; //!< The ratio of recovery traffic node in all nodes
+
+    static std::vector<Time> m_recoveryInterval; //!< The recovery interval
+    static std::vector<std::set<uint32_t>>
+        m_recoveryIntervalNodes;  //!< The recovery nodes in each recovery interval
+    static bool m_isRecoveryInit; //!< Whether the recovery is initialized
+    void CreateRecovery();
+
+    /***** Members for file request cluster *****/
+    uint32_t m_fileRequestNodesNum; //!< The number of file request nodes in the cluster
+    uint32_t m_fileRequestIndex;    //!< The current file request index
+
+    // Note that the file request mode is almost the same as the storage recovery mode, except that
+    // every interval only one destination is chosen.
+
+    static std::vector<Time> m_fileRequestInterval; //!< The file request interval
+    static std::vector<std::set<uint32_t>>
+        m_fileRequestIntervalNodes; //!< The file request nodes in each file request interval
+    static std::vector<uint32_t> m_fileRequestIntervalDest; //!< The file request destination in
+                                                            //!< each file request interval
+    static bool m_isFileRequestInit; //!< Whether the file request is initialized
+    void CreateFileRequest();
+
+    /***** Members for checkpoint flows *****/
+    /**
+     * \brief Schedule the checkpoint flows to neighboring nodes.
+     */
+    void SchedulCheckpointFlow();
+
+    /***** Members for ring flows *****/
+    uint32_t m_ringGroupNodesNum; //!< The number of nodes in one ring group
+    uint32_t m_ringGroupIndex;    //!< The index of the current application's ring group
+    uint32_t m_ringDestNode;      //!< The destination node of the current application
+
+    static std::vector<std::vector<Time>> m_ringIntervals; //!< The ring intervals for each group
+    static bool m_isRingInit;                              //!< Whether the ring is initialized
+    void CreateRing();
+
+    /***** Members for continous foreground flows until background flows finished *****/
+    enum TrafficType
+    {
+        FOREGROUND,
+        BACKGROUND,
+        NONE
+    };
+
+    TrafficType m_trafficType;                 //!< The type of the flow
+    static std::vector<bool> m_bgFlowFinished; //!< Whether the background flows are finished
+
+    void SetFlowType(std::string flowType);
 
     /// traced Callback: transmitted packets.
     TracedCallback<Ptr<const Packet>> m_txTrace;

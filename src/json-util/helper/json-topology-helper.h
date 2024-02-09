@@ -37,6 +37,7 @@
 #include "ns3/ipv4-global-routing-helper.h"
 #include "ns3/ipv4-global-routing.h"
 #include "ns3/ipv4-l3-protocol.h"
+#include "ns3/ipv4-static-routing.h"
 #include "ns3/ipv4.h"
 #include "ns3/log.h"
 #include "ns3/net-device-container.h"
@@ -45,6 +46,7 @@
 #include "ns3/object-factory.h"
 #include "ns3/queue-disc.h"
 #include "ns3/queue-size.h"
+#include "ns3/socket.h"
 #include "ns3/traced-value.h"
 
 #include <boost/json.hpp>

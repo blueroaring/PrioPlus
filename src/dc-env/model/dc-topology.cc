@@ -147,13 +147,71 @@ DcTopology::IsSwitch(const uint32_t index) const
     return GetNode(index).type == TopoNode::NodeType::SWITCH;
 }
 
+uint32_t
+DcTopology::GetNHosts() const
+{
+    return m_nHosts;
+}
+
+uint32_t
+DcTopology::GetNNodes() const
+{
+    return m_nodes.size();
+}
+
+void
+DcTopology::AddDelay(const Ipv4Address src,
+                     const Ipv4Address dst,
+                     const uint32_t hops,
+                     const Time delay)
+{
+    NS_LOG_FUNCTION(this << src << dst << hops << delay);
+    m_delayMap[std::make_pair(src, dst)] = std::make_pair(hops, delay);
+}
+
+const Time
+DcTopology::GetDelay(const Ipv4Address src, const Ipv4Address dst) const
+{
+    NS_LOG_FUNCTION(this << src << dst);
+    auto it = m_delayMap.find(std::make_pair(src, dst));
+    if (it == m_delayMap.end())
+    {
+        NS_FATAL_ERROR("Propogation delay from " << src << " to " << dst << " is not found");
+    }
+    return it->second.second;
+}
+
+const uint32_t
+DcTopology::GetHops(const Ipv4Address src, const Ipv4Address dst) const
+{
+    NS_LOG_FUNCTION(this << src << dst);
+    auto it = m_delayMap.find(std::make_pair(src, dst));
+    if (it == m_delayMap.end())
+    {
+        NS_FATAL_ERROR("Propogation delay from " << src << " to " << dst << " is not found");
+    }
+    return it->second.first;
+}
+
+void
+DcTopology::LogDelayMap() const
+{
+    NS_LOG_FUNCTION(this);
+    for (auto it = m_delayMap.begin(); it != m_delayMap.end(); it++)
+    {
+        NS_LOG_DEBUG("From " << it->first.first << " to " << it->first.second
+                             << ", propogation delay is " << it->second.second << " with "
+                             << it->second.first << " hops");
+    }
+}
+
 const Ptr<UniformRandomVariable>
 DcTopology::CreateRamdomHostChooser() const
 {
     Ptr<UniformRandomVariable> rng = CreateObject<UniformRandomVariable>();
     rng->SetAttribute("Min", DoubleValue(0));
     // Note that the max value is included in the range
-    rng->SetAttribute("Max", DoubleValue(m_nHosts-1));
+    rng->SetAttribute("Max", DoubleValue(m_nHosts - 1));
     return rng;
 }
 
