@@ -303,7 +303,7 @@ ConfigureHost(boost::json::object& configObj, Ptr<Node> h)
         Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
         Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(h, 0);
         // Set the queue size to 100KB, which is not critical to performance
-        qDisc->SetQueueSize(QueueSize(QueueSizeUnit::BYTES, 1e5));
+        qDisc->SetQueueSize(QueueSize(QueueSizeUnit::BYTES, 1e9));
         qDisc->SetFCEnabled(true);
         dcbDev->SetQueueDisc(qDisc);
         tc->SetRootQueueDiscOnDevice(dev, qDisc);

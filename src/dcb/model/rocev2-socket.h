@@ -66,7 +66,7 @@ class DcbTxBuffer : public Object
     static TypeId GetTypeId(void);
 
     // No default constructor, as we need the sendCb
-    DcbTxBuffer(Callback<void> sendCb);
+    DcbTxBuffer(Callback<void> sendCb, Callback<RoCEv2Header> createRocev2HeaderCb);
 
     typedef std::deque<DcbTxBufferItem>::const_iterator DcbTxBufferItemI;
 
@@ -103,7 +103,7 @@ class DcbTxBuffer : public Object
     /**
      * \brief Remove the next item to be sent.
      */
-    const DcbTxBufferItem& PopNextShouldSend(RoCEv2Header roceHeader);
+    const DcbTxBufferItem& PopNextShouldSend();
     /**
      * \brief Return whether cwnd is enough to send a packet.
      * \param cwnd unit: packets
@@ -160,6 +160,13 @@ class DcbTxBuffer : public Object
      */
     void CreatePacket(RoCEv2Header roceHeader);
 
+    /**
+     * \brief Get the packet with the given PSN.
+     *
+     * If the packet is not in the buffer, create it and push it into the buffer.
+     */
+    const DcbTxBufferItem& GetPacketAt(uint32_t psn);
+
     DcbTxBufferItemI FindPSN(uint32_t psn) const;
     DcbTxBufferItemI End() const;
 
@@ -176,6 +183,13 @@ class DcbTxBuffer : public Object
      * send.
      */
     Callback<void> m_sendCb;
+
+    /**
+     * \brief The CreateRoCEv2Header() call back, called when a new packet is created.
+     * 
+     * Note that this callback should be called only once for a psn.
+     */
+    Callback<RoCEv2Header> m_createRocev2HeaderCb;
 
     std::deque<DcbTxBufferItem> m_buffer;
     uint32_t m_frontPsn; // PSN of the front item in the buffer. Only increase when acked.
@@ -523,13 +537,20 @@ class RoCEv2Socket : public UdpBasedSocket
         EventId lastCNPEvent;
         DcbRxBuffer m_rxBuffer;
         Ptr<RoCEv2CongestionOps> m_ccOps;
+        /**
+         * In RoCE, receiver will only generate one NACK for a expected PSN. Thus we use a bool to
+         * record whether the expected PSN advanced after a NACK. If true, it is permitted to send a
+         * new NACK.
+         */
+        bool m_ePsnAdvancedAfterNack; // Whether the expected PSN advanced after a NACK
 
         FlowInfo(uint32_t dst, DcbRxBuffer rxBuffer, Ptr<RoCEv2CongestionOps> ccOps)
             : dstQP(dst),
               nextPSN(0),
               receivedECN(false),
               m_rxBuffer(rxBuffer),
-              m_ccOps(ccOps)
+              m_ccOps(ccOps),
+              m_ePsnAdvancedAfterNack(false)
         {
         }
 
@@ -619,7 +640,32 @@ class RoCEv2Socket : public UdpBasedSocket
 
     DataRate m_rateCap; //!< Rate cap, used to run some experiments
 
-    bool m_waitingForSchedule;
+    /***** Utility for FlowScheduling *****/
+    bool m_waitingForSchedule; //!< Whether the socket is waiting for the flow scheduler to notify
+                               //!< it to send a packet down.
+
+    /***** Utility for RTO *****/
+    /**
+     * \brief Retransmission timeout event.
+     *
+     * Retransmit according to the retransmission mode. For GBN, retransmit all packets from the
+     * first unacked packet. For IRN, retransmit the first unacked packet.
+     */
+    void RetransmissionTimeout();
+    Time m_rto;         //!< Retransmission timeout (RTOhigh when IRN is used)
+    EventId m_rtoEvent; //!< Event id of the next RTO event
+
+    Time m_irnRtoLow;        //!< Low retransmission timeout for IRN
+    uint32_t m_irnPktThresh; //!< The threshold of the number of packets to trigger low RTO for IRN
+
+    enum FlowState
+    {
+        PENDING,
+        RUNNING, 
+        FINISHED
+    };
+    FlowState m_flowState;
+
 }; // class RoCEv2Socket
 
 /**

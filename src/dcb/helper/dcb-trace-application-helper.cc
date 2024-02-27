@@ -227,7 +227,6 @@ TraceApplicationHelper::InstallPriv(Ptr<Node> node)
     if (m_cdf)
     {
         app->SetFlowCdf(*m_cdf);
-        app->SetAttribute("TrafficSizeBytes", UintegerValue(CalculateCdfMeanSize(m_cdf.get())));
     }
 
     node->AddApplication(app);

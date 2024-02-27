@@ -66,6 +66,11 @@ DcbNetDevice::GetTypeId(void)
                           BooleanValue(false),
                           MakeBooleanAccessor(&DcbNetDevice::m_fcEnabled),
                           MakeBooleanChecker())
+            .AddAttribute("ReceiveErrorModel",
+                          "The receiver error model used to simulate packet loss",
+                          PointerValue(),
+                          MakePointerAccessor(&DcbNetDevice::m_receiveErrorModel),
+                          MakePointerChecker<ErrorModel>())
             .AddAttribute("InterframeGap",
                           "The time to wait between packet (frame) transmissions",
                           TimeValue(Seconds(0.0)),

@@ -139,6 +139,7 @@ class TraceApplication : public Application
     {
         CDF,
         SEND_ONCE,
+        FIXED_SIZE,
         RECOVERY,
         FILE_REQUEST,
         CHECKPOINT,
@@ -188,7 +189,8 @@ class TraceApplication : public Application
   protected:
     DataRate m_socketLinkRate; //!< Link rate of the deice
     uint64_t m_totBytes;       //!< Total bytes sent so far
-    uint32_t m_headerSize;     //!< total header bytes of a packet
+    uint32_t m_headerSize;     //!< base header bytes of a packet (Ether + IP + UDP/RoCEv2)
+    uint32_t m_dataHeaderSize; //!< data header bytes of a packet (base + CC specific header)
     std::map<Ptr<Socket>, Flow*> m_flows;
     // Ptr<RoCEv2Socket> m_receiverSocket;
     Ptr<Socket> m_receiverSocket;
@@ -329,6 +331,11 @@ class TraceApplication : public Application
      */
     void CalcTrafficParameters();
 
+    /**
+     * \brief Set the congestion control type id and calculate the data header size.
+     */
+    void SetCongestionTypeId(TypeId congestionTypeId);
+
     std::shared_ptr<Stats> m_stats;
 
     bool m_enableSend;
@@ -349,7 +356,7 @@ class TraceApplication : public Application
     Ptr<UniformRandomVariable> m_hostIndexRng;          //!< Host index random generator
     uint32_t m_destNode; //!< if not choosing random destination, store the destined node index here
     bool m_isFixedDest;  //!< Whether the destination is fixed
-    bool m_interpolate; //!< Whether the application interpolate the flow size
+    bool m_interpolate;  //!< Whether the application interpolate the flow size
 
     std::vector<ConfigEntry_t> m_socketAttributes;
     TypeId m_congestionTypeId; //!< The socket's congestion control TypeId

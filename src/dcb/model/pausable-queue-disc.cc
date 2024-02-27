@@ -167,6 +167,8 @@ PausableQueueDisc::SetPaused(uint8_t priority, bool paused)
     {
         Run();
     }
+
+    m_stats->RecordPauseResume(priority, paused);
 }
 
 void

@@ -89,7 +89,7 @@ TraceApplication::GetTypeId()
             .AddAttribute("CongestionType",
                           "Socket' congestion control type.",
                           TypeIdValue(RoCEv2Dcqcn::GetTypeId()),
-                          MakeTypeIdAccessor(&TraceApplication::m_congestionTypeId),
+                          MakeTypeIdAccessor(&TraceApplication::SetCongestionTypeId),
                           MakeTypeIdChecker())
             .AddAttribute("Interpolate",
                           "Enable interpolation from CDF",
@@ -119,6 +119,8 @@ TraceApplication::GetTypeId()
                                           "CDF",
                                           TraceApplication::TrafficPattern::SEND_ONCE,
                                           "SendOnce",
+                                          TraceApplication::TrafficPattern::FIXED_SIZE,
+                                          "FixedSize",
                                           TraceApplication::TrafficPattern::RECOVERY,
                                           "Recovery",
                                           TraceApplication::TrafficPattern::FILE_REQUEST,
@@ -250,6 +252,17 @@ TraceApplication::SetInnerUdpProtocol(TypeId innerTid)
     if (socketFactory)
     {
         m_headerSize = socketFactory->AddUdpBasedProtocol(node, GetOutboundNetDevice(), innerTid);
+
+        /**
+         * XXX Calculate the data header size.
+         * To implement this we need to create a congestion control algorithm object and get the
+         * extra header size. It is not a good idea to create a congestion control algorithm object
+         * here. Need to be improved.
+         */
+        ObjectFactory congestionAlgorithmFactory;
+        congestionAlgorithmFactory.SetTypeId(m_congestionTypeId);
+        Ptr<RoCEv2CongestionOps> algo = congestionAlgorithmFactory.Create<RoCEv2CongestionOps>();
+        m_dataHeaderSize = m_headerSize + algo->GetExtraHeaderSize();
     }
     else
     {
@@ -333,6 +346,7 @@ TraceApplication::CalcTrafficParameters()
     switch (m_trafficPattern)
     {
     case TrafficPattern::CDF:
+    case TrafficPattern::FIXED_SIZE:
         SetFlowMeanArriveInterval(flowMeanInterval);
         break;
 
@@ -399,15 +413,19 @@ TraceApplication::GenerateTraffic()
             {
                 ScheduleNextFlow(t);
             }
-            if (m_protoGroup == ProtocolGroup::RoCEv2)
-            {
-                tracer_extension::RegisterTraceFCT(this);
-            }
         }
         break;
     case TrafficPattern::SEND_ONCE:
         // Schedule only once
         ScheduleNextFlow(Simulator::Now());
+        break;
+    case TrafficPattern::FIXED_SIZE:
+        // Schedule all flows in the beginning
+        for (Time t = Simulator::Now() + GetNextFlowArriveInterval(); t < m_stopTime;
+             t += GetNextFlowArriveInterval())
+        {
+            ScheduleNextFlow(t);
+        }
         break;
     case TrafficPattern::RECOVERY:
         if (m_isRecoveryInit)
@@ -465,6 +483,11 @@ TraceApplication::GenerateTraffic()
     default:
         NS_FATAL_ERROR("Traffic pattern can not be recognized.");
         break;
+    }
+
+    if (m_protoGroup == ProtocolGroup::RoCEv2)
+    {
+        tracer_extension::RegisterTraceFCT(this);
     }
 }
 
@@ -605,13 +628,10 @@ TraceApplication::CreateNewSocket(InetSocketAddress destAddr)
                 uint32_t ackHeaderSize =
                     m_headerSize + 4; // ack header has AETHeader, which is 4 bytes
 
-                m_headerSize +=
-                    roceSocket->GetCcOps()
-                        ->GetExtraHeaderSize(); // header may be added by congestion control
                 ackHeaderSize += roceSocket->GetCcOps()
                                      ->GetExtraAckSize(); // ack may be added by congestion control
 
-                roceSocket->GetSocketState()->SetPacketSize(MSS + m_headerSize);
+                roceSocket->GetSocketState()->SetPacketSize(MSS + m_dataHeaderSize);
                 roceSocket->GetSocketState()->SetMss(MSS);
                 // ack size should be at least 64B
                 uint32_t ackPayload = ackHeaderSize < 64 ? (64 - ackHeaderSize) : 0;
@@ -813,7 +833,7 @@ TraceApplication::SendNextPacket(Flow* flow)
             if (udpSock != nullptr)
             {
                 // For UDP socket, pacing the sending at application layer
-                Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_headerSize);
+                Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_dataHeaderSize);
                 Simulator::Schedule(txTime, &TraceApplication::SendNextPacket, this, flow);
                 return;
             }
@@ -821,7 +841,7 @@ TraceApplication::SendNextPacket(Flow* flow)
         else
         {
             // Typically this is because TCP socket's txBuffer is full, retry later.
-            Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_headerSize);
+            Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_dataHeaderSize);
             Simulator::Schedule(txTime, &TraceApplication::SendNextPacket, this, flow);
             return;
         }
@@ -859,10 +879,18 @@ TraceApplication::SetFlowCdf(const TraceCdf& cdf)
     m_flowSizeRng = CreateObject<EmpiricalRandomVariable>();
     // Enable interpolation from CDF
     m_flowSizeRng->SetAttribute("Interpolate", BooleanValue(m_interpolate));
+
+    // Set the CDF and calculate the mean
+    double res = 0.;
+    auto [ls, lp] = cdf[0];
     for (auto [sz, prob] : cdf)
     {
         m_flowSizeRng->CDF(sz, prob);
+        res += (sz + ls) / 2.0 * (prob - lp);
+        ls = sz;
+        lp = prob;
     }
+    m_trafficSize = res;
 }
 
 inline Time
@@ -1062,6 +1090,12 @@ void
 TraceApplication::SetFlowType(std::string flowType)
 {
     m_stats->appFlowType = flowType;
+}
+
+void
+TraceApplication::SetCongestionTypeId(TypeId congestionTypeId)
+{
+    m_congestionTypeId = congestionTypeId;
 }
 
 TraceApplication::Stats::Stats()

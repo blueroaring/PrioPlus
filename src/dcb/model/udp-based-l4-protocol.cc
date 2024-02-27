@@ -143,7 +143,7 @@ UdpBasedL4Protocol::ForwardUp(Ptr<Packet> packet,
             NS_LOG_DEBUG("Received a CNP packet for a closed socket.");
             return;
         }
-        NS_FATAL_ERROR("No endPoints matched in UDP-based L4 protocol with inner port "
+        NS_LOG_WARN("No endPoints matched in UDP-based L4 protocol with inner port "
                        << innerPort << " on node " << Simulator::GetContext());
     }
 }

@@ -42,20 +42,36 @@ std::ofstream
 CreateOutputFile(boost::json::object& conf, std::string confFileName)
 {
     /**
-     * If the end of the output file is *, we will replace it with the config file name。
-     * For example, if the output file is output/\* and the config file name is
-     * config/subfolder/config.json, the output file will be output/subfolder/config.json
+     * If the output file name has *, we will replace it with the config file name.
+     * For example, if the output file is output/\*-test and the config file name is
+     * config/subfolder/config.json, the output file will be output/subfolder/config-test.json
+     * Note that use this feature need to ensure the config file is in config/ folder.
      */
     std::string outputFile =
         conf["outputFile"].get_object().find("resultFile")->value().as_string().c_str();
-    // Check if the end of the output file is *
-    if (outputFile.back() == '*')
+    // Check if the output file name has *
+    if (outputFile.find("*") != std::string::npos)
     {
-        // Replace the * with the config file name except the content before the first slash
-        outputFile.pop_back();
-        std::string confFileNameWithoutPath =
-            confFileName.substr(confFileName.find_first_of('/') + 1);
-        outputFile += confFileNameWithoutPath;
+        // Replace the * with the config file name with the content between "config/" and ".json"
+        /**
+         * If the confFileName start with a slash, it is a absolute path, we use the path behind
+         * "config/". To resolve this case, we assume the config is in the "config/" folder.
+         */
+        std::string confFileNameWithoutPathAndSuffix;
+        if (confFileName.find("config/") != std::string::npos)
+        {
+            confFileNameWithoutPathAndSuffix =
+                confFileName.substr(confFileName.find("config/") + 7);
+            confFileNameWithoutPathAndSuffix = confFileNameWithoutPathAndSuffix.substr(
+                0,
+                confFileNameWithoutPathAndSuffix.find(".json"));
+        }
+        else
+        {
+            NS_FATAL_ERROR(
+                "The config file name does not contain 'config/' when the output wildcard is used");
+        }
+        outputFile.replace(outputFile.find("*"), 1, confFileNameWithoutPathAndSuffix);
     }
 
     // If the folder of the output file does not exist, create it
