@@ -17,11 +17,11 @@
  * Author: Pavinberg (pavin0702@gmail.com)
  */
 
-#include "dcb-trace-application-helper.h"
+#include "dcb-traffic-gen-application-helper.h"
 
 #include "ns3/dc-topology.h"
 #include "ns3/dcb-net-device.h"
-#include "ns3/dcb-trace-application.h"
+#include "ns3/dcb-traffic-gen-application.h"
 #include "ns3/node.h"
 #include "ns3/nstime.h"
 #include "ns3/real-time-application.h"
@@ -32,7 +32,7 @@
 namespace ns3
 {
 
-TraceApplicationHelper::TraceApplicationHelper(Ptr<DcTopology> topo)
+DcbTrafficGenApplicationHelper::DcbTrafficGenApplicationHelper(Ptr<DcTopology> topo)
     : m_topology(topo),
       m_cdf(nullptr),
       m_flowMeanInterval(0.),
@@ -49,40 +49,40 @@ TraceApplicationHelper::TraceApplicationHelper(Ptr<DcTopology> topo)
 }
 
 void
-TraceApplicationHelper::SetProtocolGroup(TraceApplication::ProtocolGroup protoGroup)
+DcbTrafficGenApplicationHelper::SetProtocolGroup(DcbTrafficGenApplication::ProtocolGroup protoGroup)
 {
     m_protoGroup = protoGroup;
 }
 
 void
-TraceApplicationHelper::SetCdf(std::unique_ptr<TraceApplication::TraceCdf> cdf)
+DcbTrafficGenApplicationHelper::SetCdf(std::unique_ptr<DcbTrafficGenApplication::TraceCdf> cdf)
 {
     m_cdf = std::move(cdf);
 }
 
 void
-TraceApplicationHelper::SetLoad(Ptr<const DcbNetDevice> dev, double load)
+DcbTrafficGenApplicationHelper::SetLoad(Ptr<const DcbNetDevice> dev, double load)
 {
     SetLoad(dev->GetDataRate(), load);
 }
 
 void
-TraceApplicationHelper::SetLoad(DataRate rate, double load)
+DcbTrafficGenApplicationHelper::SetLoad(DataRate rate, double load)
 {
     m_load = load;
     CalcLoad(rate);
 }
 
 void
-TraceApplicationHelper::SetLoad(double load)
+DcbTrafficGenApplicationHelper::SetLoad(double load)
 {
     m_load = load;
 }
 
 void
-TraceApplicationHelper::CalcLoad(DataRate rate)
+DcbTrafficGenApplicationHelper::CalcLoad(DataRate rate)
 {
-    NS_ASSERT_MSG(m_cdf, "Must set CDF to TraceApplicationHelper before setting load.");
+    NS_ASSERT_MSG(m_cdf, "Must set CDF to DcbTrafficGenApplicationHelper before setting load.");
     NS_ASSERT_MSG(m_load >= 0. && m_load <= 1., "Load shoud be between 0 and 1.");
     double mean = CalculateCdfMeanSize(m_cdf.get());
     if (m_load <= 1e-6)
@@ -97,68 +97,68 @@ TraceApplicationHelper::CalcLoad(DataRate rate)
 }
 
 void
-TraceApplicationHelper::SetSendEnabled(bool enabled)
+DcbTrafficGenApplicationHelper::SetSendEnabled(bool enabled)
 {
     m_sendEnabled = enabled;
 }
 
 void
-TraceApplicationHelper::SetDestination(int32_t dest)
+DcbTrafficGenApplicationHelper::SetDestination(int32_t dest)
 {
     m_destNode = dest;
 }
 
 void
-TraceApplicationHelper::SetDestination(InetSocketAddress dest)
+DcbTrafficGenApplicationHelper::SetDestination(InetSocketAddress dest)
 {
     m_destAddr = dest;
 }
 
 void
-TraceApplicationHelper::SetStaticFlowInterval(bool staticFlowInterval)
+DcbTrafficGenApplicationHelper::SetStaticFlowInterval(bool staticFlowInterval)
 {
     m_staticFlowInterval = staticFlowInterval;
 }
 
 void
-TraceApplicationHelper::SetSendOnce(bool sendOnce)
+DcbTrafficGenApplicationHelper::SetSendOnce(bool sendOnce)
 {
     m_sendOnce = sendOnce;
 }
 
 void
-TraceApplicationHelper::SetStartAndStopTime(Time start, Time stop)
+DcbTrafficGenApplicationHelper::SetStartAndStopTime(Time start, Time stop)
 {
     m_startTime = start;
     m_stopTime = stop;
 }
 
 void
-TraceApplicationHelper::SetStartTime(Time start)
+DcbTrafficGenApplicationHelper::SetStartTime(Time start)
 {
     m_startTime = start;
 }
 
 void
-TraceApplicationHelper::SetRealTimeApp(bool realTimeApp)
+DcbTrafficGenApplicationHelper::SetRealTimeApp(bool realTimeApp)
 {
     m_realTimeApp = realTimeApp;
 }
 
 void
-TraceApplicationHelper::SetCongestionType(StringValue congestionType)
+DcbTrafficGenApplicationHelper::SetCongestionType(StringValue congestionType)
 {
     m_congestionType = congestionType;
 }
 
 void
-TraceApplicationHelper::SetCcAttributes(std::vector<ConfigEntry_t>&& ccAttributes)
+DcbTrafficGenApplicationHelper::SetCcAttributes(std::vector<ConfigEntry_t>&& ccAttributes)
 {
     m_ccAttributes = std::move(ccAttributes);
 }
 
 void
-TraceApplicationHelper::SetCcAttribute(ConfigEntry_t ccAttribute)
+DcbTrafficGenApplicationHelper::SetCcAttribute(ConfigEntry_t ccAttribute)
 {
     // If the attribute already exists, replace it. If not, add it.
     for (auto& [name, value] : m_ccAttributes)
@@ -173,19 +173,19 @@ TraceApplicationHelper::SetCcAttribute(ConfigEntry_t ccAttribute)
 }
 
 void
-TraceApplicationHelper::SetAppAttributes(std::vector<ConfigEntry_t>&& appAttributes)
+DcbTrafficGenApplicationHelper::SetAppAttributes(std::vector<ConfigEntry_t>&& appAttributes)
 {
     m_appAttributes = std::move(appAttributes);
 }
 
 void
-TraceApplicationHelper::SetSocketAttributes(std::vector<ConfigEntry_t>&& socketAttributes)
+DcbTrafficGenApplicationHelper::SetSocketAttributes(std::vector<ConfigEntry_t>&& socketAttributes)
 {
     m_socketAttributes = std::move(socketAttributes);
 }
 
 ApplicationContainer
-TraceApplicationHelper::Install(Ptr<Node> node)
+DcbTrafficGenApplicationHelper::Install(Ptr<Node> node)
 {
     // if (m_sendEnabled && !m_sendOnce && m_flowMeanInterval == 0.)
     // {
@@ -196,9 +196,9 @@ TraceApplicationHelper::Install(Ptr<Node> node)
 
     // The cdf is not needed to set if the send is disabled.
     // NS_ASSERT_MSG(!m_sendEnabled || m_sendOnce || m_cdf,
-    //               "[TraceApplicationHelper] CDF not set, please call SetCdf ().");
+    //               "[DcbTrafficGenApplicationHelper] CDF not set, please call SetCdf ().");
     // NS_ASSERT_MSG(m_flowMeanInterval > 0 || !m_sendEnabled || m_sendOnce,
-    //               "[TraceApplicationHelper] Load not set, please call SetLoad ().");
+    //               "[DcbTrafficGenApplicationHelper] Load not set, please call SetLoad ().");
 
     ApplicationContainer app = ApplicationContainer(InstallPriv(node));
 
@@ -210,9 +210,9 @@ TraceApplicationHelper::Install(Ptr<Node> node)
 }
 
 Ptr<Application>
-TraceApplicationHelper::InstallPriv(Ptr<Node> node)
+DcbTrafficGenApplicationHelper::InstallPriv(Ptr<Node> node)
 {
-    Ptr<TraceApplication> app = CreateApplication(node);
+    Ptr<DcbTrafficGenApplication> app = CreateApplication(node);
 
     // Set app attributes in m_appAttributes
     for (const auto& [name, value] : m_appAttributes)
@@ -235,21 +235,21 @@ TraceApplicationHelper::InstallPriv(Ptr<Node> node)
     app->SetProtocolGroup(m_protoGroup);
     switch (m_protoGroup)
     {
-    case TraceApplication::ProtocolGroup::RAW_UDP:
+    case DcbTrafficGenApplication::ProtocolGroup::RAW_UDP:
         break; // do nothing
-    case TraceApplication::ProtocolGroup::TCP:
+    case DcbTrafficGenApplication::ProtocolGroup::TCP:
         break; // TODO: add support of TCP
-    case TraceApplication::ProtocolGroup::RoCEv2:
+    case DcbTrafficGenApplication::ProtocolGroup::RoCEv2:
         // must be called after node->AddApplication () becasue it needs to know the node
         app->SetInnerUdpProtocol(RoCEv2L4Protocol::GetTypeId());
     };
     return app;
 }
 
-Ptr<TraceApplication>
-TraceApplicationHelper::CreateApplication(Ptr<Node> node)
+Ptr<DcbTrafficGenApplication>
+DcbTrafficGenApplicationHelper::CreateApplication(Ptr<Node> node)
 {
-    Ptr<TraceApplication> app;
+    Ptr<DcbTrafficGenApplication> app;
 
     if (m_realTimeApp)
     {
@@ -257,7 +257,7 @@ TraceApplicationHelper::CreateApplication(Ptr<Node> node)
     }
     else
     {
-        app = CreateObject<TraceApplication>(m_topology, node->GetId());
+        app = CreateObject<DcbTrafficGenApplication>(m_topology, node->GetId());
     }
 
     return app;
@@ -265,7 +265,7 @@ TraceApplicationHelper::CreateApplication(Ptr<Node> node)
 
 // static
 double
-TraceApplicationHelper::CalculateCdfMeanSize(const TraceApplication::TraceCdf* const cdf)
+DcbTrafficGenApplicationHelper::CalculateCdfMeanSize(const DcbTrafficGenApplication::TraceCdf* const cdf)
 {
     double res = 0.;
     auto [ls, lp] = (*cdf)[0];
@@ -280,7 +280,7 @@ TraceApplicationHelper::CalculateCdfMeanSize(const TraceApplication::TraceCdf* c
 
 // static
 std::unique_ptr<std::vector<std::pair<uint32_t, double>>>
-TraceApplicationHelper::ConstructCdfFromFile(std::string filename)
+DcbTrafficGenApplicationHelper::ConstructCdfFromFile(std::string filename)
 {
     std::ifstream cdfFile;
     cdfFile.open(filename);
@@ -312,7 +312,7 @@ TraceApplicationHelper::ConstructCdfFromFile(std::string filename)
 
 // static
 std::unique_ptr<std::vector<std::pair<uint32_t, double>>>
-TraceApplicationHelper::ConstructCdfFromFile(std::string filename, double scaleFactor)
+DcbTrafficGenApplicationHelper::ConstructCdfFromFile(std::string filename, double scaleFactor)
 {
     auto cdf = ConstructCdfFromFile(filename);
     for (auto& [s, p] : *cdf)
@@ -324,7 +324,7 @@ TraceApplicationHelper::ConstructCdfFromFile(std::string filename, double scaleF
 
 // static
 std::unique_ptr<std::vector<std::pair<uint32_t, double>>>
-TraceApplicationHelper::ConstructCdfFromFile(std::string filename, uint32_t avgSize)
+DcbTrafficGenApplicationHelper::ConstructCdfFromFile(std::string filename, uint32_t avgSize)
 {
     auto cdf = ConstructCdfFromFile(filename);
     double scaleFactor = avgSize / CalculateCdfMeanSize(cdf.get());
@@ -337,7 +337,7 @@ TraceApplicationHelper::ConstructCdfFromFile(std::string filename, uint32_t avgS
 
 // static
 void
-TraceApplicationHelper::NormalizeCdf(std::vector<std::pair<uint32_t, double>>* cdf)
+DcbTrafficGenApplicationHelper::NormalizeCdf(std::vector<std::pair<uint32_t, double>>* cdf)
 {
     // The maximum probability of CDF should be 1.
     double max = cdf->back().second;

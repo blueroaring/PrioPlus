@@ -21,7 +21,7 @@
 #define TRACER_EXTENSION_H
 
 #include "ns3/dcb-net-device.h"
-#include "ns3/dcb-trace-application.h"
+#include "ns3/dcb-traffic-gen-application.h"
 #include "ns3/dcb-traffic-control.h"
 #include "ns3/rocev2-header.h"
 #include "ns3/rocev2-socket.h"
@@ -47,7 +47,7 @@ void ConfigStopTime(Time stopTime);
 
 void ConfigTraceFCT(Protocol protocol, std::string fileName);
 
-void RegisterTraceFCT(Ptr<TraceApplication> app);
+void RegisterTraceFCT(Ptr<DcbTrafficGenApplication> app);
 
 /**
  * Capture packet at device and output the pcap file with prefix fileNamePrefix.

@@ -31,13 +31,13 @@ TypeId
 RealTimeApplication::GetTypeId()
 {
     static TypeId tid =
-        TypeId("ns3::RealTimeApplication").SetParent<TraceApplication>().SetGroupName("Dcb");
+        TypeId("ns3::RealTimeApplication").SetParent<DcbTrafficGenApplication>().SetGroupName("Dcb");
     return tid;
 }
 
 RealTimeApplication::RealTimeApplication(Ptr<DcTopology> topology,
                                          uint32_t nodeIndex)
-    : TraceApplication(topology, nodeIndex),
+    : DcbTrafficGenApplication(topology, nodeIndex),
       m_pktSeq(0)
 {
     NS_LOG_FUNCTION(this);
@@ -115,14 +115,14 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
     {
         if (InetSocketAddress::IsMatchingType(from))
         {
-            NS_LOG_LOGIC("TraceApplication: At time "
+            NS_LOG_LOGIC("DcbTrafficGenApplication: At time "
                          << Simulator::Now().As(Time::S) << " client received " << packet->GetSize()
                          << " bytes from " << InetSocketAddress::ConvertFrom(from).GetIpv4()
                          << " port " << InetSocketAddress::ConvertFrom(from).GetPort());
         }
         else if (Inet6SocketAddress::IsMatchingType(from))
         {
-            NS_LOG_LOGIC("TraceApplication: At time "
+            NS_LOG_LOGIC("DcbTrafficGenApplication: At time "
                          << Simulator::Now().As(Time::S) << " client received " << packet->GetSize()
                          << " bytes from " << Inet6SocketAddress::ConvertFrom(from).GetIpv6()
                          << " port " << Inet6SocketAddress::ConvertFrom(from).GetPort());
@@ -178,7 +178,7 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
     }
 }
 
-std::shared_ptr<TraceApplication::Stats>
+std::shared_ptr<DcbTrafficGenApplication::Stats>
 RealTimeApplication::GetStats() const
 {
     m_stats->CollectAndCheck(m_flows);
@@ -213,7 +213,7 @@ void
 RealTimeApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
 {
     // Call the base class's CollectAndCheck
-    TraceApplication::Stats::CollectAndCheck(flows);
+    DcbTrafficGenApplication::Stats::CollectAndCheck(flows);
 
     // Check if the stats is collected
     if (isCollected)

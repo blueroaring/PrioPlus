@@ -24,7 +24,7 @@
         "TcpSocketBase": {
             "Timestamp": false
         },
-        "TraceApplication": {
+        "DcbTrafficGenApplication": {
             "CongestionType": "ns3::RoCEv2Dcqcn"
         },
         "RoCEv2Timely": {
@@ -76,7 +76,7 @@
     "applicationConfig": [
         {
             "NOTE": "Foreground traffic",
-            "appName": "TraceApplication",
+            "appName": "DcbTrafficGenApplication",
             "nodes": "all",
             "protocolGroup": "RoCEv2",
             "applicationConfig":{
@@ -100,7 +100,7 @@
         },
         {
             "NOTE": "Background traffic",
-            "appName": "TraceApplication",
+            "appName": "DcbTrafficGenApplication",
             "nodes": "all",
             "protocolGroup": "RoCEv2",
             "applicationConfig":{
@@ -121,7 +121,7 @@
         },
         {
             "NOTE": "Recevier side applciation",
-            "appName": "TraceApplication",
+            "appName": "DcbTrafficGenApplication",
             "nodes": "[4:]",
             "protocolGroup": "RoCEv2",
             "applicationConfig":{

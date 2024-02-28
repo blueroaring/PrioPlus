@@ -386,10 +386,10 @@ class RoCEv2SocketState : public Object
     uint64_t m_cwnd; //!< unit: bytes
     DcbTxBuffer* m_txBuffer;
     DataRate* m_deviceRate;
-    Time m_baseRtt; //!< Base RTT. Note that this is auto set by DcbTraceApplication. If not, it
+    Time m_baseRtt; //!< Base RTT. Note that this is auto set by DcbDcbTrafficGenApplication. If not, it
                     //!< should be set manually.
     Time m_baseOneWayDelay; //!< Base one way delay. Note that this is auto set by
-                            //!< DcbTraceApplication. If not, it should be set manually.
+                            //!< DcbDcbTrafficGenApplication. If not, it should be set manually.
     uint32_t m_packetSize;  //!< MSS + headersize
     uint32_t m_mss;         //!< MSS
 

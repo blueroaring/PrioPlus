@@ -297,7 +297,7 @@ UdpBasedSocket::DoSend(Ptr<Packet> p)
         //   2. manually set TTL
         //   3. specifying don't fragment
         //   4. broadcast
-        if (ipv4->GetRoutingProtocol() != 0)
+        if (ipv4->GetRoutingProtocol() != nullptr)
         {
             Ipv4Address daddr = Ipv4Address::ConvertFrom(m_defaultAddress);
             Ipv4Header header;
@@ -308,7 +308,7 @@ UdpBasedSocket::DoSend(Ptr<Packet> p)
             Ptr<NetDevice> oif = m_boundnetdevice; // specify non-zero if bound to a specific device
             // TBD-- we could cache the route and just check its validity
             route = ipv4->GetRoutingProtocol()->RouteOutput(p, header, oif, errno_);
-            if (route != 0)
+            if (route != nullptr)
             {
                 NS_LOG_LOGIC("Route exists");
 

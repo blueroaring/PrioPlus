@@ -17,7 +17,7 @@
  * Author: Pavinberg <pavin0702@gmail.com>
  */
 
-#include "dcb-trace-application.h"
+#include "dcb-traffic-gen-application.h"
 
 #include "dcb-net-device.h"
 #include "rocev2-dcqcn.h"
@@ -54,129 +54,129 @@
 namespace ns3
 {
 
-NS_LOG_COMPONENT_DEFINE("TraceApplication");
-NS_OBJECT_ENSURE_REGISTERED(TraceApplication);
+NS_LOG_COMPONENT_DEFINE("DcbTrafficGenApplication");
+NS_OBJECT_ENSURE_REGISTERED(DcbTrafficGenApplication);
 
 // Define static variables
-std::vector<Time> TraceApplication::m_recoveryInterval;
-std::vector<std::set<uint32_t>> TraceApplication::m_recoveryIntervalNodes;
-bool TraceApplication::m_isRecoveryInit = true;
+std::vector<Time> DcbTrafficGenApplication::m_recoveryInterval;
+std::vector<std::set<uint32_t>> DcbTrafficGenApplication::m_recoveryIntervalNodes;
+bool DcbTrafficGenApplication::m_isRecoveryInit = true;
 
-std::vector<bool> TraceApplication::m_bgFlowFinished;
+std::vector<bool> DcbTrafficGenApplication::m_bgFlowFinished;
 
-std::vector<Time> TraceApplication::m_fileRequestInterval;
-std::vector<std::set<uint32_t>> TraceApplication::m_fileRequestIntervalNodes;
-std::vector<uint32_t> TraceApplication::m_fileRequestIntervalDest;
-bool TraceApplication::m_isFileRequestInit = true;
+std::vector<Time> DcbTrafficGenApplication::m_fileRequestInterval;
+std::vector<std::set<uint32_t>> DcbTrafficGenApplication::m_fileRequestIntervalNodes;
+std::vector<uint32_t> DcbTrafficGenApplication::m_fileRequestIntervalDest;
+bool DcbTrafficGenApplication::m_isFileRequestInit = true;
 
-std::vector<std::vector<Time>> TraceApplication::m_ringIntervals;
-bool TraceApplication::m_isRingInit = true;
+std::vector<std::vector<Time>> DcbTrafficGenApplication::m_ringIntervals;
+bool DcbTrafficGenApplication::m_isRingInit = true;
 
 TypeId
-TraceApplication::GetTypeId()
+DcbTrafficGenApplication::GetTypeId()
 {
     static TypeId tid =
-        TypeId("ns3::TraceApplication")
+        TypeId("ns3::DcbTrafficGenApplication")
             .SetParent<Application>()
             .SetGroupName("Dcb")
             // .AddAttribute ("Protocol",
             //                "The type of protocol to use. This should be "
             //                "a subclass of ns3::SocketFactory",
             //                TypeIdValue (UdpSocketFactory::GetTypeId ()),
-            //                MakeTypeIdAccessor (&TraceApplication::m_socketTid),
+            //                MakeTypeIdAccessor (&DcbTrafficGenApplication::m_socketTid),
             //                // This should check for SocketFactory as a parent
             //                MakeTypeIdChecker ())
             .AddAttribute("CongestionType",
                           "Socket' congestion control type.",
                           TypeIdValue(RoCEv2Dcqcn::GetTypeId()),
-                          MakeTypeIdAccessor(&TraceApplication::SetCongestionTypeId),
+                          MakeTypeIdAccessor(&DcbTrafficGenApplication::SetCongestionTypeId),
                           MakeTypeIdChecker())
             .AddAttribute("Interpolate",
                           "Enable interpolation from CDF",
                           BooleanValue(true),
-                          MakeBooleanAccessor(&TraceApplication::m_interpolate),
+                          MakeBooleanAccessor(&DcbTrafficGenApplication::m_interpolate),
                           MakeBooleanChecker())
             .AddAttribute("RecoveryNodeRatio",
                           "The ratio of recovery nodes",
                           DoubleValue(0.1),
-                          MakeDoubleAccessor(&TraceApplication::m_recoveryNodeRatio),
+                          MakeDoubleAccessor(&DcbTrafficGenApplication::m_recoveryNodeRatio),
                           MakeDoubleChecker<double>())
             .AddAttribute("FileRequestNodesNum",
                           "The number of file request nodes",
                           UintegerValue(1),
-                          MakeUintegerAccessor(&TraceApplication::m_fileRequestNodesNum),
+                          MakeUintegerAccessor(&DcbTrafficGenApplication::m_fileRequestNodesNum),
                           MakeUintegerChecker<uint32_t>())
             .AddAttribute("RingGroupNodesNum",
                           "The number of ring group nodes",
                           UintegerValue(1),
-                          MakeUintegerAccessor(&TraceApplication::m_ringGroupNodesNum),
+                          MakeUintegerAccessor(&DcbTrafficGenApplication::m_ringGroupNodesNum),
                           MakeUintegerChecker<uint32_t>())
             .AddAttribute("TrafficPattern",
                           "The traffic pattern",
-                          EnumValue(TraceApplication::TrafficPattern::CDF),
-                          MakeEnumAccessor(&TraceApplication::m_trafficPattern),
-                          MakeEnumChecker(TraceApplication::TrafficPattern::CDF,
+                          EnumValue(DcbTrafficGenApplication::TrafficPattern::CDF),
+                          MakeEnumAccessor(&DcbTrafficGenApplication::m_trafficPattern),
+                          MakeEnumChecker(DcbTrafficGenApplication::TrafficPattern::CDF,
                                           "CDF",
-                                          TraceApplication::TrafficPattern::SEND_ONCE,
+                                          DcbTrafficGenApplication::TrafficPattern::SEND_ONCE,
                                           "SendOnce",
-                                          TraceApplication::TrafficPattern::FIXED_SIZE,
+                                          DcbTrafficGenApplication::TrafficPattern::FIXED_SIZE,
                                           "FixedSize",
-                                          TraceApplication::TrafficPattern::RECOVERY,
+                                          DcbTrafficGenApplication::TrafficPattern::RECOVERY,
                                           "Recovery",
-                                          TraceApplication::TrafficPattern::FILE_REQUEST,
+                                          DcbTrafficGenApplication::TrafficPattern::FILE_REQUEST,
                                           "FileRequest",
-                                          TraceApplication::TrafficPattern::RING,
+                                          DcbTrafficGenApplication::TrafficPattern::RING,
                                           "Ring",
-                                          TraceApplication::TrafficPattern::CHECKPOINT,
+                                          DcbTrafficGenApplication::TrafficPattern::CHECKPOINT,
                                           "Checkpoint"))
             .AddAttribute("TrafficSizeBytes",
                           "The size of the traffic, average size of CDF if it is use",
                           UintegerValue(0),
-                          MakeUintegerAccessor(&TraceApplication::m_trafficSize),
+                          MakeUintegerAccessor(&DcbTrafficGenApplication::m_trafficSize),
                           MakeUintegerChecker<uint32_t>())
             .AddAttribute("TrafficLoad",
                           "The load of the traffic",
                           DoubleValue(1.0),
-                          MakeDoubleAccessor(&TraceApplication::m_trafficLoad),
+                          MakeDoubleAccessor(&DcbTrafficGenApplication::m_trafficLoad),
                           MakeDoubleChecker<double>())
             .AddAttribute("TrafficType",
                           "The type of traffic",
-                          EnumValue(TraceApplication::TrafficType::NONE),
-                          MakeEnumAccessor(&TraceApplication::m_trafficType),
-                          MakeEnumChecker(TraceApplication::TrafficType::FOREGROUND,
+                          EnumValue(DcbTrafficGenApplication::TrafficType::NONE),
+                          MakeEnumAccessor(&DcbTrafficGenApplication::m_trafficType),
+                          MakeEnumChecker(DcbTrafficGenApplication::TrafficType::FOREGROUND,
                                           "Foreground",
-                                          TraceApplication::TrafficType::BACKGROUND,
+                                          DcbTrafficGenApplication::TrafficType::BACKGROUND,
                                           "Background",
-                                          TraceApplication::TrafficType::NONE,
+                                          DcbTrafficGenApplication::TrafficType::NONE,
                                           "None"))
             .AddAttribute("DestinationNode",
                           "The destination node index",
                           UintegerValue(0),
-                          MakeUintegerAccessor(&TraceApplication::m_destNode),
+                          MakeUintegerAccessor(&DcbTrafficGenApplication::m_destNode),
                           MakeUintegerChecker<uint32_t>())
             .AddAttribute("DestFixed",
                           "If the dest is fixed",
                           BooleanValue(false),
-                          MakeBooleanAccessor(&TraceApplication::m_isFixedDest),
+                          MakeBooleanAccessor(&DcbTrafficGenApplication::m_isFixedDest),
                           MakeBooleanChecker())
             .AddAttribute("SendEnabled",
                           "Enable sending",
                           BooleanValue(true),
-                          MakeBooleanAccessor(&TraceApplication::m_enableSend),
+                          MakeBooleanAccessor(&DcbTrafficGenApplication::m_enableSend),
                           MakeBooleanChecker())
             .AddAttribute("FlowType",
                           "The type of flow",
                           StringValue(""),
-                          MakeStringAccessor(&TraceApplication::SetFlowType),
+                          MakeStringAccessor(&DcbTrafficGenApplication::SetFlowType),
                           MakeStringChecker())
             .AddTraceSource("FlowComplete",
                             "Trace when a flow completes.",
-                            MakeTraceSourceAccessor(&TraceApplication::m_flowCompleteTrace),
+                            MakeTraceSourceAccessor(&DcbTrafficGenApplication::m_flowCompleteTrace),
                             "ns3::TracerExtension::FlowTracedCallback");
     return tid;
 }
 
-TraceApplication::TraceApplication(Ptr<DcTopology> topology, uint32_t nodeIndex)
+DcbTrafficGenApplication::DcbTrafficGenApplication(Ptr<DcTopology> topology, uint32_t nodeIndex)
     : m_totBytes(0),
       m_headerSize(8 + 20 + 14 + 2),
       m_enableSend(true),
@@ -196,7 +196,7 @@ TraceApplication::TraceApplication(Ptr<DcTopology> topology, uint32_t nodeIndex)
 }
 
 void
-TraceApplication::InitForRngs()
+DcbTrafficGenApplication::InitForRngs()
 {
     NS_LOG_FUNCTION(this);
 
@@ -209,19 +209,19 @@ TraceApplication::InitForRngs()
     }
 }
 
-TraceApplication::~TraceApplication()
+DcbTrafficGenApplication::~DcbTrafficGenApplication()
 {
     NS_LOG_FUNCTION(this);
 }
 
 // int64_t
-// TraceApplication::AssignStreams (int64_t stream)
+// DcbTrafficGenApplication::AssignStreams (int64_t stream)
 // {
 //   NS_LOG_FUNCTION (this << stream);
 // }
 
 void
-TraceApplication::SetProtocolGroup(ProtocolGroup protoGroup)
+DcbTrafficGenApplication::SetProtocolGroup(ProtocolGroup protoGroup)
 {
     m_protoGroup = protoGroup;
     if (protoGroup == ProtocolGroup::TCP)
@@ -233,13 +233,13 @@ TraceApplication::SetProtocolGroup(ProtocolGroup protoGroup)
 }
 
 void
-TraceApplication::SetInnerUdpProtocol(std::string innerTid)
+DcbTrafficGenApplication::SetInnerUdpProtocol(std::string innerTid)
 {
     SetInnerUdpProtocol(TypeId(innerTid));
 }
 
 void
-TraceApplication::SetInnerUdpProtocol(TypeId innerTid)
+DcbTrafficGenApplication::SetInnerUdpProtocol(TypeId innerTid)
 {
     NS_LOG_FUNCTION(this << innerTid);
     if (m_protoGroup != ProtocolGroup::RoCEv2)
@@ -272,7 +272,7 @@ TraceApplication::SetInnerUdpProtocol(TypeId innerTid)
 }
 
 void
-TraceApplication::InitSocketLineRate()
+DcbTrafficGenApplication::InitSocketLineRate()
 {
     if (DynamicCast<DcbNetDevice>(GetOutboundNetDevice()) != nullptr)
     {
@@ -291,7 +291,7 @@ TraceApplication::InitSocketLineRate()
 }
 
 void
-TraceApplication::SetupReceiverSocket()
+DcbTrafficGenApplication::SetupReceiverSocket()
 {
     NS_LOG_FUNCTION(this);
     if (m_protoGroup == ProtocolGroup::RoCEv2)
@@ -309,7 +309,7 @@ TraceApplication::SetupReceiverSocket()
             roceSocket->ShutdownSend();
             // Set stop time to max to avoid receiver socket close
             roceSocket->SetStopTime(Time::Max());
-            roceSocket->SetRecvCallback(MakeCallback(&TraceApplication::HandleRead, this));
+            roceSocket->SetRecvCallback(MakeCallback(&DcbTrafficGenApplication::HandleRead, this));
         }
     }
     // TCP
@@ -323,12 +323,12 @@ TraceApplication::SetupReceiverSocket()
         m_receiverSocket->Listen();
         m_receiverSocket->ShutdownSend();
         // Set stop time to max to avoid receiver socket close
-        m_receiverSocket->SetRecvCallback(MakeCallback(&TraceApplication::HandleRead, this));
+        m_receiverSocket->SetRecvCallback(MakeCallback(&DcbTrafficGenApplication::HandleRead, this));
         m_receiverSocket->SetAcceptCallback(MakeNullCallback<bool, Ptr<Socket>, const Address&>(),
-                                            MakeCallback(&TraceApplication::HandleTcpAccept, this));
+                                            MakeCallback(&DcbTrafficGenApplication::HandleTcpAccept, this));
         m_receiverSocket->SetCloseCallbacks(
-            MakeCallback(&TraceApplication::HandleTcpPeerClose, this),
-            MakeCallback(&TraceApplication::HandleTcpPeerError, this));
+            MakeCallback(&DcbTrafficGenApplication::HandleTcpPeerClose, this),
+            MakeCallback(&DcbTrafficGenApplication::HandleTcpPeerError, this));
     }
     else
     {
@@ -337,7 +337,7 @@ TraceApplication::SetupReceiverSocket()
 }
 
 void
-TraceApplication::CalcTrafficParameters()
+DcbTrafficGenApplication::CalcTrafficParameters()
 {
     // Calculate the mean interval of the flow
     double flowMeanInterval =
@@ -387,7 +387,7 @@ TraceApplication::CalcTrafficParameters()
 }
 
 void
-TraceApplication::GenerateTraffic()
+DcbTrafficGenApplication::GenerateTraffic()
 {
     // Sanity check
     NS_ASSERT_MSG(
@@ -402,7 +402,7 @@ TraceApplication::GenerateTraffic()
         {
             // Schedule the next foreground flow
             Simulator::Schedule(GetNextFlowArriveInterval(),
-                                &TraceApplication::ScheduleAForegroundFlow,
+                                &DcbTrafficGenApplication::ScheduleAForegroundFlow,
                                 this);
         }
         else
@@ -492,7 +492,7 @@ TraceApplication::GenerateTraffic()
 }
 
 void
-TraceApplication::StartApplication(void)
+DcbTrafficGenApplication::StartApplication(void)
 {
     NS_LOG_FUNCTION(this);
 
@@ -510,13 +510,13 @@ TraceApplication::StartApplication(void)
 }
 
 void
-TraceApplication::StopApplication(void)
+DcbTrafficGenApplication::StopApplication(void)
 {
     NS_LOG_FUNCTION(this);
 }
 
 uint32_t
-TraceApplication::GetDestinationNode() const
+DcbTrafficGenApplication::GetDestinationNode() const
 {
     NS_LOG_FUNCTION(this);
 
@@ -545,7 +545,7 @@ TraceApplication::GetDestinationNode() const
 }
 
 InetSocketAddress
-TraceApplication::NodeIndexToAddr(uint32_t destNode) const
+DcbTrafficGenApplication::NodeIndexToAddr(uint32_t destNode) const
 {
     NS_LOG_FUNCTION(this);
 
@@ -570,7 +570,7 @@ TraceApplication::NodeIndexToAddr(uint32_t destNode) const
 }
 
 Ptr<Socket>
-TraceApplication::CreateNewSocket(uint32_t destNode)
+DcbTrafficGenApplication::CreateNewSocket(uint32_t destNode)
 {
     NS_LOG_FUNCTION(this);
     InetSocketAddress destAddr = NodeIndexToAddr(destNode);
@@ -578,7 +578,7 @@ TraceApplication::CreateNewSocket(uint32_t destNode)
 }
 
 Ptr<Socket>
-TraceApplication::CreateNewSocket(InetSocketAddress destAddr)
+DcbTrafficGenApplication::CreateNewSocket(InetSocketAddress destAddr)
 {
     NS_LOG_FUNCTION(this);
 
@@ -622,7 +622,7 @@ TraceApplication::CreateNewSocket(InetSocketAddress destAddr)
         if (udpBasedSocket)
         {
             udpBasedSocket->SetFlowCompleteCallback(
-                MakeCallback(&TraceApplication::FlowCompletes, this));
+                MakeCallback(&DcbTrafficGenApplication::FlowCompletes, this));
             Ptr<RoCEv2Socket> roceSocket = DynamicCast<RoCEv2Socket>(udpBasedSocket);
             if (roceSocket)
             {
@@ -660,15 +660,15 @@ TraceApplication::CreateNewSocket(InetSocketAddress destAddr)
     }
 
     socket->SetAllowBroadcast(false);
-    // m_socket->SetConnectCallback (MakeCallback (&TraceApplication::ConnectionSucceeded, this),
-    //                               MakeCallback (&TraceApplication::ConnectionFailed, this));
-    socket->SetRecvCallback(MakeCallback(&TraceApplication::HandleRead, this));
+    // m_socket->SetConnectCallback (MakeCallback (&DcbTrafficGenApplication::ConnectionSucceeded, this),
+    //                               MakeCallback (&DcbTrafficGenApplication::ConnectionFailed, this));
+    socket->SetRecvCallback(MakeCallback(&DcbTrafficGenApplication::HandleRead, this));
 
     return socket;
 }
 
 void
-TraceApplication::ScheduleNextFlow(const Time& startTime)
+DcbTrafficGenApplication::ScheduleNextFlow(const Time& startTime)
 {
     uint32_t destNode = 0;
     Ptr<Socket> socket;
@@ -683,7 +683,7 @@ TraceApplication::ScheduleNextFlow(const Time& startTime)
     SetFlowIdentifier(flow, socket);
     m_flows.emplace(socket, flow); // used when flow completes
     Simulator::Schedule(startTime - Simulator::Now(),
-                        &TraceApplication::SendNextPacket,
+                        &DcbTrafficGenApplication::SendNextPacket,
                         this,
                         flow);
 
@@ -695,7 +695,7 @@ TraceApplication::ScheduleNextFlow(const Time& startTime)
 }
 
 void
-TraceApplication::CreateRecovery()
+DcbTrafficGenApplication::CreateRecovery()
 {
     // Check m_isRecovryInit in case
     if (!m_isRecoveryInit)
@@ -726,7 +726,7 @@ TraceApplication::CreateRecovery()
 }
 
 void
-TraceApplication::CreateFileRequest()
+DcbTrafficGenApplication::CreateFileRequest()
 {
     // Check m_isFileRequestInit in case
     if (!m_isFileRequestInit)
@@ -760,7 +760,7 @@ TraceApplication::CreateFileRequest()
 }
 
 void
-TraceApplication::CreateRing()
+DcbTrafficGenApplication::CreateRing()
 {
     if (!m_isRingInit)
     {
@@ -785,7 +785,7 @@ TraceApplication::CreateRing()
 }
 
 void
-TraceApplication::SchedulCheckpointFlow()
+DcbTrafficGenApplication::SchedulCheckpointFlow()
 {
     NS_LOG_FUNCTION(this);
     // Set the dest to the checkpoint node, ie, the neighbor of the node
@@ -797,7 +797,7 @@ TraceApplication::SchedulCheckpointFlow()
 }
 
 void
-TraceApplication::ScheduleAForegroundFlow()
+DcbTrafficGenApplication::ScheduleAForegroundFlow()
 {
     NS_LOG_FUNCTION(this);
     // Stop condition: all the background flows are finished, ie, m_bgFlowFinished is all true
@@ -811,12 +811,12 @@ TraceApplication::ScheduleAForegroundFlow()
 
     // Schedule the next foreground flow
     Simulator::Schedule(GetNextFlowArriveInterval(),
-                        &TraceApplication::ScheduleAForegroundFlow,
+                        &DcbTrafficGenApplication::ScheduleAForegroundFlow,
                         this);
 }
 
 void
-TraceApplication::SendNextPacket(Flow* flow)
+DcbTrafficGenApplication::SendNextPacket(Flow* flow)
 {
     // SetReady for RoCEv2Socket, this will start the congestion control
     // Note that for rocev2Socket, this function will only be called once
@@ -846,7 +846,7 @@ TraceApplication::SendNextPacket(Flow* flow)
             {
                 // For UDP socket, pacing the sending at application layer
                 Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_dataHeaderSize);
-                Simulator::Schedule(txTime, &TraceApplication::SendNextPacket, this, flow);
+                Simulator::Schedule(txTime, &DcbTrafficGenApplication::SendNextPacket, this, flow);
                 return;
             }
         }
@@ -854,7 +854,7 @@ TraceApplication::SendNextPacket(Flow* flow)
         {
             // Typically this is because TCP socket's txBuffer is full, retry later.
             Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_dataHeaderSize);
-            Simulator::Schedule(txTime, &TraceApplication::SendNextPacket, this, flow);
+            Simulator::Schedule(txTime, &DcbTrafficGenApplication::SendNextPacket, this, flow);
             return;
         }
     }
@@ -868,7 +868,7 @@ TraceApplication::SendNextPacket(Flow* flow)
 }
 
 void
-TraceApplication::SetFlowMeanArriveInterval(double interval)
+DcbTrafficGenApplication::SetFlowMeanArriveInterval(double interval)
 {
     NS_LOG_FUNCTION(this << interval);
     if (m_isFixedFlowArrive)
@@ -884,7 +884,7 @@ TraceApplication::SetFlowMeanArriveInterval(double interval)
 }
 
 void
-TraceApplication::SetFlowCdf(const TraceCdf& cdf)
+DcbTrafficGenApplication::SetFlowCdf(const TraceCdf& cdf)
 {
     NS_LOG_FUNCTION(this);
 
@@ -906,7 +906,7 @@ TraceApplication::SetFlowCdf(const TraceCdf& cdf)
 }
 
 inline Time
-TraceApplication::GetNextFlowArriveInterval() const
+DcbTrafficGenApplication::GetNextFlowArriveInterval() const
 {
     if (m_isFixedFlowArrive)
     {
@@ -923,7 +923,7 @@ TraceApplication::GetNextFlowArriveInterval() const
 }
 
 inline uint32_t
-TraceApplication::GetNextFlowSize() const
+DcbTrafficGenApplication::GetNextFlowSize() const
 {
     switch (m_trafficPattern)
     {
@@ -936,14 +936,14 @@ TraceApplication::GetNextFlowSize() const
 }
 
 void
-TraceApplication::SetEcnEnabled(bool enabled)
+DcbTrafficGenApplication::SetEcnEnabled(bool enabled)
 {
     NS_LOG_FUNCTION(this << enabled);
     m_ecnEnabled = enabled;
 }
 
 void
-TraceApplication::SetCcOpsAttributes(
+DcbTrafficGenApplication::SetCcOpsAttributes(
     const std::vector<RoCEv2CongestionOps::CcOpsConfigPair_t>& configs)
 {
     NS_LOG_FUNCTION(this);
@@ -951,19 +951,19 @@ TraceApplication::SetCcOpsAttributes(
 }
 
 void
-TraceApplication::ConnectionSucceeded(Ptr<Socket> socket)
+DcbTrafficGenApplication::ConnectionSucceeded(Ptr<Socket> socket)
 {
     NS_LOG_FUNCTION(this << socket);
 }
 
 void
-TraceApplication::ConnectionFailed(Ptr<Socket> socket)
+DcbTrafficGenApplication::ConnectionFailed(Ptr<Socket> socket)
 {
     NS_LOG_FUNCTION(this << socket);
 }
 
 void
-TraceApplication::HandleRead(Ptr<Socket> socket)
+DcbTrafficGenApplication::HandleRead(Ptr<Socket> socket)
 {
     NS_LOG_FUNCTION(this << socket);
     Ptr<Packet> packet;
@@ -973,14 +973,14 @@ TraceApplication::HandleRead(Ptr<Socket> socket)
     {
         if (InetSocketAddress::IsMatchingType(from))
         {
-            NS_LOG_LOGIC("TraceApplication: At time "
+            NS_LOG_LOGIC("DcbTrafficGenApplication: At time "
                          << Simulator::Now().As(Time::S) << " client received " << packet->GetSize()
                          << " bytes from " << InetSocketAddress::ConvertFrom(from).GetIpv4()
                          << " port " << InetSocketAddress::ConvertFrom(from).GetPort());
         }
         else if (Inet6SocketAddress::IsMatchingType(from))
         {
-            NS_LOG_LOGIC("TraceApplication: At time "
+            NS_LOG_LOGIC("DcbTrafficGenApplication: At time "
                          << Simulator::Now().As(Time::S) << " client received " << packet->GetSize()
                          << " bytes from " << Inet6SocketAddress::ConvertFrom(from).GetIpv6()
                          << " port " << Inet6SocketAddress::ConvertFrom(from).GetPort());
@@ -992,7 +992,7 @@ TraceApplication::HandleRead(Ptr<Socket> socket)
 }
 
 void
-TraceApplication::FlowCompletes(Ptr<UdpBasedSocket> socket)
+DcbTrafficGenApplication::FlowCompletes(Ptr<UdpBasedSocket> socket)
 {
     auto p = m_flows.find(socket);
     if (p == m_flows.end())
@@ -1025,43 +1025,43 @@ TraceApplication::FlowCompletes(Ptr<UdpBasedSocket> socket)
 }
 
 void
-TraceApplication::SetSendEnabled(bool enabled)
+DcbTrafficGenApplication::SetSendEnabled(bool enabled)
 {
     m_enableSend = enabled;
 }
 
 void
-TraceApplication::SetReceiveEnabled(bool enabled)
+DcbTrafficGenApplication::SetReceiveEnabled(bool enabled)
 {
     m_enableReceive = enabled;
 }
 
 void
-TraceApplication::SetSocketAttributes(
-    const std::vector<TraceApplication::ConfigEntry_t>& socketAttributes)
+DcbTrafficGenApplication::SetSocketAttributes(
+    const std::vector<DcbTrafficGenApplication::ConfigEntry_t>& socketAttributes)
 {
     m_socketAttributes = socketAttributes;
 }
 
 // TODO TCP callback Handler
 void
-TraceApplication::HandleTcpAccept(Ptr<Socket> socket, const Address& from)
+DcbTrafficGenApplication::HandleTcpAccept(Ptr<Socket> socket, const Address& from)
 {
 }
 
 void
-TraceApplication::HandleTcpPeerClose(Ptr<Socket> socket)
+DcbTrafficGenApplication::HandleTcpPeerClose(Ptr<Socket> socket)
 {
     // Here to calculate the fct
 }
 
 void
-TraceApplication::HandleTcpPeerError(Ptr<Socket> socket)
+DcbTrafficGenApplication::HandleTcpPeerError(Ptr<Socket> socket)
 {
 }
 
 Ptr<NetDevice>
-TraceApplication::GetOutboundNetDevice()
+DcbTrafficGenApplication::GetOutboundNetDevice()
 {
     // We do not use GetNode ()->GetDevice (0) as it is inavlid when the application is created
     Ptr<NetDevice> boundDev = m_node->GetDevice(0);
@@ -1074,7 +1074,7 @@ TraceApplication::GetOutboundNetDevice()
 }
 
 void
-TraceApplication::SetFlowIdentifier(Flow* flow, Ptr<Socket> socket)
+DcbTrafficGenApplication::SetFlowIdentifier(Flow* flow, Ptr<Socket> socket)
 {
     if (m_protoGroup == ProtocolGroup::RoCEv2)
     {
@@ -1099,18 +1099,18 @@ TraceApplication::SetFlowIdentifier(Flow* flow, Ptr<Socket> socket)
 }
 
 void
-TraceApplication::SetFlowType(std::string flowType)
+DcbTrafficGenApplication::SetFlowType(std::string flowType)
 {
     m_stats->appFlowType = flowType;
 }
 
 void
-TraceApplication::SetCongestionTypeId(TypeId congestionTypeId)
+DcbTrafficGenApplication::SetCongestionTypeId(TypeId congestionTypeId)
 {
     m_congestionTypeId = congestionTypeId;
 }
 
-TraceApplication::Stats::Stats()
+DcbTrafficGenApplication::Stats::Stats()
     : isCollected(false),
       nTotalSizePkts(0),
       nTotalSizeBytes(0),
@@ -1135,8 +1135,8 @@ TraceApplication::Stats::Stats()
         bDetailedRetxStats = false;
 }
 
-std::shared_ptr<TraceApplication::Stats>
-TraceApplication::GetStats() const
+std::shared_ptr<DcbTrafficGenApplication::Stats>
+DcbTrafficGenApplication::GetStats() const
 {
     m_stats->CollectAndCheck(m_flows);
     if (m_stats->appFlowType.empty())
@@ -1158,7 +1158,7 @@ TraceApplication::GetStats() const
 }
 
 void
-TraceApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
+DcbTrafficGenApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
 {
     // Avoid collecting stats twice
     if (isCollected)

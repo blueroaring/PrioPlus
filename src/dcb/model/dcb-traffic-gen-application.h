@@ -17,8 +17,8 @@
  * Author: Pavinberg <pavin0702@gmail.com>
  */
 
-#ifndef DCB_TRACE_APPLICATION_H
-#define DCB_TRACE_APPLICATION_H
+#ifndef DCB_TRAFFIC_GEN_APPLICATION_H
+#define DCB_TRAFFIC_GEN_APPLICATION_H
 
 #include "dcb-net-device.h"
 #include "rocev2-socket.h"
@@ -47,7 +47,7 @@ class Socket;
  * \ingroup dcb
  * \brief A application that generates traffic and sends it to a destination.
  */
-class TraceApplication : public Application
+class DcbTrafficGenApplication : public Application
 {
   public:
     /**
@@ -60,7 +60,7 @@ class TraceApplication : public Application
      * \brief Create an application in topology node nodeIndex.
      * The application will randomly choose a node as destination and send flows.
      */
-    // TraceApplication (Ptr<DcTopology> topology, uint32_t nodeIndex);
+    // DcbTrafficGenApplication (Ptr<DcTopology> topology, uint32_t nodeIndex);
 
     /**
      * \brief Create an application in topology node nodeIndex destined to destIndex.
@@ -68,8 +68,8 @@ class TraceApplication : public Application
      * * If the destIndex is negative, the application will randomly choose a node as the
      * destination.
      */
-    TraceApplication(Ptr<DcTopology> topology, uint32_t nodeIndex);
-    virtual ~TraceApplication();
+    DcbTrafficGenApplication(Ptr<DcTopology> topology, uint32_t nodeIndex);
+    virtual ~DcbTrafficGenApplication();
 
     enum ProtocolGroup
     {
@@ -439,8 +439,8 @@ class TraceApplication : public Application
 
     TracedCallback<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, Time, Time>
         m_flowCompleteTrace;
-}; // class TraceApplication
+}; // class DcbTrafficGenApplication
 
 } // namespace ns3
 
-#endif // DCB_TRACE_APPLICATION_H
+#endif // DCB_TRAFFIC_GEN_APPLICATION_H

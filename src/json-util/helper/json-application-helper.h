@@ -22,8 +22,8 @@
 #include "ns3/applications-module.h"
 #include "ns3/core-module.h"
 #include "ns3/dc-topology.h"
-#include "ns3/dcb-trace-application-helper.h"
-#include "ns3/dcb-trace-application.h"
+#include "ns3/dcb-traffic-gen-application-helper.h"
+#include "ns3/dcb-traffic-gen-application.h"
 #include "ns3/error-model.h"
 #include "ns3/flow-identifier.h"
 #include "ns3/global-route-manager.h"
@@ -46,13 +46,13 @@ namespace ns3
 namespace json_util
 {
 
-std::shared_ptr<TraceApplicationHelper> ConstructTraceAppHelper(const boost::json::object& conf,
+std::shared_ptr<DcbTrafficGenApplicationHelper> ConstructTraceAppHelper(const boost::json::object& conf,
                                                                 Ptr<DcTopology> topology);
 
 ApplicationContainer InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology);
 
 void SetGroupAttributes(const boost::json::object& gConf,
-                        std::shared_ptr<TraceApplicationHelper> helper,
+                        std::shared_ptr<DcbTrafficGenApplicationHelper> helper,
                         uint32_t groupSize,
                         uint32_t idx);
 
@@ -63,7 +63,7 @@ void SetGroupAttributes(const boost::json::object& gConf,
  *
  * \param conf The CDF config.
  */
-std::unique_ptr<TraceApplication::TraceCdf> ConstructCdf(const boost::json::object& conf);
+std::unique_ptr<DcbTrafficGenApplication::TraceCdf> ConstructCdf(const boost::json::object& conf);
 
 /**
  * \brief Get a set containing a specific number of random hosts.

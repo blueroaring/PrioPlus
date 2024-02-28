@@ -23,4 +23,4 @@ When running large experiments, it is recommended to configure with `-d release`
 
 ### Run demos
 
-You can run all the demos by executing `bash config/demos/run-all.sh` in the project's root directory.
+You can run all the demos by executing `bash config/demos/run-all.sh` in the project's root directory. Generally, all the demos will be finished in 2 mins under debug mode.

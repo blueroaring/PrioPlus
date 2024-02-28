@@ -5,7 +5,7 @@ build_lib(
       helper/dcb-host-stack-helper.cc
 	  helper/dcb-switch-stack-helper.cc
 	  helper/dcb-fc-helper.cc
-	  helper/dcb-trace-application-helper.cc
+	  helper/dcb-traffic-gen-application-helper.cc
 	  helper/csv-writer.cc
 	  helper/tracer-extension.cc
 	  model/dcb-traffic-control.cc
@@ -14,7 +14,7 @@ build_lib(
 	  model/pausable-queue-disc.cc
 	  model/fifo-queue-disc-ecn.cc
 	  model/dcb-traffic-control.cc
-	  model/dcb-trace-application.cc
+	  model/dcb-traffic-gen-application.cc
 	  model/real-time-application.cc
 	  model/dcb-flow-control-port.cc
 	  model/dcb-flow-control-mmu-queue.cc
@@ -40,7 +40,7 @@ build_lib(
       helper/dcb-host-stack-helper.h
 	  helper/dcb-switch-stack-helper.h
 	  helper/dcb-fc-helper.h
-	  helper/dcb-trace-application-helper.h
+	  helper/dcb-traffic-gen-application-helper.h
 	  helper/csv-writer.h
 	  helper/tracer-extension.h
 	  model/dcb-traffic-control.h
@@ -48,7 +48,7 @@ build_lib(
 	  model/dcb-channel.h
 	  model/pausable-queue-disc.h
 	  model/fifo-queue-disc-ecn.h
-	  model/dcb-trace-application.h
+	  model/dcb-traffic-gen-application.h
 	  model/real-time-application.h
 	  model/dcb-flow-control-port.h
 	  model/dcb-flow-control-mmu-queue.h

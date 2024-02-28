@@ -153,7 +153,7 @@ ConstructAppStatsObj(ApplicationContainer& apps)
 
     for (uint32_t i = 0; i < apps.GetN(); ++i)
     {
-        Ptr<TraceApplication> app = DynamicCast<TraceApplication>(apps.Get(i));
+        Ptr<DcbTrafficGenApplication> app = DynamicCast<DcbTrafficGenApplication>(apps.Get(i));
         if (app == nullptr)
             continue;
         auto appStats = app->GetStats();
@@ -204,7 +204,7 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
 {
     for (uint32_t i = 0; i < apps.GetN(); ++i)
     {
-        Ptr<TraceApplication> app = DynamicCast<TraceApplication>(apps.Get(i));
+        Ptr<DcbTrafficGenApplication> app = DynamicCast<DcbTrafficGenApplication>(apps.Get(i));
         if (app == nullptr)
             continue;
         auto appStats = app->GetStats();

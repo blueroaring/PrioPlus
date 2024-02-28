@@ -141,7 +141,7 @@ ConfigTraceFCT(Protocol protocol, std::string fileName)
 }
 
 void
-RegisterTraceFCT(Ptr<TraceApplication> app)
+RegisterTraceFCT(Ptr<DcbTrafficGenApplication> app)
 {
     switch (fct_unit::protocol)
     {

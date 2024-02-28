@@ -42,19 +42,19 @@ namespace json_util
 /***** Utilities about application *****/
 typedef std::function<ApplicationContainer(const boost::json::object&, Ptr<DcTopology>)>
     AppInstallFunc;
-static ApplicationContainer InstallTraceApplication(const boost::json::object& appConfig,
+static ApplicationContainer InstallDcbTrafficGenApplication(const boost::json::object& appConfig,
                                                     Ptr<DcTopology> topology);
 
 static std::map<std::string, AppInstallFunc> appInstallMapper = {
-    {"TraceApplication", InstallTraceApplication},
+    {"DcbTrafficGenApplication", InstallDcbTrafficGenApplication},
     // {"PacketSink", ProtobufTopologyLoader::InstallPacketSink},
     // {"PreGeneratedApplication", ProtobufTopologyLoader::InstallPreGeneratedApplication}
 };
 
-static std::map<std::string, TraceApplication::ProtocolGroup> protocolGroupMapper = {
-    {"RAW_UDP", TraceApplication::ProtocolGroup::RAW_UDP},
-    {"TCP", TraceApplication::ProtocolGroup::TCP},
-    {"RoCEv2", TraceApplication::ProtocolGroup::RoCEv2},
+static std::map<std::string, DcbTrafficGenApplication::ProtocolGroup> protocolGroupMapper = {
+    {"RAW_UDP", DcbTrafficGenApplication::ProtocolGroup::RAW_UDP},
+    {"TCP", DcbTrafficGenApplication::ProtocolGroup::TCP},
+    {"RoCEv2", DcbTrafficGenApplication::ProtocolGroup::RoCEv2},
 };
 
 ApplicationContainer
@@ -81,13 +81,13 @@ InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology)
     return apps;
 }
 
-/***** Utilities about TraceApplication *****/
+/***** Utilities about DcbTrafficGenApplication *****/
 
-std::unique_ptr<std::vector<TraceApplicationHelper::ConfigEntry_t>>
+std::unique_ptr<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>>
 ConstructConfigVector(const boost::json::object& configObj)
 {
-    std::unique_ptr<std::vector<TraceApplicationHelper::ConfigEntry_t>> configVector =
-        std::make_unique<std::vector<TraceApplicationHelper::ConfigEntry_t>>();
+    std::unique_ptr<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>> configVector =
+        std::make_unique<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>>();
     for (auto kvPair : configObj)
     {
         std::string name = kvPair.key();
@@ -117,17 +117,17 @@ ConstructConfigVector(const boost::json::object& configObj)
     return configVector;
 }
 
-std::shared_ptr<TraceApplicationHelper>
+std::shared_ptr<DcbTrafficGenApplicationHelper>
 ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> topology)
 {
-    std::shared_ptr<TraceApplicationHelper> appHelper =
-        std::make_shared<TraceApplicationHelper>(topology);
+    std::shared_ptr<DcbTrafficGenApplicationHelper> appHelper =
+        std::make_shared<DcbTrafficGenApplicationHelper>(topology);
 
     // Set protocol group
     std::string sProtocolGroup =
         JsonGetStringOrRaise(appConfig,
                              "protocolGroup",
-                             "Using TraceApplication needs to specify \"protocolGroup\"");
+                             "Using DcbTrafficGenApplication needs to specify \"protocolGroup\"");
     auto pProtocolGroup = protocolGroupMapper.find(sProtocolGroup);
     if (pProtocolGroup == protocolGroupMapper.end())
     {
@@ -156,7 +156,7 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
     {
         boost::json::object localAppConfig =
             appConfig.find("applicationConfig")->value().as_object();
-        std::unique_ptr<std::vector<TraceApplicationHelper::ConfigEntry_t>> appConfigVector =
+        std::unique_ptr<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>> appConfigVector =
             ConstructConfigVector(localAppConfig);
         appHelper->SetAppAttributes(std::move(*appConfigVector));
     }
@@ -164,7 +164,7 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
     if (appConfig.find("socketConfig") != appConfig.end())
     {
         boost::json::object socketConfigObj = appConfig.find("socketConfig")->value().as_object();
-        std::unique_ptr<std::vector<TraceApplicationHelper::ConfigEntry_t>> socketConfigVector =
+        std::unique_ptr<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>> socketConfigVector =
             ConstructConfigVector(socketConfigObj);
         appHelper->SetSocketAttributes(std::move(*socketConfigVector));
     }
@@ -173,7 +173,7 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
     if (appConfig.find("congestionConfig") != appConfig.end())
     {
         boost::json::object ccConfig = appConfig.find("congestionConfig")->value().as_object();
-        std::unique_ptr<std::vector<TraceApplicationHelper::ConfigEntry_t>> ccConfigVector =
+        std::unique_ptr<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>> ccConfigVector =
             ConstructConfigVector(ccConfig);
         appHelper->SetCcAttributes(std::move(*ccConfigVector));
     }
@@ -182,7 +182,7 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
     Time startTime =
         Time(JsonGetStringOrRaise(appConfig,
                                   "startTime",
-                                  "Using TraceApplication needs to specify \"startTime\""));
+                                  "Using DcbTrafficGenApplication needs to specify \"startTime\""));
 
     // Get the stop time of the application, if not specified, set to 0
     Time stopTime = Time(0);
@@ -196,9 +196,9 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
 }
 
 static ApplicationContainer
-InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> topology)
+InstallDcbTrafficGenApplication(const boost::json::object& appConfig, Ptr<DcTopology> topology)
 {
-    std::shared_ptr<TraceApplicationHelper> appHelper =
+    std::shared_ptr<DcbTrafficGenApplicationHelper> appHelper =
         ConstructTraceAppHelper(appConfig, topology);
     ApplicationContainer apps;
 
@@ -206,7 +206,7 @@ InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> to
     // TODO We just assume that the application is installed on all the hosts
     if (appConfig.find("nodes") == appConfig.end())
     {
-        NS_FATAL_ERROR("Using TraceApplication needs to specify \"load\"");
+        NS_FATAL_ERROR("Using DcbTrafficGenApplication needs to specify \"load\"");
     }
     boost::json::string nodes = appConfig.find("nodes")->value().get_string().c_str();
     if (nodes == "all")
@@ -300,7 +300,7 @@ InstallTraceApplication(const boost::json::object& appConfig, Ptr<DcTopology> to
 
 void
 SetGroupAttributes(const boost::json::object& gConf,
-                   std::shared_ptr<TraceApplicationHelper> helper,
+                   std::shared_ptr<DcbTrafficGenApplicationHelper> helper,
                    uint32_t groupSize,
                    uint32_t idx)
 {
@@ -407,7 +407,7 @@ SetGroupAttributes(const boost::json::object& gConf,
 }
 
 /***** Utilities about CDF *****/
-std::unique_ptr<TraceApplication::TraceCdf>
+std::unique_ptr<DcbTrafficGenApplication::TraceCdf>
 ConstructCdf(const boost::json::object& conf)
 {
     std::string cdfFile = conf.find("cdfFile")->value().as_string().c_str();
@@ -418,17 +418,17 @@ ConstructCdf(const boost::json::object& conf)
     // If avgSize is specified, use it to scale the CDF
     if (avgSize != 0)
     {
-        return TraceApplicationHelper::ConstructCdfFromFile(cdfFile, avgSize);
+        return DcbTrafficGenApplicationHelper::ConstructCdfFromFile(cdfFile, avgSize);
     }
     // If scaleFactor is specified, use it to scale the CDF
     else if (scaleFactor != 0)
     {
-        return TraceApplicationHelper::ConstructCdfFromFile(cdfFile, scaleFactor);
+        return DcbTrafficGenApplicationHelper::ConstructCdfFromFile(cdfFile, scaleFactor);
     }
     // If neither is specified, use the CDF directly
     else
     {
-        return TraceApplicationHelper::ConstructCdfFromFile(cdfFile);
+        return DcbTrafficGenApplicationHelper::ConstructCdfFromFile(cdfFile);
     }
 }
 
