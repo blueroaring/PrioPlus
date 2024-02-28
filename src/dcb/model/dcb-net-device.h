@@ -155,6 +155,12 @@ class DcbNetDevice : public NetDevice
     void SetFcEnabled(bool enabled);
 
     /**
+     * \returns the address of the remote device connected to this device
+     * through the point to point channel.
+     */
+    Address GetRemote(void) const;
+
+    /**
      * \brief Assign operator
      *
      * The method is DISABLED.
@@ -203,12 +209,6 @@ class DcbNetDevice : public NetDevice
      * of sending a packet out on the channel.
      */
     void TransmitComplete(void);
-
-    /**
-     * \returns the address of the remote device connected to this device
-     * through the point to point channel.
-     */
-    Address GetRemote(void) const;
 
     /**
      * Set the Data Rate used for transmission of packets.  The data rate is

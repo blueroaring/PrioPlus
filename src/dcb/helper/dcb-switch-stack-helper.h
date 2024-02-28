@@ -88,20 +88,11 @@ class DcbSwitchStackHelper : public PcapHelperForIpv4,
      * Aggregate implementations of the ns3::Ipv4, ns3::Ipv6, ns3::Udp, and ns3::Tcp classes
      * onto the provided node.  This method will assert if called on a node that
      * already has an Ipv4 object aggregated to it.
-     *
-     * \param node The node on which to install the stack.
-     */
-    void Install(Ptr<Node> node) const;
-
-    /**
-     * Aggregate implementations of the ns3::Ipv4, ns3::Ipv6, ns3::Udp, and ns3::Tcp classes
-     * onto the provided node.  This method will assert if called on a node that
-     * already has an Ipv4 object aggregated to it.
      * This method will not install flow control protocols on the ports of the switch.
      *
      * \param node The node on which to install the stack.
      */
-    void InstallSwitchProtos(Ptr<Node> node) const;
+    void InstallSwitchProtos(Ptr<Node> node);
 
     /**
      * Install flow control protocols for the ports of this switch.
@@ -129,6 +120,8 @@ class DcbSwitchStackHelper : public PcapHelperForIpv4,
     void SetBufferSize(QueueSize bufSize);
 
     void SetFCEnabled(bool enable);
+
+    void SetPPfcEnabled(bool enable);
 
     /**
      * \brief Enable/disable IPv6 stack install.

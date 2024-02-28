@@ -17,30 +17,31 @@
  * Author: Pavinberg (pavin0702@gmail.com)
  */
 
-#ifndef TRACE_APPLICATION_HELPER_H
-#define TRACE_APPLICATION_HELPER_H
+#ifndef DCB_TRAFFIC_GEN_APPLICATION_HELPER_H
+#define DCB_TRAFFIC_GEN_APPLICATION_HELPER_H
 
 #include "ns3/application-container.h"
 #include "ns3/dc-topology.h"
 #include "ns3/dcb-net-device.h"
-#include "ns3/dcb-trace-application.h"
+#include "ns3/dcb-traffic-gen-application.h"
 #include "ns3/net-device.h"
 #include "ns3/object-factory.h"
+#include "ns3/string.h"
 
 namespace ns3
 {
 
 class DcbNetDevice;
 
-class TraceApplicationHelper
+class DcbTrafficGenApplicationHelper
 {
   public:
-    TraceApplicationHelper(Ptr<DcTopology> topology);
+    DcbTrafficGenApplicationHelper(Ptr<DcTopology> topology);
 
     ApplicationContainer Install(Ptr<Node> node);
 
-    void SetProtocolGroup(TraceApplication::ProtocolGroup protoGroup);
-    void SetCdf(std::unique_ptr<TraceApplication::TraceCdf> cdf);
+    void SetProtocolGroup(DcbTrafficGenApplication::ProtocolGroup protoGroup);
+    void SetCdf(std::unique_ptr<DcbTrafficGenApplication::TraceCdf> cdf);
     void SetLoad(Ptr<const DcbNetDevice> dev, double load);
     void SetLoad(DataRate rate, double load);
     /**
@@ -55,12 +56,20 @@ class TraceApplicationHelper
     void SetStaticFlowInterval(bool staticFlowInterval);
     void SetSendOnce(bool sendOnce);
     void SetStartAndStopTime(Time start, Time stop);
+    void SetStartTime(Time start);
     void SetRealTimeApp(bool realTimeApp);
+    void SetCongestionType(StringValue congestionType);
+    // Use move semantics to avoid copying the vector
+    typedef std::pair<std::string, Ptr<AttributeValue>> ConfigEntry_t;
+    void SetCcAttributes(std::vector<ConfigEntry_t>&& ccAttributes);
+    void SetCcAttribute(ConfigEntry_t ccAttribute);
+    void SetAppAttributes(std::vector<ConfigEntry_t>&& appAttributes);
+    void SetSocketAttributes(std::vector<ConfigEntry_t>&& socketAttributes);
 
     /**
      * \brief Create an application according to the configuration.
      */
-    Ptr<TraceApplication> CreateApplication(Ptr<Node> node);
+    Ptr<DcbTrafficGenApplication> CreateApplication(Ptr<Node> node);
 
     /**
      * Record an attribute to be set in each Application after it is is created.
@@ -118,11 +127,11 @@ class TraceApplicationHelper
      */
     Ptr<Application> InstallPriv(Ptr<Node> node);
 
-    static double CalculateCdfMeanSize(const TraceApplication::TraceCdf* const cdf);
+    static double CalculateCdfMeanSize(const DcbTrafficGenApplication::TraceCdf* const cdf);
 
     Ptr<DcTopology> m_topology;
-    TraceApplication::ProtocolGroup m_protoGroup;
-    std::unique_ptr<TraceApplication::TraceCdf> m_cdf;
+    DcbTrafficGenApplication::ProtocolGroup m_protoGroup;
+    std::unique_ptr<DcbTrafficGenApplication::TraceCdf> m_cdf;
     double m_flowMeanInterval;
     int32_t m_destNode;
     InetSocketAddress m_destAddr;
@@ -133,8 +142,15 @@ class TraceApplicationHelper
     Time m_startTime;
     Time m_stopTime;
     bool m_realTimeApp;
-}; // class TraceApplicationHelper
+    StringValue m_congestionType;
+    
+    // The attributes to be set to the ccOps
+    std::vector<ConfigEntry_t> m_ccAttributes;
+    // The attributes to be set to the application
+    std::vector<ConfigEntry_t> m_appAttributes;
+    std::vector<ConfigEntry_t> m_socketAttributes;
+}; // class DcbTrafficGenApplicationHelper
 
 } // namespace ns3
 
-#endif
+#endif // DCB_TRAFFIC_GEN_APPLICATION_HELPER_H

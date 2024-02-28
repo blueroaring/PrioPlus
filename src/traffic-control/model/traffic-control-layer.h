@@ -165,6 +165,13 @@ class TrafficControlLayer : public Object
     virtual Ptr<QueueDisc> GetRootQueueDiscOnDevice(Ptr<NetDevice> device) const;
 
     /**
+     * \brief This method is used to get the Node that the tarffic-control aggregated to.
+     * 
+     * \return The node this TrafficControlLayer object is aggregated to
+     */
+    virtual Ptr<Node> GetNode() const;
+
+    /**
      * \brief This method can be used to remove the root queue disc (and associated
      *        filters, classes and queues) installed on a device
      *

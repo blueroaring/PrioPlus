@@ -21,6 +21,7 @@
 #define DCB_FC_HELPER_H
 
 #include "ns3/dcb-hpcc-port.h"
+#include "ns3/dcb-pfc-mmu-queue.h"
 #include "ns3/dcb-pfc-port.h"
 
 namespace ns3
@@ -40,9 +41,7 @@ class DcbFcHelper
     /*
      * Install PFC to host port
      */
-    static void InstallPFCtoHostPort(Ptr<Node> node,
-                                     const uint32_t port,
-                                     const uint8_t enableVec);
+    static void InstallPFCtoHostPort(Ptr<Node> node, const uint32_t port, const uint8_t enableVec);
 
     // ... other flow control configurtions should be added here
 

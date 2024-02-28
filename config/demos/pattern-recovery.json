@@ -1,0 +1,97 @@
+{
+    "inputFile": {
+        "topo": "config/topo/star4.txt"
+    },
+    "outputFile": {
+        "resultFile": "output/*.json"
+    },
+    "runtimeConfig": {
+        "seed": 8259,
+        "runningTime": "1s",
+        "stopTime": "10s"
+    },
+    "defaultConfig": {
+        "TcpL4Protocol": {
+            "SocketType": "ns3::TcpNewReno"
+        },
+        "TcpSocket": {
+            "DelAckCount": 1,
+            "InitialCwnd": 1,
+            "SndBufSize": 1073741823,
+            "RcvBufSize": 1073741823,
+            "SegmentSize": 1500
+        },
+        "TcpSocketBase": {
+            "Timestamp": false
+        },
+        "DcbTrafficGenApplication": {
+            "CongestionType": "ns3::RoCEv2Dcqcn"
+        },
+        "RoCEv2Timely": {
+            "Tlow": "32us",
+            "Thigh": "16us"
+        },
+        "RoCEv2Socket": {
+            "RetxMode": "GBN"
+        },
+        "RoCEv2SocketState": {
+            "MinRateRatio": 0.01
+        }
+    },
+    "globalConfig": {
+        "detailedSenderStats": false,
+        "detailedRetxStats": false,
+        "detailedQlengthStats": false,
+        "qlengthRecordInterval": "10us",
+        "detailedThroughputStats": true,
+        "deviceThroughputRecordInterval": "10us"
+    },
+    "topologyConfig": {
+        "hostPort": {
+            "pfcEnabled": true,
+            "enableVec": 255
+        },
+        "switch": {
+            "pfcDynamic": true
+        },
+        "switchPort": {
+            "pfcEnabled": true,
+            "ecnEnabled": true,
+            "hpccEnabled": true,
+            "queues": 8
+        },
+        "switchPortQueue": {
+            "pfcReserve": "4KiB",
+            "pfcResumeOffset": "3KiB",
+            "pfcDynamicThreshold": true,
+            "ecnKMin": "400KiB",
+            "ecnKMax": "1600KiB",
+            "ecnPMax": 0.2
+        },
+        "link": {
+            "rate": "100Gbps",
+            "delay": "3us"
+        }
+    },
+    "applicationConfig": [
+        {
+            "appName": "DcbTrafficGenApplication",
+            "nodes": "all",
+            "protocolGroup": "RoCEv2",
+            "applicationConfig":{
+                "CongestionType": "ns3::RoCEv2Dcqcn",
+                "SendEnabled": true,
+                "TrafficPattern": "Recovery",
+                "RecoveryNodeRatio": 0.5,
+                "TrafficSizeBytes": 100000,
+                "TrafficLoad": 0.5
+            },
+            "socketConfig": {
+                "InnerPriority": 0
+            },
+            "startTime": "0.1s",
+            "stopTime": "0.102s",
+            "flowInterval": "0.0000s"
+        }
+    ]
+}

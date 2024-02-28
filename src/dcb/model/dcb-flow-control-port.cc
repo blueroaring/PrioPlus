@@ -54,21 +54,17 @@ DcbFlowControlPort::~DcbFlowControlPort()
 }
 
 void
-DcbFlowControlPort::IngressProcess(Ptr<const Packet> packet,
-                                   uint16_t protocol,
-                                   const Address& from,
-                                   const Address& to,
-                                   NetDevice::PacketType packetType)
+DcbFlowControlPort::IngressProcess(Ptr<NetDevice> outDev, Ptr<QueueDiscItem> item)
 {
     NS_LOG_FUNCTION(this);
     if (m_enableIngressControl)
     {
-        DoIngressProcess(packet, protocol, from, to, packetType);
+        DoIngressProcess(outDev, item);
     }
 }
 
 void
-DcbFlowControlPort::PacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet)
+DcbFlowControlPort::PacketOutCallbackProcess(uint32_t priority, Ptr<Packet> packet)
 {
     NS_LOG_FUNCTION(this << packet);
     if (m_enableIngressControl)

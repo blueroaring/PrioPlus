@@ -87,10 +87,13 @@ class RoCEv2Header : public Header
     union {
         struct
         {
-            uint8_t fr : 1;       // F/Res1
-            uint8_t br : 1;       // B/Res1
-            uint8_t reserved : 6; // reserved
-            uint32_t destQP : 24; // Destination 0QP
+            // uint8_t fr : 1;       // F/Res1
+            // uint8_t br : 1;       // B/Res1
+            // uint8_t reserved : 6; // reserved
+            // uint32_t destQP : 24; // Destination 0QP
+            // FIXME using reserved for destQP
+            uint32_t srcQP : 16;  // Source QP
+            uint32_t destQP : 16; // Destination QP
         } __attribute__((__packed__));
 
         uint32_t u;

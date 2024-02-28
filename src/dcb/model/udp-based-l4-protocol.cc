@@ -19,6 +19,7 @@
 
 #include "udp-based-l4-protocol.h"
 
+#include "rocev2-l4-protocol.h"
 #include "udp-based-socket.h"
 
 #include "ns3/fatal-error.h"
@@ -32,7 +33,6 @@
 #include "ns3/simulator.h"
 #include "ns3/udp-header.h"
 #include "ns3/udp-l4-protocol.h"
-#include "ns3/rocev2-l4-protocol.h"
 
 namespace ns3
 {
@@ -83,9 +83,11 @@ UdpBasedL4Protocol::GetProtocolNumber(void) const
 void
 UdpBasedL4Protocol::NotifyNewAggregate()
 {
-    NS_FATAL_ERROR("Not here");
+    // NS_FATAL_ERROR("Not here");
+    // Do nothing as the configuration is done otherwhere
     NS_LOG_FUNCTION(this);
 
+    /* Previous code, just keep it here for reference
     Ptr<Node> node = this->GetObject<Node>();
     Ptr<UdpL4Protocol> udp = this->GetObject<UdpL4Protocol>();
     if (udp == 0)
@@ -100,6 +102,7 @@ UdpBasedL4Protocol::NotifyNewAggregate()
         Ptr<UdpBasedSocketFactory> socketFactory = CreateObject<UdpBasedSocketFactory>();
         node->AggregateObject(socketFactory);
     }
+    */
 
     Object::NotifyNewAggregate();
 }
@@ -114,7 +117,7 @@ UdpBasedL4Protocol::Setup(Ptr<Node> node, Ptr<NetDevice> dev)
     NS_ASSERT_MSG(m_udp != nullptr,
                   "UdpL4Protocol must be aggregated before UdpBasedL4Protocol::Setup()");
     m_udpEndPoint = m_udp->Allocate(dev, GetProtocolNumber());
-    m_udpEndPoint->BindToNetDevice(dev);
+    // m_udpEndPoint->BindToNetDevice(dev);
     FinishSetup(m_udpEndPoint); // bind callbacks
 }
 
@@ -140,7 +143,7 @@ UdpBasedL4Protocol::ForwardUp(Ptr<Packet> packet,
             NS_LOG_DEBUG("Received a CNP packet for a closed socket.");
             return;
         }
-        NS_FATAL_ERROR("No endPoints matched in UDP-based L4 protocol with inner port "
+        NS_LOG_WARN("No endPoints matched in UDP-based L4 protocol with inner port "
                        << innerPort << " on node " << Simulator::GetContext());
     }
 }
@@ -340,6 +343,18 @@ InnerEndPointDemux::AllocateEphemeralPort()
             return 0;
         }
         port++;
+        if (port > m_innerPortLast)
+        {
+            /*TODO
+             * SrcQp wrap problem has not been solved.
+             * We have found these problems:
+             * 1. Stats uses flowId to identify flows, but flowId is not unique.
+             * 2. Receiver uses flowId to identify the sender, but flowId is not unique.
+             * Therefore, for now, we just log the error.
+             */
+            NS_FATAL_ERROR("SrcQp wrap around. First is " << m_innerPortFirst << ", Last is "
+                                                          << m_innerPortLast);
+        }
         // Wrap around if we reach the end of the range
         if (port < m_innerPortFirst || port > m_innerPortLast)
         {

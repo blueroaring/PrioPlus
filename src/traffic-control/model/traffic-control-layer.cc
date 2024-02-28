@@ -260,6 +260,13 @@ TrafficControlLayer::GetRootQueueDiscOnDeviceByIndex(uint32_t index) const
     return GetRootQueueDiscOnDevice(m_node->GetDevice(index));
 }
 
+Ptr<Node> TrafficControlLayer::GetNode() const
+{
+    NS_LOG_FUNCTION(this);
+
+    return m_node;
+}
+
 void
 TrafficControlLayer::DeleteRootQueueDiscOnDevice(Ptr<NetDevice> device)
 {

@@ -113,78 +113,108 @@ DcbTrafficControl::Receive(Ptr<NetDevice> device,
                            NetDevice::PacketType packetType)
 {
     NS_LOG_FUNCTION(this << device << packet << protocol << from << to << packetType);
-
+    Ipv4Header ipv4Header;
+    packet->PeekHeader(ipv4Header);
     // Add priority to packet tag
     uint8_t priority = PeekPriorityOfPacket(packet);
     CoSTag cosTag;
     cosTag.SetCoS(priority);
-    packet->AddPacketTag(cosTag); // CoSTag is removed in PausableQueueDisc::DoEnqueue
+    packet->AddPacketTag(cosTag); // CoSTag is removed in EgressProcess
 
     // Add from-index to packet tag
     uint32_t index = device->GetIfIndex();
     DeviceIndexTag tag(index);
     packet->AddPacketTag(tag); // egress will read the index from tag to decrement counter
     // update ingress queue length
-    Ipv4Header ipv4Header;
-    packet->PeekHeader(ipv4Header);
-    bool success = m_buffer.InPacketProcess(index,
-                                            priority,
-                                            packet->GetSize() - ipv4Header.GetSerializedSize());
-    if (!success)
-    {
-        m_bufferOverflowTrace(packet);
-        return;
-    }
+    // Ipv4Header ipv4Header;
+    // packet->PeekHeader(ipv4Header);
+    // bool success = m_buffer.InPacketProcess(index,
+    //                                         priority,
+    //                                         packet->GetSize() - ipv4Header.GetSerializedSize());
+    // if (!success)
+    // {
+    //     m_bufferOverflowTrace(packet);
+    //     return;
+    // }
 
-    const PortInfo& port = m_buffer.GetPort(index);
-    if (port.FcEnabled())
-    {
-        // run flow control ingress process
-        port.GetFC()->IngressProcess(packet, protocol, from, to, packetType);
-    }
+    // const PortInfo& port = m_buffer.GetPort(index);
+    // if (port.FcEnabled())
+    // {
+    //     // run flow control ingress process
+    //     port.GetFC()->IngressProcess(packet, protocol, from, to, packetType);
+    // }
     TrafficControlLayer::Receive(device, packet, protocol, from, to, packetType);
 }
 
 void
-DcbTrafficControl::EgressProcess(uint32_t outPort, uint8_t priority, Ptr<Packet> packet)
+DcbTrafficControl::Send(Ptr<NetDevice> device, Ptr<QueueDiscItem> item)
+{
+    Ptr<Packet> pkt = item->GetPacket()->Copy();
+    // Get inDev's priority and index from tag
+    DeviceIndexTag devTag;
+    pkt->PeekPacketTag(devTag);
+    CoSTag cosTag;
+    pkt->PeekPacketTag(cosTag);
+
+    uint32_t inPortIndex = devTag.GetIndex();
+    uint8_t inQueuePriority = cosTag.GetCoS();
+
+    // Get outDev's priority and index from tag
+    uint32_t outPortIndex = device->GetIfIndex();
+    uint8_t outQueuePriority = inQueuePriority;
+
+    // Check enqueue admission
+    bool success = m_buffer.InPacketProcess(inPortIndex,
+                                            inQueuePriority,
+                                            outPortIndex,
+                                            outQueuePriority,
+                                            pkt->GetSize());
+    if (!success)
+    {
+        m_bufferOverflowTrace(pkt);
+        return;
+    }
+    const PortInfo& port = m_buffer.GetPort(inPortIndex);
+    if (port.FcEnabled())
+    {
+        // run flow control ingress process
+        port.GetFC()->IngressProcess(device, item);
+    }
+
+    TrafficControlLayer::Send(device, item);
+}
+
+void
+DcbTrafficControl::EgressProcess(uint32_t outPort, uint32_t priority, Ptr<Packet> packet)
 {
     NS_LOG_FUNCTION(this << outPort << priority << packet);
-    DeviceIndexTag tag;
-    packet->RemovePacketTag(tag);
-    uint32_t fromIdx = tag.GetIndex();
-    m_buffer.OutPacketProcess(fromIdx, priority, packet->GetSize());
+    DeviceIndexTag devTag;
+    packet->RemovePacketTag(devTag); // egress will remove the tag
+    uint32_t inPortIndex = devTag.GetIndex();
+
+    CoSTag cosTag;
+    packet->RemovePacketTag(cosTag);
+    uint32_t inQueuePriority = cosTag.GetCoS() & 0x0f;
+
+    m_buffer.OutPacketProcess(inPortIndex, inQueuePriority, outPort, priority, packet->GetSize());
 
     // Call the packet out pipeline of the ingress port
     PortInfo& port = m_buffer.GetPort(outPort);
-    port.CallFCPacketOutPipeline(fromIdx, priority, packet);
+    port.CallFCPacketOutPipeline(inPortIndex, priority, packet);
     if (port.FcEnabled())
     {
         port.GetFC()->EgressProcess(packet);
     }
 }
 
-int32_t
-DcbTrafficControl::CompareIngressQueueLength(uint32_t port, uint8_t priority, uint32_t bytes) const
-{
-    uint32_t l = m_buffer.GetIngressQueueCells(port, priority);
-    // rounds up in cells, why not round down?
-    uint32_t cells = ceil(bytes / Buffer::CELL_SIZE);
-    if (l > cells)
-    {
-        return 1;
-    }
-    else if (l < cells)
-    {
-        return -1;
-    }
-    return 0;
-}
-
 void
-DcbTrafficControl::InstallFCToPort(uint32_t portIdx, Ptr<DcbFlowControlPort> fc)
+DcbTrafficControl::InstallFCToPort(uint32_t portIdx,
+                                   Ptr<DcbFlowControlPort> fc,
+                                   std::vector<ns3::Ptr<ns3::DcbFlowControlMmuQueue>> fcMmuQueues)
 {
     NS_LOG_FUNCTION(this << portIdx);
-    m_buffer.GetPort(portIdx).SetFC(fc);
+    m_buffer.GetPort(portIdx).SetFC(fc, fcMmuQueues);
+    m_buffer.SetPortFcMmuBufferCallback(portIdx);
 
     // Set egress callback to other ports.
     // When we enable FC on one port, it means that other ports may do something when
@@ -212,7 +242,6 @@ DcbTrafficControl::PortInfo::PortInfo()
     : m_fcEnabled(false),
       m_fc(nullptr)
 {
-    std::memset(m_ingressQueueLength, 0, sizeof(m_ingressQueueLength));
 }
 
 void
@@ -241,7 +270,9 @@ DcbTrafficControl::PortInfo::CallFCPacketOutPipeline(uint32_t fromIdx,
 }
 
 DcbTrafficControl::Buffer::Buffer()
-    : m_remainCells(32 * 1024 * 1024 / CELL_SIZE)
+    : m_totalSize(32 * 1024 * 1024),
+      m_totalSharedSize(0),
+      m_hasCalSharedSize(false)
 {
 }
 
@@ -250,7 +281,7 @@ DcbTrafficControl::Buffer::SetBufferSpace(uint32_t bytes)
 {
     NS_LOG_FUNCTION(this << bytes);
 
-    m_remainCells = CalcCellSize(bytes);
+    m_totalSize = bytes;
 }
 
 void
@@ -262,15 +293,20 @@ DcbTrafficControl::Buffer::RegisterPortNumber(const uint32_t num)
 }
 
 bool
-DcbTrafficControl::Buffer::InPacketProcess(uint32_t portIndex,
-                                           uint8_t priority,
+DcbTrafficControl::Buffer::InPacketProcess(uint32_t inPortIndex,
+                                           uint32_t inQueuePriority,
+                                           uint32_t outPortIndex,
+                                           uint32_t outQueuePriority,
                                            uint32_t packetSize)
 {
-    uint32_t packetCells = CalcCellSize(packetSize);
-    if (m_remainCells > packetCells)
+    Ptr<DcbFlowControlMmuQueue> inQueue = m_ports[inPortIndex].GetFCMmuQueue(inQueuePriority);
+    Ptr<DcbFlowControlMmuQueue> outQueue = m_ports[outPortIndex].GetFCMmuQueue(outQueuePriority);
+    bool success =
+        inQueue->CheckIngressAdmission(packetSize) & outQueue->CheckEgressAdmission(packetSize);
+    if (success)
     {
-        m_remainCells -= packetCells;
-        IncrementIngressQueueCounter(portIndex, priority, packetCells);
+        inQueue->IngressIncrement(packetSize);
+        outQueue->EgressIncrement(packetSize);
         return true;
     }
     NS_LOG_DEBUG("Buffer overflow, packet drop.");
@@ -278,50 +314,79 @@ DcbTrafficControl::Buffer::InPacketProcess(uint32_t portIndex,
 }
 
 void
-DcbTrafficControl::Buffer::OutPacketProcess(uint32_t portIndex,
-                                            uint8_t priority,
+DcbTrafficControl::Buffer::OutPacketProcess(uint32_t inPortIndex,
+                                            uint32_t inQueuePriority,
+                                            uint32_t outPortIndex,
+                                            uint32_t outQueuePriority,
                                             uint32_t packetSize)
 {
-    uint32_t packetCells = CalcCellSize(packetSize);
-    m_remainCells += packetCells;
-    DecrementIngressQueueCounter(portIndex, priority, packetCells);
+    Ptr<DcbFlowControlMmuQueue> inQueue = m_ports[inPortIndex].GetFCMmuQueue(inQueuePriority);
+    Ptr<DcbFlowControlMmuQueue> outQueue = m_ports[outPortIndex].GetFCMmuQueue(outQueuePriority);
+    inQueue->IngressDecrement(packetSize);
+    outQueue->EgressDecrement(packetSize);
 }
 
-inline DcbTrafficControl::PortInfo&
-DcbTrafficControl::Buffer::GetPort(uint32_t portIndex)
-{
-    return m_ports[portIndex];
-}
+// inline DcbTrafficControl::PortInfo&
+// DcbTrafficControl::Buffer::GetPort(uint32_t portIndex)
+// {
+//     return m_ports[portIndex];
+// }
 
-inline std::vector<DcbTrafficControl::PortInfo>&
-DcbTrafficControl::Buffer::GetPorts()
-{
-    return m_ports;
-}
+// std::vector<DcbTrafficControl::PortInfo>&
+// DcbTrafficControl::Buffer::GetPorts()
+// {
+//     return m_ports;
+// }
 
-inline void
-DcbTrafficControl::Buffer::IncrementIngressQueueCounter(uint32_t index,
-                                                        uint8_t priority,
-                                                        uint32_t packetCells)
-{
-    // NOTICE: no index checking nor value checking for better performance, be careful
-    m_ports[index].IncreQueueLength(priority, packetCells);
-}
-
-inline void
-DcbTrafficControl::Buffer::DecrementIngressQueueCounter(uint32_t index,
-                                                        uint8_t priority,
-                                                        uint32_t packetCells)
-{
-    // NOTICE: no index checking nor value checking for better performance, be careful
-    m_ports[index].IncreQueueLength(priority, -packetCells);
-}
-
-// static
 uint32_t
-DcbTrafficControl::Buffer::CalcCellSize(uint32_t bytes)
+DcbTrafficControl::Buffer::GetSharedSize()
 {
-    return static_cast<uint32_t>(ceil(bytes / CELL_SIZE));
+    if (!m_hasCalSharedSize)
+    {
+        uint32_t size = m_totalSize;
+        for (uint32_t i = 1; i < m_ports.size(); i++) // 0 is LoopbackNetDev
+        {
+            uint32_t prirority = PRIORITY_NUMBER;
+            for (uint32_t j = 0; j < prirority; j++)
+            {
+                uint32_t exclusiveSize = m_ports[i].GetFCMmuQueue(j)->GetExclusiveBufferSize();
+                NS_ASSERT_MSG(exclusiveSize <= size,
+                              "Exclusive buffer size is larger than total size");
+                size -= exclusiveSize;
+            }
+        }
+        m_totalSharedSize = size;
+        m_hasCalSharedSize = true;
+    }
+    return m_totalSharedSize;
+}
+
+uint32_t
+DcbTrafficControl::Buffer::GetSharedUsed()
+{
+    uint32_t sum = 0;
+    for (uint32_t i = 1; i < m_ports.size(); i++) // 0 is LoopbackNetDev
+    {
+        uint32_t prirority = PRIORITY_NUMBER;
+        for (uint32_t j = 0; j < prirority; j++)
+        {
+            sum += m_ports[i].GetFCMmuQueue(j)->GetExclusiveSharedBufferUsed();
+        }
+    }
+    return sum;
+}
+
+void
+DcbTrafficControl::Buffer::SetPortFcMmuBufferCallback(uint32_t portIndex)
+{
+    const auto& port = m_ports[portIndex];
+    uint32_t prirority = PRIORITY_NUMBER;
+    for (uint32_t i = 0; i < prirority; i++)
+    {
+        Ptr<DcbFlowControlMmuQueue> queue = port.GetFCMmuQueue(i);
+        queue->SetBufferCallback(MakeCallback(&DcbTrafficControl::Buffer::GetSharedSize, this),
+                                 MakeCallback(&DcbTrafficControl::Buffer::GetSharedUsed, this));
+    }
 }
 
 /** Tags implementation **/

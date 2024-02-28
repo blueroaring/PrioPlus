@@ -64,19 +64,49 @@ RoCEv2Socket::GetTypeId()
                           "The CNP interval",
                           TimeValue(MicroSeconds(50)),
                           MakeTimeAccessor(&RoCEv2Socket::m_CNPInterval),
+                          MakeTimeChecker())
+            .AddAttribute("InnerPriority",
+                          "The inner priority of the sockets when contenting with other sockets",
+                          UintegerValue(0),
+                          MakeUintegerAccessor(&RoCEv2Socket::m_innerPrio),
+                          MakeUintegerChecker<uint32_t>())
+            .AddAttribute("RateCap",
+                          "The rate cap of the socket",
+                          DataRateValue(DataRate("0bps")),
+                          MakeDataRateAccessor(&RoCEv2Socket::m_rateCap),
+                          MakeDataRateChecker())
+            .AddAttribute("Rto",
+                          "The retransmission timeout",
+                          TimeValue(MilliSeconds(
+                              10)), // 267ms is the default value of Perftest from Yixiao's paper
+                          MakeTimeAccessor(&RoCEv2Socket::m_rto),
+                          MakeTimeChecker())
+            .AddAttribute("IrnPktThresh",
+                          "The packet threshold to use RTOlow for IRN",
+                          UintegerValue(3), // Default value in IRN's paper
+                          MakeUintegerAccessor(&RoCEv2Socket::m_irnPktThresh),
+                          MakeUintegerChecker<uint32_t>())
+            .AddAttribute("IrnRtoLow",
+                          "The lower bound of the retransmission timeout for IRN",
+                          TimeValue(MicroSeconds(100)), // 100us is the default value in IRN's paper
+                          MakeTimeAccessor(&RoCEv2Socket::m_irnRtoLow),
                           MakeTimeChecker());
     return tid;
 }
 
 RoCEv2Socket::RoCEv2Socket()
     : UdpBasedSocket(),
-      m_txBuffer(DcbTxBuffer(MakeCallback(&RoCEv2Socket::SendPendingPacket, this))),
+      m_txBuffer(DcbTxBuffer(MakeCallback(&RoCEv2Socket::SendPendingPacket, this),
+                             MakeCallback(&RoCEv2Socket::CreateNextProtocolHeader, this))),
       m_senderNextPSN(0),
-      m_psnEnd(0)
+      m_psnEnd(0),
+      m_waitingForSchedule(false),
+      m_flowState(FlowState::PENDING)
 {
     NS_LOG_FUNCTION(this);
     m_stats = std::make_shared<Stats>();
     m_sockState = CreateObject<RoCEv2SocketState>();
+    m_sockState->SetTxBuffer(&m_txBuffer);
     // Note that m_ccOps is not inited.
     //  m_ccOps = CreateObject<RoCEv2CongestionOps>(m_sockState);
     m_flowStartTime = Simulator::Now();
@@ -92,16 +122,27 @@ RoCEv2Socket::DoSendTo(Ptr<Packet> payload, Ipv4Address daddr, Ptr<Ipv4Route> ro
 {
     NS_LOG_FUNCTION(this << payload << daddr << route);
 
-    RoCEv2Header rocev2Header = CreateNextProtocolHeader();
-    m_txBuffer.Push(rocev2Header.GetPSN(), std::move(rocev2Header), payload, daddr, route);
-
     // Record the statistics
     if (m_stats->tStart == Time(0))
     {
         m_stats->tStart = Simulator::Now();
     }
-    m_stats->nTotalSizePkts++;
+    uint32_t mss = m_sockState->GetMss();
+    m_stats->nTotalSizePkts += (payload->GetSize() + mss - 1) / mss;
     m_stats->nTotalSizeBytes += payload->GetSize();
+
+    // Calculate the end PSN
+    m_psnEnd = (payload->GetSize() + mss - 1) / mss;
+
+    m_txBuffer.RecvPayload(payload, daddr, route, mss);
+}
+
+void
+RoCEv2Socket::NotifyCouldSend()
+{
+    NS_LOG_FUNCTION(this);
+    m_waitingForSchedule = false;
+    SendPendingPacket();
 }
 
 void
@@ -113,7 +154,7 @@ RoCEv2Socket::SendPendingPacket()
      * Check whether can send packet. As a optimization, the judgement is arranged
      * in the order of the probability of the condition.
      */
-    if (m_sendEvent.IsRunning())
+    if (m_sendEvent.IsRunning() || m_waitingForSchedule)
     {
         // Already scheduled, wait for the scheduled sending.
         // XXX Logic problem. In the case of low rate before and high rate now, the new
@@ -121,18 +162,14 @@ RoCEv2Socket::SendPendingPacket()
         return;
     }
 
-    if (!CheckQueueDiscAvaliable(GetPriority()))
+    const uint32_t totalPacketSize = m_sockState->GetPacketSize();
+    if (!m_txBuffer.CouldSend((m_sockState->GetCwnd() + totalPacketSize - 1) /
+                              totalPacketSize)) // ceiling to packet unit
     {
-        // The queue disc is unavaliable, wait for the next sending.
-
-        // The interval serve as the interval of spinning when the qdisc is unavaliable.
-        uint32_t sz = 1000; // XXX A typical packet size
-        Time interval = m_deviceRate.CalculateBytesTxTime(sz / m_sockState->GetRateRatioPercent());
-        m_sendEvent = Simulator::Schedule(interval, &RoCEv2Socket::SendPendingPacket, this);
-        // XXX If all the sender's send rate is line rate, this will cause unfairness,
-        // however, it is unlikely to happen.
-
+        // The cwnd is not enough to send a packet.
         return;
+        // Do not need to schedule next sending here.
+        // When there is a new ACK, the sending will be scheduled at other place.
     }
 
     if (m_txBuffer.GetSizeToBeSent() == 0)
@@ -144,24 +181,82 @@ RoCEv2Socket::SendPendingPacket()
         // place.
     }
 
+    // This check should be placed to the last, as it is will recall the function.
+    // if (!CheckQueueDiscAvaliable(GetPriority()))
+    // {
+    //     // The queue disc is unavaliable, wait for the next sending.
+
+    //     // The interval serve as the interval of spinning when the qdisc is unavaliable.
+    //     uint32_t sz = 1000; // XXX A typical packet size
+    //     Time interval = m_deviceRate.CalculateBytesTxTime(sz /
+    //     m_sockState->GetRateRatioPercent()); m_sendEvent = Simulator::Schedule(interval,
+    //     &RoCEv2Socket::SendPendingPacket, this);
+    //     // XXX If all the sender's send rate is line rate, this will cause unfairness,
+    //     // however, it is unlikely to happen.
+
+    //     return;
+    // }
+    Ptr<RoCEv2L4Protocol> rocev2Proto = DynamicCast<RoCEv2L4Protocol>(m_innerProto);
+    uint32_t outPortPriority = GetPriority();
+    if (rocev2Proto->CheckCouldSend(m_boundnetdevice->GetIfIndex(), outPortPriority) == false)
+    {
+        // The queue disc is unavaliable, register a callback to RoCEv2L4Proto and wait for the
+        // shedule
+        rocev2Proto->RegisterSendPendingDataCallback(
+            m_boundnetdevice->GetIfIndex(),
+            outPortPriority,
+            m_innerPrio,
+            MakeCallback(&RoCEv2Socket::NotifyCouldSend, this));
+        m_waitingForSchedule = true;
+
+        return;
+    }
+
+    if (m_flowState == FINISHED)
+    {
+        /**
+         * The flow is finished, do not send any more.
+         * This is possible when a packet is try to retx (push in txQueue) but not transmit
+         * immediately (may be constrained by the queue disc, rate or cwnd). Then the send socket
+         * receive the ACK for the last packet and the flow is finished. The retx packet is not
+         * removed from the txQueue and may be sent after the flow is finished.
+         * This is a rare case, so the judgement is placed at the last.
+         */
+        return;
+    }
+
+    if (Simulator::Now().GetNanoSeconds() >= 129942575)
+    {
+        NS_LOG_DEBUG("Break point");
+    }
+
     // rateRatio is controled by congestion control
     // rateRatio = sending rate calculated by CC / line rate, which is between [0.0, 1.0]
     const double rateRatio = m_sockState->GetRateRatioPercent(); // in percentage, i.e., maximum is
                                                                  // 100.0 Record the rate
     DataRate rate = m_deviceRate * rateRatio;
     m_stats->RecordCcRate(rate);
-    // XXX Why? Do not have minimum rate ratio?
-    // TODO Add minimum rate ratio
-    // TODO Add window constraint
     // [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] =
-    //     m_txBuffer.PeekNextShouldSent();
-    const DcbTxBuffer::DcbTxBufferItem& item = m_txBuffer.PopNextShouldSent();
-    const uint32_t sz = item.m_payload->GetSize() + 8 + 20 + 14;
+    //     m_txBuffer.PeekNextShouldSend();
+    const DcbTxBuffer::DcbTxBufferItem& item = m_txBuffer.PopNextShouldSend();
+    const uint32_t sz =
+        item.m_payload->GetSize() + m_innerProto->GetHeaderSize() + m_ccOps->GetExtraHeaderSize();
     DoSendDataPacket(item);
 
     // Control the send rate by interval of sending packets.
-    Time interval = m_deviceRate.CalculateBytesTxTime(sz / rateRatio);
+    if (m_rateCap != DataRate("0bps"))
+    {
+        rate = std::min(rate, m_rateCap);
+    }
+    Time interval = rate.CalculateBytesTxTime(sz);
     m_sendEvent = Simulator::Schedule(interval, &RoCEv2Socket::SendPendingPacket, this);
+
+    // For the first packet sent, start the retransmission timer
+    if (m_flowState == PENDING)
+    {
+        m_flowState = RUNNING;
+        m_rtoEvent = Simulator::Schedule(m_rto, &RoCEv2Socket::RetransmissionTimeout, this);
+    }
 }
 
 void
@@ -171,9 +266,9 @@ RoCEv2Socket::DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item)
 
     [[maybe_unused]] const auto& [_, rocev2Header, payload, daddr, route] = item;
 
-    m_ccOps->UpdateStateSend(payload);
     Ptr<Packet> packet = payload->Copy(); // do not modify the payload in the buffer
     packet->AddHeader(rocev2Header);
+    m_ccOps->UpdateStateSend(packet);
 
     // Before send, check if it has RealTimeStatsTag, if so, record the tx time
     RealTimeStatsTag tag;
@@ -182,6 +277,10 @@ RoCEv2Socket::DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item)
         tag.SetTTxNs(Simulator::Now().GetNanoSeconds());
         packet->AddPacketTag(tag);
     }
+
+    // Add the CongestionTypeTag to the packet
+    CongestionTypeTag ctTag(m_congTypeId.GetUid());
+    packet->AddPacketTag(ctTag);
 
     m_innerProto->Send(packet,
                        route->GetSource(),
@@ -214,10 +313,7 @@ RoCEv2Socket::ForwardUp(Ptr<Packet> packet,
     switch (rocev2Header.GetOpcode())
     {
     case RoCEv2Header::Opcode::RC_ACK:
-        m_ccOps->UpdateStateWithRcvACK(
-            packet,
-            rocev2Header,
-            m_txBuffer.GetSizeToBeSent() == 0 ? m_psnEnd : m_txBuffer.PeekNextShouldSent().m_psn);
+        m_ccOps->UpdateStateWithRcvACK(packet, rocev2Header, m_txBuffer.NextSendPsn());
         NS_LOG_DEBUG("RoCEv2Socket: Received ACK and rate decreased to "
                      << m_sockState->GetRateRatioPercent() * 100 << "% at time "
                      << Simulator::Now().GetMicroSeconds() << "us. " << header.GetSource() << ":"
@@ -248,6 +344,11 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
     AETHeader aeth;
     packet->RemoveHeader(aeth);
 
+    if (roce.GetPSN() >= 1444 && m_node->GetId() == 3)
+    {
+        NS_LOG_DEBUG("Break point");
+    }
+
     // Record the expected PSN, for both ack and nack
     m_stats->RecordExpectedPsn(roce.GetPSN());
 
@@ -258,12 +359,20 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
         m_txBuffer.AcknowledgeTo(roce.GetPSN() - 1);
 
         if (m_txBuffer.GetFrontPsn() == m_psnEnd)
-        { // last ACk received, flow finshed
+        {
+            // last ACk received, flow finshed
             NotifyFlowCompletes();
+            m_flowState = FINISHED;
 
             // Filter the orphan CNP packets at UdpBasedL4Protocol, thus the socket can be closed
             // immediately
             Close();
+
+            // Stop the retransmission timer
+            if (m_rtoEvent.IsRunning())
+            {
+                m_rtoEvent.Cancel();
+            }
 
             // Record the statistics
             m_stats->tFinish = Simulator::Now();
@@ -294,6 +403,15 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
         NS_FATAL_ERROR("Unexpected AET header Syndrome. Packet format wrong.");
     }
     }
+
+    // After receive an ACK/NACK, restart the retransmission timer
+    if (m_rtoEvent.IsRunning())
+    {
+        m_rtoEvent.Cancel();
+        // Place the schedule in the judgement as the rtoEvent should be running all the flow's life
+        // If the rtoEvent is not running, the flow is finished, no need to schedule the next
+        m_rtoEvent = Simulator::Schedule(m_rto, &RoCEv2Socket::RetransmissionTimeout, this);
+    }
 }
 
 void
@@ -313,12 +431,20 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     // be removed.
     if (flowInfoIter == m_receiverFlowInfo.end())
     {
+        // Get the congestion type from CongestionTypeTag in the packet
+        CongestionTypeTag ctTag;
+        packet->PeekPacketTag(ctTag);
+        ObjectFactory congestionAlgorithmFactory;
+        congestionAlgorithmFactory.SetTypeId(ctTag.GetCongestionTypeId());
+        Ptr<RoCEv2CongestionOps> algo = congestionAlgorithmFactory.Create<RoCEv2CongestionOps>();
+
         auto pp = m_receiverFlowInfo.emplace(
             std::move(flowId),
             FlowInfo{dstQP,
                      DcbRxBuffer{MakeCallback(&RoCEv2Socket::DoForwardUp, this),
                                  incomingInterface,
-                                 m_retxMode}});
+                                 m_retxMode},
+                     algo});
         flowInfoIter = std::move(pp.first);
         // TODO: erase flowInfo after flow finishes
     }
@@ -332,6 +458,7 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
 
     // Check PSN
     const uint32_t psn = roce.GetPSN();
+    // Get the expected PSN of the flow should be before the packet is added to the buffer
     uint32_t expectedPSN = flowInfoIter->second.GetExpectedPsn();
     flowInfoIter->second.m_rxBuffer.Add(psn, header, roce, packet);
 
@@ -342,30 +469,48 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
     // }
     NS_LOG_DEBUG("Receive packet " << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
 
-    if (psn == expectedPSN)
+    uint32_t ackHeaderSize =
+        m_innerProto->GetHeaderSize() + 4 +
+        flowInfoIter->second.m_ccOps->GetExtraAckSize(); // 4 bytes for AETHeader
+    // If ack packet is smaller than 64B, use payload to pad it
+    uint32_t ackPayloadSize = ackHeaderSize < 64 ? 64 - ackHeaderSize : 0;
+
+    if (psn <= expectedPSN)
     {
+        // FIXME < is for the case of ack has been lost
+        // The packet is in order
         // flowInfoIter->second.nextPSN = (expectedPSN + 1) & 0xffffff;
+        flowInfoIter->second.m_ePsnAdvancedAfterNack = true;
+
         if (roce.GetAckQ())
         { // send ACK
             // TODO No check of whether queue disc avaliable, as don't know how to hold the ACK
             // packet at l4
-            Ptr<Packet> ack =
-                RoCEv2L4Protocol::GenerateACK(dstQP, srcQP, flowInfoIter->second.GetExpectedPsn());
+            Ptr<Packet> ack = RoCEv2L4Protocol::GenerateACK(dstQP,
+                                                            srcQP,
+                                                            flowInfoIter->second.GetExpectedPsn(),
+                                                            ackPayloadSize);
 
-            m_ccOps->UpdateStateWithGenACK(packet, ack);
+            flowInfoIter->second.m_ccOps->UpdateStateWithGenACK(packet, ack);
             m_innerProto->Send(ack, header.GetDestination(), header.GetSource(), dstQP, srcQP, 0);
         }
         NS_LOG_DEBUG("Send ACK with PSN " << flowInfoIter->second.GetExpectedPsn() << " at time "
                                           << Simulator::Now().GetNanoSeconds() << "ns.");
     }
-    else if (psn > expectedPSN)
-    { // packet out-of-order, send NACK
+    else if (psn > expectedPSN && flowInfoIter->second.m_ePsnAdvancedAfterNack)
+    {
+        // packet out-of-order and have not send NACK for this epsn, send NACK
+        flowInfoIter->second.m_ePsnAdvancedAfterNack = false;
         NS_LOG_LOGIC("RoCEv2 receiver " << Simulator::GetContext() << "send NACK of flow " << srcQP
                                         << "->" << dstQP);
+
         // TODO No check of whether queue disc avaliable, as don't know how to hold the NACK packet
         // at l4
-        Ptr<Packet> nack =
-            RoCEv2L4Protocol::GenerateNACK(dstQP, srcQP, flowInfoIter->second.GetExpectedPsn());
+
+        Ptr<Packet> nack = RoCEv2L4Protocol::GenerateNACK(dstQP,
+                                                          srcQP,
+                                                          flowInfoIter->second.GetExpectedPsn(),
+                                                          ackPayloadSize);
 
         if (m_retxMode == RoCEv2RetxMode::IRN)
         {
@@ -397,7 +542,7 @@ RoCEv2Socket::GoBackN(uint32_t lostPSN)
 {
     // DcbTxBuffer::DcbTxBufferItemI item = m_txBuffer.FindPSN(lostPSN);
     NS_LOG_DEBUG("Go-back-N to " << lostPSN << " at time " << Simulator::Now().GetNanoSeconds()
-                                << "ns.");
+                                 << "ns.");
     m_txBuffer.RetransmitFrom(lostPSN);
 
     // Record the retx count
@@ -409,13 +554,17 @@ RoCEv2Socket::IrnReactToNack(uint32_t expectedPsn, IrnHeader irnH)
 {
     NS_LOG_FUNCTION(this);
     uint32_t ackedPsn = irnH.GetAckedPsn();
-
-    m_txBuffer.AcknowledgeTo(expectedPsn - 1);
+    if(expectedPsn != 0)
+    {
+        m_txBuffer.AcknowledgeTo(expectedPsn - 1);
+    } 
     m_txBuffer.Acknowledge(ackedPsn);
     m_txBuffer.Retransmit(expectedPsn);
 
     // Record the acked PSN
     m_stats->RecordAckedPsn(ackedPsn);
+    // Record the retx count
+    m_stats->nRetxCount++;
 
     NS_LOG_DEBUG("IRN expected PSN " << expectedPsn << " ackedPsn " << ackedPsn << " at time "
                                      << Simulator::Now().GetNanoSeconds() << "ns.");
@@ -433,6 +582,9 @@ RoCEv2Socket::IrnReactToAck(uint32_t expectedPsn)
     }
     m_txBuffer.Retransmit(expectedPsn);
 
+    // Record the retx count
+    m_stats->nRetxCount++;
+
     NS_LOG_DEBUG("IRN expected PSN " << expectedPsn << " at time "
                                      << Simulator::Now().GetNanoSeconds() << "ns.");
 }
@@ -444,6 +596,7 @@ RoCEv2Socket::ScheduleNextCNP(std::map<FlowIdentifier, FlowInfo>::iterator flowI
     NS_LOG_FUNCTION(this);
 
     RoCEv2Socket::FlowInfo& flowInfo = flowInfoIter->second;
+    // If there is already a CNP event running, or the receiver has not received ECN, do not send
     if (flowInfo.lastCNPEvent.IsRunning() || !flowInfo.receivedECN)
     {
         return;
@@ -470,8 +623,6 @@ int
 RoCEv2Socket::Bind()
 {
     NS_LOG_FUNCTION(this);
-    NS_ASSERT_MSG(m_boundnetdevice,
-                  "RoCEv2Socket should be bound to a net device before calling Bind");
     m_endPoint = m_innerProto->Allocate();
     m_endPoint->SetRxCallback(MakeCallback(&RoCEv2Socket::ForwardUp, this));
     return 0;
@@ -502,12 +653,6 @@ RoCEv2Socket::BindToNetDevice(Ptr<NetDevice> netdevice)
     if (dcbDev)
     {
         m_deviceRate = dcbDev->GetDataRate();
-        // double rai =
-        //     static_cast<double> (DataRate ("100Mbps").GetBitRate ()) / m_deviceRate.GetBitRate
-        //     ();
-        // m_ccOps->SetRateAIRatio (rai);
-        // m_ccOps->SetRateHyperAIRatio (10 * rai);
-        m_ccOps->SetReady();
     }
     else
     {
@@ -518,8 +663,8 @@ RoCEv2Socket::BindToNetDevice(Ptr<NetDevice> netdevice)
         else
             NS_FATAL_ERROR("RoCEv2Socket is not bound to a DcbNetDevice and no default rate is "
                            "set.");
-        m_ccOps->SetReady();
     }
+    m_sockState->SetDeviceRate(&m_deviceRate);
     // Get local ipv4 address
     Ptr<Ipv4> ipv4 = GetNode()->GetObject<Ipv4>();
     NS_ASSERT(ipv4 != nullptr);
@@ -540,14 +685,6 @@ RoCEv2Socket::BindToLocalPort(uint32_t port)
 }
 
 void
-RoCEv2Socket::FinishSending()
-{
-    NS_LOG_FUNCTION(this);
-
-    m_psnEnd = m_senderNextPSN;
-}
-
-void
 RoCEv2Socket::SetStopTime(Time stopTime)
 {
     m_ccOps->SetStopTime(stopTime);
@@ -563,6 +700,41 @@ RoCEv2Socket::SetCcOps(TypeId congTypeId)
     Ptr<RoCEv2CongestionOps> algo = congestionAlgorithmFactory.Create<RoCEv2CongestionOps>();
     m_ccOps = algo;
     m_ccOps->SetSockState(m_sockState);
+
+    // Record the congestion type
+    m_congTypeId = congTypeId;
+}
+
+void
+RoCEv2Socket::SetCcOps(TypeId congTypeId,
+                       std::vector<RoCEv2CongestionOps::CcOpsConfigPair_t>& ccConfig)
+{
+    NS_LOG_FUNCTION(this << congTypeId);
+
+    SetCcOps(congTypeId);
+
+    for (const auto& [name, value] : ccConfig)
+    {
+        m_ccOps->SetAttribute(name, *value);
+    }
+}
+
+void
+RoCEv2Socket::SetBaseRttNOneWayDelay(uint32_t hop,
+                                     Time delay,
+                                     uint32_t packetSize,
+                                     uint32_t ackSize)
+{
+    Time transDelayPacket = Time(uint64_t(packetSize * 8e9 / m_deviceRate.GetBitRate()));
+    Time transDelayAck = Time(uint64_t(ackSize * 8e9 / m_deviceRate.GetBitRate()));
+    m_sockState->SetBaseRtt(delay * 2 + (transDelayPacket + transDelayAck) * hop);
+    m_sockState->SetBaseOneWayDelay(delay + transDelayPacket * hop);
+    // log the propogation delay, the hops, and the basertt
+    NS_LOG_DEBUG("RoCEv2Socket: Propagation delay="
+                 << delay.GetNanoSeconds() << "ns, hops=" << hop
+                 << ", basertt=" << m_sockState->GetBaseRtt().GetNanoSeconds() << "ns"
+                 << ", baserttNOneWayDelay=" << m_sockState->GetBaseOneWayDelay().GetNanoSeconds()
+                 << "ns");
 }
 
 Time
@@ -575,6 +747,20 @@ Time
 RoCEv2Socket::GetFlowStartTime() const
 {
     return m_flowStartTime;
+}
+
+uint32_t
+RoCEv2Socket::GetSrcPort() const
+{
+    NS_ASSERT(m_endPoint != nullptr);
+    return m_endPoint->GetLocalPort();
+}
+
+uint32_t
+RoCEv2Socket::GetDstPort() const
+{
+    NS_ASSERT(m_endPoint != nullptr);
+    return m_endPoint->GetPeerPort();
 }
 
 RoCEv2Header
@@ -610,7 +796,8 @@ RoCEv2Socket::CheckQueueDiscAvaliable(uint8_t priority) const
 
     QueueSize qsize = qdisc->GetInnerQueueSize(priority);
     // TODO Make the threshold clearer
-    QueueSize threshold = QueueSize("10000B");
+    // Now this threshold is set to 1500B, which is slightly larger than the typical packet size
+    QueueSize threshold = QueueSize("1500B");
     if (qsize < threshold)
     {
         return true;
@@ -638,6 +825,43 @@ RoCEv2Socket::DoForwardUp(Ptr<Packet> packet,
     UdpBasedSocket::ForwardUp(packet, header, port, incomingInterface);
 }
 
+Ptr<RoCEv2CongestionOps>
+RoCEv2Socket::GetCcOps() const
+{
+    return m_ccOps;
+}
+
+Ptr<RoCEv2SocketState>
+RoCEv2Socket::GetSocketState() const
+{
+    return m_sockState;
+}
+
+void
+RoCEv2Socket::RetransmissionTimeout()
+{
+    NS_LOG_FUNCTION(this);
+
+    if (m_retxMode == RoCEv2RetxMode::GBN)
+    {
+        // Retransmit from the first unacked packet
+        m_txBuffer.RetransmitFrom(m_txBuffer.GetFrontPsn());
+    }
+    else if (m_retxMode == RoCEv2RetxMode::IRN)
+    {
+        // Retransmit the first unacked packet
+        m_txBuffer.Retransmit(m_txBuffer.GetFrontPsn());
+    }
+
+    // Reschedule the retransmission timer
+    m_rtoEvent = Simulator::Schedule(m_rto, &RoCEv2Socket::RetransmissionTimeout, this);
+
+    NS_LOG_DEBUG("Retransmission timeout at time " << Simulator::Now().GetNanoSeconds() << "ns.");
+
+    // Record the retx count
+    m_stats->nRetxCount++;
+}
+
 NS_OBJECT_ENSURE_REGISTERED(DcbTxBuffer);
 
 TypeId
@@ -647,10 +871,13 @@ DcbTxBuffer::GetTypeId(void)
     return tid;
 }
 
-DcbTxBuffer::DcbTxBuffer(Callback<void> sendCb)
+DcbTxBuffer::DcbTxBuffer(Callback<void> sendCb, Callback<RoCEv2Header> createRocev2HeaderCb)
     : m_sendCb(sendCb),
+      m_createRocev2HeaderCb(createRocev2HeaderCb),
       m_frontPsn(0),
-      m_maxAckedPsn(0)
+      m_maxAckedPsn(0),
+      m_tos(0),
+      m_priority(0)
 {
 }
 
@@ -663,9 +890,33 @@ DcbTxBuffer::Push(uint32_t psn,
 {
     m_buffer.emplace_back(psn, header, packet, daddr, route);
     m_txQueue.push(psn);
-    m_acked.push_back(false);
+}
 
-    // Call the send callback to notify the socket to send the packet
+void
+DcbTxBuffer::RecvPayload(Ptr<Packet> payload, Ipv4Address daddr, Ptr<Ipv4Route> route, uint32_t mss)
+{
+    m_remainSize = payload->GetSize();
+    m_daddr = daddr;
+    m_route = route;
+    m_mss = mss;
+    for (uint32_t i = 0; i < TotalSize(); i++)
+    {
+        m_acked.push_back(false);
+    }
+
+    SocketIpTosTag ipTosTag;
+    payload->PeekPacketTag(ipTosTag);
+    SocketPriorityTag priorityTag;
+    payload->PeekPacketTag(priorityTag);
+    if (ipTosTag.GetTos())
+    {
+        m_tos = ipTosTag.GetTos();
+    }
+    if (priorityTag.GetPriority())
+    {
+        m_priority = priorityTag.GetPriority();
+    }
+
     m_sendCb();
 }
 
@@ -678,8 +929,9 @@ DcbTxBuffer::Front() const
 void
 DcbTxBuffer::AcknowledgeTo(uint32_t psn)
 {
-    // No need to check whether psn is smaller than m_frontPsn as there maybe duplicate ack in IRN.
-    // NS_ASSERT_MSG(psn >= m_frontPsn, "PSN to be acknowledged is smaller than the front PSN.");
+    // No need to check whether psn is smaller than m_frontPsn as there maybe duplicate ack
+    // in IRN. NS_ASSERT_MSG(psn >= m_frontPsn, "PSN to be acknowledged is smaller than the
+    // front PSN.");
     NS_ASSERT_MSG(psn < TotalSize(), "PSN to be acknowledged is larger than the total size.");
     for (uint32_t i = m_frontPsn; i <= psn; i++)
     {
@@ -688,6 +940,7 @@ DcbTxBuffer::AcknowledgeTo(uint32_t psn)
     m_maxAckedPsn = std::max(m_maxAckedPsn, psn);
 
     CheckRelease();
+    m_sendCb();
 }
 
 void
@@ -699,6 +952,7 @@ DcbTxBuffer::Acknowledge(uint32_t psn)
     m_maxAckedPsn = std::max(m_maxAckedPsn, psn);
 
     CheckRelease();
+    m_sendCb();
 }
 
 void
@@ -720,30 +974,110 @@ DcbTxBuffer::CheckRelease()
                   "The buffer's order has broken.");
 }
 
+void
+DcbTxBuffer::CreatePacket(RoCEv2Header roceHeader)
+{
+    uint32_t pktSize = std::min(m_remainSize, m_mss);
+    Ptr<Packet> payload = Create<Packet>(pktSize);
+
+    int priority = m_priority;
+    if (m_tos)
+    {
+        // This tag will be used to set IP TOS field in L3
+        SocketIpTosTag ipTosTag;
+        ipTosTag.SetTos(m_tos);
+        // This packet may already have a SocketIpTosTag (see BUG 2440)
+        payload->ReplacePacketTag(ipTosTag);
+        priority = UdpBasedSocket::IpTos2Priority(m_tos);
+    }
+
+    if (priority)
+    {
+        SocketPriorityTag priorityTag;
+        priorityTag.SetPriority(priority);
+        payload->ReplacePacketTag(priorityTag);
+    }
+    m_remainSize -= pktSize;
+
+    // Push(roceHeader.GetPSN(), std::move(roceHeader), payload, m_daddr, m_route);
+    // Directly push the packet to the buffer, no need to call the Push function
+    m_txQueue.push(roceHeader.GetPSN());
+    m_buffer.emplace_back(roceHeader.GetPSN(), std::move(roceHeader), payload, m_daddr, m_route);
+}
+
 const DcbTxBuffer::DcbTxBufferItem&
-DcbTxBuffer::PeekNextShouldSent()
+DcbTxBuffer::GetPacketAt(uint32_t psn)
+{
+    // Check whether the PSN is in the buffer
+    // The psn of the first packet in the buffer should be m_frontPsn
+    // The psn of the last packet in the buffer should be m_frontPsn + m_buffer.size() - 1
+    if (psn >= m_frontPsn && psn < m_frontPsn + m_buffer.size())
+    {
+        return m_buffer[psn - m_frontPsn];
+    }
+    else if (psn == m_frontPsn + m_buffer.size())
+    {
+        // Only create packet when the requested PSN is the next PSN
+        CreatePacket(m_createRocev2HeaderCb());
+        return m_buffer.back();
+    }
+    else
+    {
+        NS_FATAL_ERROR("Should not request a packet out of order.");
+    }
+}
+
+uint32_t
+DcbTxBuffer::NextSendPsn()
+{
+    // First we should filter the acked packets in the txQueue
+    // If the top of the txQueue is acked, pop it and check the next one
+    if (!m_txQueue.empty())
+    {
+        uint32_t nextSendPsn = m_txQueue.top();
+        while (m_acked[nextSendPsn] && m_txQueue.size() != 0)
+        {
+            m_txQueue.pop();
+            nextSendPsn = m_txQueue.top();
+        }
+    }
+
+    if (GetSizeToBeSent() == 0)
+    {
+        // All the packets have been sent
+        return TotalSize(); // maximum PSN + 1
+    }
+    else if (m_txQueue.empty())
+    {
+        // If the txQueue is empty but there still are packets in the buffer, return the front PSN
+        // This may happen when the packets are sent but not acked
+        return m_frontPsn + m_buffer.size();
+    }
+    else
+    {
+        // Return the top of the txQueue
+        uint32_t nextSendPsn = m_txQueue.top();
+        return nextSendPsn;
+    }
+}
+
+const DcbTxBuffer::DcbTxBufferItem&
+DcbTxBuffer::PeekNextShouldSend()
 {
     // Check whether has packet to send
     NS_ASSERT(GetSizeToBeSent() != 0);
-    // If the top of the txQueue is acked, pop it and check the next one
-    uint32_t nextSendPsn = m_txQueue.top();
-    while (m_acked[nextSendPsn] && m_txQueue.size() != 0)
-    {
-        m_txQueue.pop();
-        nextSendPsn = m_txQueue.top();
-    }
-
+    uint32_t nextSendPsn = NextSendPsn();
     if (TotalSize() - nextSendPsn)
     {
-        return m_buffer.at(nextSendPsn - m_frontPsn);
+        return GetPacketAt(nextSendPsn);
     }
     NS_FATAL_ERROR("DcbTxBuffer has no packet to be sent.");
 }
 
 const DcbTxBuffer::DcbTxBufferItem&
-DcbTxBuffer::PopNextShouldSent()
+DcbTxBuffer::PopNextShouldSend()
 {
-    const DcbTxBufferItem& item = PeekNextShouldSent();
+    const DcbTxBufferItem& item = PeekNextShouldSend();
     // If there are duplicate PSNs in the buffer, pop them all
     while (m_txQueue.top() == item.m_psn && m_txQueue.size() != 0)
     {
@@ -752,23 +1086,41 @@ DcbTxBuffer::PopNextShouldSent()
     return item;
 }
 
+inline bool
+DcbTxBuffer::CouldSend(uint64_t cwnd)
+{
+    return CouldSend(NextSendPsn(), cwnd);
+}
+
+inline bool
+DcbTxBuffer::CouldSend(uint32_t psn, uint64_t cwnd)
+{
+    return static_cast<uint64_t>(psn) < cwnd + m_frontPsn;
+}
+
 uint32_t
 DcbTxBuffer::Size() const
 {
-    return m_buffer.size();
+    return m_buffer.size() + RemainSizeInPacket();
 }
 
 uint32_t
 DcbTxBuffer::TotalSize() const
 {
     // m_buffer.size() + m_frontPsn = total number of packets to send = maximum PSN + 1
-    return m_buffer.size() + m_frontPsn;
+    return m_buffer.size() + m_frontPsn + RemainSizeInPacket();
 }
 
 uint32_t
 DcbTxBuffer::GetSizeToBeSent() const
 {
-    return m_txQueue.size();
+    return m_txQueue.size() + RemainSizeInPacket();
+}
+
+uint32_t
+DcbTxBuffer::RemainSizeInPacket() const
+{
+    return (m_remainSize + m_mss - 1) / m_mss;
 }
 
 uint32_t
@@ -858,8 +1210,8 @@ DcbRxBuffer::DcbRxBuffer(
 void
 DcbRxBuffer::Add(uint32_t psn, Ipv4Header ipv4, RoCEv2Header roce, Ptr<Packet> payload)
 {
-    // If the incoming psn is geq to expected PSN, and is not a duplicate packet, add the packet to
-    // the buffer.
+    // If the incoming psn is geq to expected PSN, and is not a duplicate packet, add the
+    // packet to the buffer.
     // TODO The comparison should consider the warp around of the PSN
     if (m_retxMode == RoCEv2RetxMode::GBN)
     {
@@ -870,12 +1222,12 @@ DcbRxBuffer::Add(uint32_t psn, Ipv4Header ipv4, RoCEv2Header roce, Ptr<Packet> p
         else if (psn > m_expectedPsn)
         {
             NS_LOG_DEBUG("RoCEv2 socket receives out-of-order packet "
-                        << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
+                         << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
         }
         else
         {
             NS_LOG_DEBUG("RoCEv2 socket receives duplicate packet "
-                        << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
+                         << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
         }
     }
     if (m_retxMode == RoCEv2RetxMode::IRN)
@@ -887,7 +1239,7 @@ DcbRxBuffer::Add(uint32_t psn, Ipv4Header ipv4, RoCEv2Header roce, Ptr<Packet> p
         else
         {
             NS_LOG_DEBUG("RoCEv2 socket receives duplicate packet "
-                        << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
+                         << psn << " at " << Simulator::Now().GetNanoSeconds() << "ns.");
         }
     }
 
@@ -925,12 +1277,18 @@ RoCEv2SocketState::GetTypeId()
     static TypeId tid = TypeId("ns3::RoCEv2SocketState")
                             .SetParent<Object>()
                             .SetGroupName("Dcb")
-                            .AddConstructor<RoCEv2SocketState>();
+                            .AddConstructor<RoCEv2SocketState>()
+                            .AddAttribute("MinRateRatio",
+                                          "Socket's minimum rate ratio",
+                                          DoubleValue(1e-3),
+                                          MakeDoubleAccessor(&RoCEv2SocketState::m_minRateRatio),
+                                          MakeDoubleChecker<double>());
     return tid;
 }
 
 RoCEv2SocketState::RoCEv2SocketState()
-    : m_rateRatio(1.)
+    : m_rateRatio(1.),
+      m_cwnd(UINT64_MAX >> 1)
 {
 }
 
@@ -945,7 +1303,8 @@ RoCEv2Socket::Stats::Stats()
       tStart(Time(0)),
       tFinish(Time(0)),
       tFct(Time(0)),
-      overallFlowRate(DataRate(0))
+      overallFlowRate(DataRate(0)),
+      ccStats(nullptr)
 {
     // Retrieve the global config values
     BooleanValue bv;
@@ -963,6 +1322,10 @@ std::shared_ptr<RoCEv2Socket::Stats>
 RoCEv2Socket::GetStats() const
 {
     m_stats->CollectAndCheck();
+
+    // Get the cc's statistics
+    m_stats->ccStats = m_ccOps->GetStats();
+
     return m_stats;
 }
 

@@ -1,12 +1,12 @@
 {
     "inputFile": {
-        "topo": "config/topo/dumbell.txt"
+        "topo": "config/topo/simple-tree4.txt"
     },
     "outputFile": {
-        "resultFile": "output/data-timely.json"
+        "resultFile": "output/*.json"
     },
     "runtimeConfig": {
-        "seed": 1111,
+        "seed": 8259,
         "runningTime": "1s",
         "stopTime": "10s"
     },
@@ -24,24 +24,27 @@
         "TcpSocketBase": {
             "Timestamp": false
         },
-        "TraceApplication": {
-            "CongestionType": "ns3::RoCEv2Timely"
+        "DcbTrafficGenApplication": {
+            "CongestionType": "ns3::RoCEv2Dcqcn"
         },
         "RoCEv2Timely": {
-            "Alpha": 0.875,
-            "Beta": 0.8,
-            "MinRTT": "2us",
-            "Tlow": "5us",
-            "Thigh": "50us"
+            "Tlow": "32us",
+            "Thigh": "16us"
         },
         "RoCEv2Socket": {
             "RetxMode": "GBN"
+        },
+        "RoCEv2SocketState": {
+            "MinRateRatio": 0.01
         }
     },
     "globalConfig": {
         "detailedSenderStats": false,
         "detailedRetxStats": false,
-        "detailedSwitchStats": false
+        "detailedQlengthStats": false,
+        "qlengthRecordInterval": "10us",
+        "detailedThroughputStats": true,
+        "deviceThroughputRecordInterval": "10us"
     },
     "topologyConfig": {
         "hostPort": {
@@ -49,8 +52,7 @@
             "enableVec": 255
         },
         "switch": {
-            "pfcDynamic": false,
-            "bufferSize": "13180KB"
+            "pfcDynamic": true
         },
         "switchPort": {
             "pfcEnabled": true,
@@ -59,30 +61,37 @@
             "queues": 8
         },
         "switchPortQueue": {
-            "pfcReserve": "20KiB",
-            "pfcXon": "15KiB",
-            "ecnKMin": "200KiB",
-            "ecnKMax": "400KiB",
-            "ecnPMax": 0.4
+            "pfcReserve": "4KiB",
+            "pfcResumeOffset": "3KiB",
+            "pfcDynamicThreshold": true,
+            "ecnKMin": "400KiB",
+            "ecnKMax": "1600KiB",
+            "ecnPMax": 0.2
         },
         "link": {
             "rate": "100Gbps",
-            "delay": "1us"
+            "delay": "3us"
         }
     },
     "applicationConfig": [
         {
-            "appName": "TraceApplication",
-            "nodes": "all",
+            "appName": "DcbTrafficGenApplication",
+            "nodes": "[0:5]",
             "protocolGroup": "RoCEv2",
-            "cdf": {
-                "cdfFile": "config/trace/WebSearch_distribution.txt",
-                "avgSize": 0,
-                "scaleFactor": 1
+            "applicationConfig":{
+                "CongestionType": "ns3::RoCEv2Dcqcn",
+                "SendEnabled": true,
+                "TrafficPattern": "FileRequest",
+                "FileRequestNodesNum":3,
+                "TrafficSizeBytes": 100000,
+                "TrafficLoad": 0.5
             },
-            "load": 0.9,
+            "socketConfig": {
+                "InnerPriority": 0
+            },
             "startTime": "0.1s",
-            "stopTime": "0.101s"
+            "stopTime": "0.11s",
+            "flowInterval": "0.0000s"
         }
     ]
 }

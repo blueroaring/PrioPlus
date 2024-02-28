@@ -66,7 +66,7 @@ class DcbTxBuffer : public Object
     static TypeId GetTypeId(void);
 
     // No default constructor, as we need the sendCb
-    DcbTxBuffer(Callback<void> sendCb);
+    DcbTxBuffer(Callback<void> sendCb, Callback<RoCEv2Header> createRocev2HeaderCb);
 
     typedef std::deque<DcbTxBufferItem>::const_iterator DcbTxBufferItemI;
 
@@ -97,13 +97,23 @@ class DcbTxBuffer : public Object
      */
     void CheckRelease();
     /**
-     * \brief Get the next item to be sent.
+     * \brief Return the next psn to be sent. If there is no packet to be sent, return TotalSize().
      */
-    const DcbTxBufferItem& PeekNextShouldSent();
+    uint32_t NextSendPsn();
     /**
      * \brief Remove the next item to be sent.
      */
-    const DcbTxBufferItem& PopNextShouldSent();
+    const DcbTxBufferItem& PopNextShouldSend();
+    /**
+     * \brief Return whether cwnd is enough to send a packet.
+     * \param cwnd unit: packets
+     */
+    inline bool CouldSend(uint64_t cwnd);
+    /**
+     * \brief Return whether cwnd is enough to send a packet with PSN.
+     * \param cwnd unit: packets
+     */
+    inline bool CouldSend(uint32_t psn, uint64_t cwnd);
     /**
      * \brief Return the number of packets in the buffer.
      */
@@ -135,8 +145,37 @@ class DcbTxBuffer : public Object
      */
     bool HasGap() const;
 
+    /**
+     * \brief receive a payload from upper layer.
+     */
+    void RecvPayload(Ptr<Packet> payload, Ipv4Address daddr, Ptr<Ipv4Route> route, uint32_t mss);
+
+    /**
+     * \brief Get the remain size to be sent. Unit: packet
+     */
+    uint32_t RemainSizeInPacket() const;
+
+    /**
+     * \brief Create a packet and push it into the buffer.
+     */
+    void CreatePacket(RoCEv2Header roceHeader);
+
+    /**
+     * \brief Get the packet with the given PSN.
+     *
+     * If the packet is not in the buffer, create it and push it into the buffer.
+     */
+    const DcbTxBufferItem& GetPacketAt(uint32_t psn);
+
     DcbTxBufferItemI FindPSN(uint32_t psn) const;
     DcbTxBufferItemI End() const;
+
+  protected:
+    /**
+     * \brief Get the next item to be sent.
+     * Calling this function should ensure that there is a packet created but not sent.
+     */
+    const DcbTxBufferItem& PeekNextShouldSend();
 
   private:
     /**
@@ -144,6 +183,13 @@ class DcbTxBuffer : public Object
      * send.
      */
     Callback<void> m_sendCb;
+
+    /**
+     * \brief The CreateRoCEv2Header() call back, called when a new packet is created.
+     * 
+     * Note that this callback should be called only once for a psn.
+     */
+    Callback<RoCEv2Header> m_createRocev2HeaderCb;
 
     std::deque<DcbTxBufferItem> m_buffer;
     uint32_t m_frontPsn; // PSN of the front item in the buffer. Only increase when acked.
@@ -153,6 +199,14 @@ class DcbTxBuffer : public Object
                                // retx mode IRN. The index is the PSN.
     uint32_t m_maxAckedPsn;    // The max PSN which has been acknowledged, used to detect gap.
 
+    uint32_t m_remainSize;  // The size of data to be sent
+    uint32_t m_nextGenPsn;  // The next PSN to be generated
+    Ipv4Address m_daddr;    // The destination address to send the packet
+    Ptr<Ipv4Route> m_route; // The route to send the packet
+    uint32_t m_mss;
+
+    uint8_t m_tos;
+    uint8_t m_priority;
 }; // class DcbTxBuffer
 
 class DcbRxBuffer : public Object
@@ -211,12 +265,23 @@ class RoCEv2SocketState : public Object
 
     inline void SetRateRatioPercent(double ratio)
     {
+        ratio = CheckRateRatio(ratio);
         m_rateRatio = ratio;
     }
 
     inline double GetRateRatioPercent() const
     {
         return m_rateRatio;
+    }
+
+    inline void SetMinRateRatio(double ratio)
+    {
+        m_minRateRatio = ratio;
+    }
+
+    inline double GetMinRateRatio() const
+    {
+        return m_minRateRatio;
     }
 
     inline void SetCwnd(uint64_t cwnd)
@@ -229,6 +294,87 @@ class RoCEv2SocketState : public Object
         return m_cwnd;
     }
 
+    inline void SetTxBuffer(DcbTxBuffer* txBuffer)
+    {
+        m_txBuffer = txBuffer;
+    }
+
+    inline DcbTxBuffer* GetTxBuffer() const
+    {
+        return m_txBuffer;
+    }
+
+    inline void SetDeviceRate(DataRate* deviceRate)
+    {
+        m_deviceRate = deviceRate;
+    }
+
+    inline DataRate* GetDeviceRate() const
+    {
+        return m_deviceRate;
+    }
+
+    inline void SetBaseRtt(Time baseRtt)
+    {
+        m_baseRtt = baseRtt;
+    }
+
+    inline Time GetBaseRtt() const
+    {
+        return m_baseRtt;
+    }
+
+    /**
+     * \brief Get the base BDP(Bytes) using device rate and base RTT.
+     */
+    inline uint64_t GetBaseBdp() const
+    {
+        if (m_deviceRate != nullptr)
+            return static_cast<uint64_t>(m_deviceRate->GetBitRate() / 8 * m_baseRtt.GetSeconds());
+        else
+            return 0;
+    }
+
+    inline void SetBaseOneWayDelay(Time baseOneWayDelay)
+    {
+        m_baseOneWayDelay = baseOneWayDelay;
+    }
+
+    inline Time GetBaseOneWayDelay() const
+    {
+        return m_baseOneWayDelay;
+    }
+
+    inline void SetPacketSize(uint32_t packetSize)
+    {
+        m_packetSize = packetSize;
+    }
+
+    inline uint32_t GetPacketSize() const
+    {
+        return m_packetSize;
+    }
+
+    inline void SetMss(uint32_t mss)
+    {
+        m_mss = mss;
+    }
+
+    inline uint32_t GetMss() const
+    {
+        return m_mss;
+    }
+
+    /**
+     * \brief Check if rateRatio is less than 1.0 and greater than m_minRateRatio.
+     * if not, return the corrected rateRatio.
+     * \return the corrected rateRatio.
+     */
+    inline double CheckRateRatio(double rateRatio)
+    {
+        return std::min(std::max(rateRatio, m_minRateRatio), 1.);
+    }
+
   private:
     /**
      * Instead of directly store sending rate here, we store a rate ratio.
@@ -236,7 +382,16 @@ class RoCEv2SocketState : public Object
      * In this way, this class is totally decoupled with others.
      */
     double m_rateRatio;
-    uint64_t m_cwnd;
+    double m_minRateRatio;
+    uint64_t m_cwnd; //!< unit: bytes
+    DcbTxBuffer* m_txBuffer;
+    DataRate* m_deviceRate;
+    Time m_baseRtt; //!< Base RTT. Note that this is auto set by DcbDcbTrafficGenApplication. If not, it
+                    //!< should be set manually.
+    Time m_baseOneWayDelay; //!< Base one way delay. Note that this is auto set by
+                            //!< DcbDcbTrafficGenApplication. If not, it should be set manually.
+    uint32_t m_packetSize;  //!< MSS + headersize
+    uint32_t m_mss;         //!< MSS
 
 }; // class RoCEv2SocketState
 
@@ -258,20 +413,42 @@ class RoCEv2Socket : public UdpBasedSocket
 
     int BindToLocalPort(uint32_t port);
 
-    virtual void FinishSending() override;
-
     void SetStopTime(Time stopTime); // for RoCEv2 Congestion
 
     // void SetCcOps(Ptr<RoCEv2CongestionOps> algo);
     void SetCcOps(TypeId congTypeId);
+    void SetCcOps(TypeId congTypeId, std::vector<RoCEv2CongestionOps::CcOpsConfigPair_t>& ccConfig);
+
+    /**
+     * \brief Set the RoCEv2SocketState's BaseRtt and BaseOneWayDelay
+     * \param delay propogation delay
+     */
+    void SetBaseRttNOneWayDelay(uint32_t hop, Time delay, uint32_t packetSize, uint32_t ackSize);
 
     Time GetCNPInterval() const;
 
     Time GetFlowStartTime() const;
 
-    // \brief Structure that keeps the IbcSendScheduler statistics
-    class Stats
+    /**
+     * \brief get the srcPort/dstPort of this socket, only be called after call Bind()!
+     * used for generate RoceV2Header to find the outport in srcNode.
+     * \return the srcPort/dstPort of this socket.
+     */
+    uint32_t GetSrcPort() const;
+    uint32_t GetDstPort() const;
 
+    /**
+     * \brief Get the congestion control algorithm.
+     */
+    Ptr<RoCEv2CongestionOps> GetCcOps() const;
+
+    /**
+     * \brief Get the socket state.
+     */
+    Ptr<RoCEv2SocketState> GetSocketState() const;
+
+    // \brief Structure that keeps the RoCEv2Socket statistics
+    class Stats
     {
       public:
         // constructor
@@ -308,6 +485,9 @@ class RoCEv2Socket : public UdpBasedSocket
         std::vector<std::pair<Time, uint32_t>> vSentPsn;  //<! Record the packets' send time and PSN
         std::vector<std::pair<Time, uint32_t>> vAckedPsn; //<! Record the ack recv time and PSN
         std::vector<std::pair<Time, uint32_t>> vExpectedPsn; //<! Record the ack recv time and PSN
+
+        // The pointer to the RoCEv2Harvest::Stats
+        std::shared_ptr<RoCEv2CongestionOps::Stats> ccStats;
 
         // Recorder function of the detailed statistics
         void RecordCcRate(DataRate rate);
@@ -351,6 +531,11 @@ class RoCEv2Socket : public UdpBasedSocket
                            uint32_t port,
                            Ptr<Ipv4Interface> incomingInterface) override;
 
+    /**
+     * \brief Called by flow scheduler at RoCEv2L4Proto to notify the socket to send a packet down.
+     */
+    void NotifyCouldSend();
+
   private:
     struct FlowInfo // for receiver
     {
@@ -359,12 +544,21 @@ class RoCEv2Socket : public UdpBasedSocket
         bool receivedECN;
         EventId lastCNPEvent;
         DcbRxBuffer m_rxBuffer;
+        Ptr<RoCEv2CongestionOps> m_ccOps;
+        /**
+         * In RoCE, receiver will only generate one NACK for a expected PSN. Thus we use a bool to
+         * record whether the expected PSN advanced after a NACK. If true, it is permitted to send a
+         * new NACK.
+         */
+        bool m_ePsnAdvancedAfterNack; // Whether the expected PSN advanced after a NACK
 
-        FlowInfo(uint32_t dst, DcbRxBuffer rxBuffer)
+        FlowInfo(uint32_t dst, DcbRxBuffer rxBuffer, Ptr<RoCEv2CongestionOps> ccOps)
             : dstQP(dst),
               nextPSN(0),
               receivedECN(false),
-              m_rxBuffer(rxBuffer)
+              m_rxBuffer(rxBuffer),
+              m_ccOps(ccOps),
+              m_ePsnAdvancedAfterNack(false)
         {
         }
 
@@ -431,9 +625,9 @@ class RoCEv2Socket : public UdpBasedSocket
 
     std::shared_ptr<Stats> m_stats;
 
-    Ptr<RoCEv2CongestionOps> m_ccOps; //!< RoCEv2 congestion control
-    // FIXME Now just used in DCQCN
-    Ptr<RoCEv2SocketState> m_sockState; //!< DCQCN socket state
+    TypeId m_congTypeId;                //!< TypeId of congestion control algorithm
+    Ptr<RoCEv2CongestionOps> m_ccOps;   //!< RoCEv2 congestion control
+    Ptr<RoCEv2SocketState> m_sockState; //!< socket state
     DcbTxBuffer m_txBuffer;
     DataRate m_deviceRate;
     // bool m_isSending;
@@ -449,6 +643,36 @@ class RoCEv2Socket : public UdpBasedSocket
     Time m_flowStartTime;
 
     RoCEv2RetxMode m_retxMode;
+
+    uint32_t m_innerPrio; //!< The inner priority of the sockets when contenting with other sockets
+
+    DataRate m_rateCap; //!< Rate cap, used to run some experiments
+
+    /***** Utility for FlowScheduling *****/
+    bool m_waitingForSchedule; //!< Whether the socket is waiting for the flow scheduler to notify
+                               //!< it to send a packet down.
+
+    /***** Utility for RTO *****/
+    /**
+     * \brief Retransmission timeout event.
+     *
+     * Retransmit according to the retransmission mode. For GBN, retransmit all packets from the
+     * first unacked packet. For IRN, retransmit the first unacked packet.
+     */
+    void RetransmissionTimeout();
+    Time m_rto;         //!< Retransmission timeout (RTOhigh when IRN is used)
+    EventId m_rtoEvent; //!< Event id of the next RTO event
+
+    Time m_irnRtoLow;        //!< Low retransmission timeout for IRN
+    uint32_t m_irnPktThresh; //!< The threshold of the number of packets to trigger low RTO for IRN
+
+    enum FlowState
+    {
+        PENDING,
+        RUNNING, 
+        FINISHED
+    };
+    FlowState m_flowState;
 
 }; // class RoCEv2Socket
 

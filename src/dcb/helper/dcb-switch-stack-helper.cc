@@ -26,6 +26,7 @@
 #include "ns3/dcb-pfc-port.h"
 #include "ns3/dcb-traffic-control.h"
 #include "ns3/global-router-interface.h"
+#include "ns3/global-value.h"
 #include "ns3/icmpv6-l4-protocol.h"
 #include "ns3/ipv4-global-routing-helper.h"
 #include "ns3/ipv4-global-routing.h"
@@ -204,35 +205,35 @@ DcbSwitchStackHelper::AssignStreams(NodeContainer c, int64_t stream)
     {
         Ptr<Node> node = *i;
         Ptr<GlobalRouter> router = node->GetObject<GlobalRouter>();
-        if (router != 0)
+        if (router != nullptr)
         {
             Ptr<Ipv4GlobalRouting> gr = router->GetRoutingProtocol();
-            if (gr != 0)
+            if (gr != nullptr)
             {
                 currentStream += gr->AssignStreams(currentStream);
             }
         }
         Ptr<Ipv6ExtensionDemux> demux = node->GetObject<Ipv6ExtensionDemux>();
-        if (demux != 0)
+        if (demux != nullptr)
         {
             Ptr<Ipv6Extension> fe = demux->GetExtension(Ipv6ExtensionFragment::EXT_NUMBER);
             NS_ASSERT(fe); // should always exist in the demux
             currentStream += fe->AssignStreams(currentStream);
         }
         Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
-        if (ipv4 != 0)
+        if (ipv4 != nullptr)
         {
             Ptr<ArpL3Protocol> arpL3Protocol = ipv4->GetObject<ArpL3Protocol>();
-            if (arpL3Protocol != 0)
+            if (arpL3Protocol != nullptr)
             {
                 currentStream += arpL3Protocol->AssignStreams(currentStream);
             }
         }
         Ptr<Ipv6> ipv6 = node->GetObject<Ipv6>();
-        if (ipv6 != 0)
+        if (ipv6 != nullptr)
         {
             Ptr<Icmpv6L4Protocol> icmpv6L4Protocol = ipv6->GetObject<Icmpv6L4Protocol>();
-            if (icmpv6L4Protocol != 0)
+            if (icmpv6L4Protocol != nullptr)
             {
                 currentStream += icmpv6L4Protocol->AssignStreams(currentStream);
             }
@@ -266,9 +267,9 @@ DcbSwitchStackHelper::CreateAndAggregateObjectFromTypeId(Ptr<Node> node, const s
 }
 
 void
-DcbSwitchStackHelper::Install(Ptr<Node> node) const
+DcbSwitchStackHelper::InstallSwitchProtos(Ptr<Node> node)
 {
-    if (node->GetObject<Ipv4>() != 0)
+    if (node->GetObject<Ipv4>() != nullptr)
     {
         NS_FATAL_ERROR("DcbSwitchStackHelper::Install (): Aggregating "
                        "an InternetStack to a node with an existing Ipv4 object");
@@ -296,118 +297,7 @@ DcbSwitchStackHelper::Install(Ptr<Node> node) const
     if (m_ipv6Enabled)
     {
         /* IPv6 stack */
-        if (node->GetObject<Ipv6>() != 0)
-        {
-            NS_FATAL_ERROR("DcbSwitchStackHelper::Install (): Aggregating "
-                           "an InternetStack to a node with an existing Ipv6 object");
-            return;
-        }
-
-        CreateAndAggregateObjectFromTypeId(node, "ns3::Ipv6L3Protocol");
-        CreateAndAggregateObjectFromTypeId(node, "ns3::Icmpv6L4Protocol");
-        if (m_ipv6NsRsJitterEnabled == false)
-        {
-            Ptr<Icmpv6L4Protocol> icmpv6l4 = node->GetObject<Icmpv6L4Protocol>();
-            NS_ASSERT(icmpv6l4);
-            icmpv6l4->SetAttribute("SolicitationJitter",
-                                   StringValue("ns3::ConstantRandomVariable[Constant=0.0]"));
-        }
-        // Set routing
-        Ptr<Ipv6> ipv6 = node->GetObject<Ipv6>();
-        Ptr<Ipv6RoutingProtocol> ipv6Routing = m_routingv6->Create(node);
-        ipv6->SetRoutingProtocol(ipv6Routing);
-
-        /* register IPv6 extensions and options */
-        ipv6->RegisterExtensions();
-        ipv6->RegisterOptions();
-    }
-
-    Ptr<ArpL3Protocol> arp = node->GetObject<ArpL3Protocol>();
-    Ptr<TrafficControlLayer> tc = node->GetObject<TrafficControlLayer>();
-    NS_ASSERT(arp);
-    NS_ASSERT(tc);
-    arp->SetTrafficControl(tc);
-
-    const uint32_t devN =
-        node->GetNDevices() - 1; // the last device is LoopbackDevice which we should skip.
-
-    if (m_fcEnabled)
-    {
-        Ptr<DcbTrafficControl> dcbTc = node->GetObject<DcbTrafficControl>();
-        if (dcbTc == nullptr)
-        {
-            NS_FATAL_ERROR(
-                "Flow control enabled but there is no DcbTrafficControl aggregated to the node");
-        }
-        dcbTc->SetBufferSize(m_bufferSize.GetValue());
-
-        PausableQueueDisc::TCEgressCallback tcCallback =
-            MakeCallback(&DcbTrafficControl::EgressProcess, dcbTc);
-
-        dcbTc->RegisterDeviceNumber(devN); // to initialize the vector of ports info
-        for (uint32_t i = 0; i < devN; i++)
-        {
-            Ptr<NetDevice> dev = node->GetDevice(i);
-            Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
-            NS_ASSERT_MSG(dcbDev, "DcbNetDevice is not installed");
-
-            Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(i);
-            qDisc->RegisterTrafficControlCallback(tcCallback);
-            qDisc->SetQueueSize(m_bufferSize);
-            qDisc->SetFCEnabled(true);
-            dcbTc->SetRootQueueDiscOnDevice(dcbDev, qDisc);
-            dcbDev->SetFcEnabled(true); // all NetDevices should support FC
-        }
-    }
-    else
-    {
-        // Set queue disc normally
-        ObjectFactory qDiscFactory;
-        qDiscFactory.SetTypeId(PausableQueueDisc::GetTypeId());
-        for (uint32_t i = 0; i < devN; i++)
-        {
-            Ptr<NetDevice> dev = node->GetDevice(i);
-            Ptr<PausableQueueDisc> qDisc = qDiscFactory.Create<PausableQueueDisc>();
-            qDisc->SetFCEnabled(false);
-            tc->SetRootQueueDiscOnDevice(dev, qDisc);
-            Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
-            dcbDev->SetFcEnabled(false); // all NetDevices should support FC
-        }
-    }
-}
-
-void
-DcbSwitchStackHelper::InstallSwitchProtos(Ptr<Node> node) const
-{
-    if (node->GetObject<Ipv4>() != 0)
-    {
-        NS_FATAL_ERROR("DcbSwitchStackHelper::Install (): Aggregating "
-                       "an InternetStack to a node with an existing Ipv4 object");
-        return;
-    }
-
-    CreateAndAggregateObjectFromTypeId(node, "ns3::ArpL3Protocol");
-    CreateAndAggregateObjectFromTypeId(node, "ns3::Ipv4L3Protocol");
-    CreateAndAggregateObjectFromTypeId(node, "ns3::Icmpv4L4Protocol");
-    node->AggregateObject(m_tcFactory.Create<Object>());
-
-    // Set routing
-    Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
-    Ptr<Ipv4RoutingProtocol> ipv4Routing = m_routing->Create(node);
-    ipv4->SetRoutingProtocol(ipv4Routing);
-
-    // enable ECMP
-    int16_t priority;
-    Ptr<Ipv4ListRouting> routing = DynamicCast<Ipv4ListRouting>(ipv4Routing);
-    DynamicCast<Ipv4GlobalRouting>(routing->GetRoutingProtocol(0, priority))
-        ->SetAttribute("RandomEcmpRouting",
-                       UintegerValue(Ipv4GlobalRouting::EcmpMode::PER_FLOW_ECMP));
-    // paramenter 0 should be consistent with Initialize()
-
-    if (m_ipv6Enabled)
-    {
-        /* IPv6 stack */
-        if (node->GetObject<Ipv6>() != 0)
+        if (node->GetObject<Ipv6>() != nullptr)
         {
             NS_FATAL_ERROR("DcbSwitchStackHelper::Install (): Aggregating "
                            "an InternetStack to a node with an existing Ipv6 object");
@@ -477,7 +367,7 @@ DcbSwitchStackHelper::InstallPortsProtos(Ptr<Node> node) const
             Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(node, i);
             qDisc->RegisterTrafficControlCallback(tcCallback);
             // The queue size of a pauseable queue disc is fixed to the size of the switch
-            qDisc->SetQueueSize(m_bufferSize); 
+            qDisc->SetQueueSize(m_bufferSize);
             qDisc->SetFCEnabled(true);
             dcbTc->SetRootQueueDiscOnDevice(dcbDev, qDisc);
             dcbDev->SetFcEnabled(true); // all NetDevices should support FC;
@@ -933,7 +823,7 @@ DcbSwitchStackHelper::EnableAsciiIpv4Internal(Ptr<OutputStreamWrapper> stream,
     // since there will be one file per context and therefore the context would
     // be redundant.
     //
-    if (stream == 0)
+    if (stream == nullptr)
     {
         //
         // Set up an output stream object to deal with private ofstream copy
@@ -1276,7 +1166,7 @@ DcbSwitchStackHelper::EnableAsciiIpv6Internal(Ptr<OutputStreamWrapper> stream,
     // since there will be one file per context and therefore the context would
     // be redundant.
     //
-    if (stream == 0)
+    if (stream == nullptr)
     {
         //
         // Set up an output stream object to deal with private ofstream copy

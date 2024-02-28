@@ -21,6 +21,7 @@
 #define DCB_PFC_PORT_H
 
 #include "dcb-flow-control-port.h"
+#include "dcb-pfc-mmu-queue.h"
 #include "dcb-traffic-control.h"
 
 #include "ns3/event-id.h"
@@ -33,19 +34,34 @@ struct DcbPfcPortConfig
 {
     struct QueueConfig
     {
-        uint32_t priority, reserve, xon;
+        uint32_t priority, reserve, resumeOffset, headroom;
+        bool isDynamicThreshold;
+        uint32_t dtShift;
 
-        QueueConfig(uint32_t prior, uint32_t resv, uint32_t x)
+        QueueConfig(uint32_t prior,
+                    uint32_t resv,
+                    uint32_t reso,
+                    uint32_t hdr,
+                    bool isDt = false,
+                    uint32_t dtS = 2)
             : priority(prior),
               reserve(resv),
-              xon(x)
+              resumeOffset(reso),
+              headroom(hdr),
+              isDynamicThreshold(isDt),
+              dtShift(dtS)
         {
         }
     }; // struct QueueConfig
 
-    void AddQueueConfig(uint32_t prior, uint32_t resv, uint32_t x)
+    void AddQueueConfig(uint32_t prior,
+                        uint32_t resv,
+                        uint32_t reso,
+                        uint32_t hdr,
+                        bool isDt = false,
+                        uint32_t dtS = 2)
     {
-        queues.emplace_back(prior, resv, x);
+        queues.emplace_back(prior, resv, reso, hdr, isDt, dtS);
     }
 
     uint32_t port;
@@ -62,16 +78,12 @@ class DcbPfcPort : public DcbFlowControlPort
     DcbPfcPort(Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc);
     virtual ~DcbPfcPort();
 
-    virtual void DoIngressProcess(Ptr<const Packet> packet,
-                                  uint16_t protocol,
-                                  const Address& from,
-                                  const Address& to,
-                                  NetDevice::PacketType packetType) override;
+    virtual void DoIngressProcess(Ptr<NetDevice> outDev, Ptr<QueueDiscItem> item) override;
     /**
      * \brief Process when a packet previously came from this port is going to send
      * out though other port.
      */
-    virtual void DoPacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet) override;
+    virtual void DoPacketOutCallbackProcess(uint32_t priority, Ptr<Packet> packet) override;
 
     /**
      * \brief Egress process. Do nothing in PFC.
@@ -84,8 +96,6 @@ class DcbPfcPort : public DcbFlowControlPort
                     const Address& from,
                     const Address& to,
                     NetDevice::PacketType packetType);
-
-    void ConfigQueue(uint32_t priority, uint32_t reserve, uint32_t xon);
 
     /**
      * \brief Set the EnableVec field of PFC to deviceIndex with enableVec.
@@ -102,8 +112,6 @@ class DcbPfcPort : public DcbFlowControlPort
     {
         struct IngressQueueInfo
         {
-            uint32_t reserve; // XXX Act as xoff now
-            uint32_t xon;
             bool isUpstreamPaused; // Whether the upstream priorty is paused
 
             EventId pauseEvent;
@@ -125,7 +133,7 @@ class DcbPfcPort : public DcbFlowControlPort
 
     bool CheckEnableVec(uint8_t cls);
 
-    bool CheckShouldSendPause(uint8_t priority, uint32_t packetSize) const;
+    bool CheckShouldSendPause(uint8_t priority) const;
     void DoSendPause(uint8_t priority, const Address& from);
     bool CheckShouldSendResume(uint8_t priority) const;
 

@@ -20,6 +20,7 @@
 #ifndef DCB_TRAFFIC_CONTROL_H
 #define DCB_TRAFFIC_CONTROL_H
 
+#include "dcb-flow-control-mmu-queue.h"
 #include "dcb-flow-control-port.h"
 #include "dcb-net-device.h"
 
@@ -148,26 +149,31 @@ class DcbTrafficControl : public TrafficControlLayer
                          const Address& to,
                          NetDevice::PacketType packetType) override;
 
+    virtual void Send(Ptr<NetDevice> device, Ptr<QueueDiscItem> item) override;
+
     /**
      * \brief Called after egress queue pops out a packet.
      * For example, it can be used for flow control doing some egress action.
      */
-    void EgressProcess(uint32_t port, uint8_t priority, Ptr<Packet> packet);
+    void EgressProcess(uint32_t port, uint32_t priority, Ptr<Packet> packet);
 
-    int32_t CompareIngressQueueLength(uint32_t port, uint8_t priority, uint32_t bytes) const;
+    // int32_t CompareIngressQueueLength(uint32_t port, uint8_t priority, uint32_t bytes) const;
 
-    void InstallFCToPort(uint32_t portIdx, Ptr<DcbFlowControlPort> fc);
+    void InstallFCToPort(uint32_t portIdx,
+                         Ptr<DcbFlowControlPort> fc,
+                         std::vector<ns3::Ptr<ns3::DcbFlowControlMmuQueue>> fcMmuQueues);
 
     /**
      * \brief Peek the priority of from ToS field of IP header.
      */
     static uint8_t PeekPriorityOfPacket(const Ptr<const Packet> packet);
+
     constexpr static const uint8_t PRIORITY_NUMBER = 8;
 
     class PortInfo
     {
       public:
-        typedef Callback<void, uint8_t, Ptr<Packet>> FCPacketOutCb;
+        typedef Callback<void, uint32_t, Ptr<Packet>> FCPacketOutCb;
 
         PortInfo();
 
@@ -182,20 +188,12 @@ class DcbTrafficControl : public TrafficControlLayer
          */
         void CallFCPacketOutPipeline(uint32_t fromIdx, uint8_t priority, Ptr<Packet> packet);
 
-        inline uint32_t GetQueueLength(uint32_t priority) const
-        {
-            return m_ingressQueueLength[priority];
-        }
-
-        inline void IncreQueueLength(uint32_t priority, int32_t val)
-        {
-            m_ingressQueueLength[priority] += val;
-        }
-
-        inline void SetFC(Ptr<DcbFlowControlPort> fc)
+        inline void SetFC(Ptr<DcbFlowControlPort> fc,
+                          std::vector<Ptr<DcbFlowControlMmuQueue>> fcMmuQueues)
         {
             m_fcEnabled = true;
             m_fc = fc;
+            m_fcMmuQueues = fcMmuQueues;
         }
 
         inline bool FcEnabled() const
@@ -208,10 +206,19 @@ class DcbTrafficControl : public TrafficControlLayer
             return m_fc;
         }
 
+        inline Ptr<DcbFlowControlMmuQueue> GetFCMmuQueue(uint32_t priority) const
+        {
+            if (priority > m_fcMmuQueues.size())
+            {
+                NS_FATAL_ERROR("Priority is out of range");
+            }
+            return m_fcMmuQueues[priority];
+        }
+
       private:
-        uint32_t m_ingressQueueLength[PRIORITY_NUMBER]; // in cells
         bool m_fcEnabled;
         Ptr<DcbFlowControlPort> m_fc;
+        std::vector<Ptr<DcbFlowControlMmuQueue>> m_fcMmuQueues;
         // a vector of out callbacks, which will be called one by one when packet out
         std::vector<std::pair<uint32_t, FCPacketOutCb>> m_fcPacketOutPipeline; 
     }; // class PortInfo
@@ -221,6 +228,9 @@ class DcbTrafficControl : public TrafficControlLayer
     {
         return m_buffer.GetPorts();
     }
+
+  protected:
+    TracedCallback<Ptr<const Packet>> m_bufferOverflowTrace;
 
   private:
     class Buffer
@@ -233,31 +243,54 @@ class DcbTrafficControl : public TrafficControlLayer
          * \brief Process when packet received.
          * Returns whether the packet is accomondated into the buffer, false for packet drop.
          */
-        bool InPacketProcess(uint32_t portIndex, uint8_t priority, uint32_t packetSize);
-        void OutPacketProcess(uint32_t portIndex, uint8_t priority, uint32_t packetSize);
-        PortInfo& GetPort(uint32_t portIndex);
-        std::vector<PortInfo>& GetPorts();
+        bool InPacketProcess(uint32_t inPortIndex,
+                             uint32_t inQueuePriority,
+                             uint32_t outPortIndex,
+                             uint32_t outQueuePriority,
+                             uint32_t packetSize);
+        void OutPacketProcess(uint32_t inPortIndex,
+                              uint32_t inQueuePriority,
+                              uint32_t outPortIndex,
+                              uint32_t outQueuePriority,
+                              uint32_t packetSize);
 
-        inline uint32_t GetIngressQueueCells(uint32_t port, uint8_t priority) const
+        inline PortInfo& GetPort(uint32_t portIndex)
         {
-            return m_ports[port].GetQueueLength(priority);
+            return m_ports[portIndex];
         }
 
-        constexpr static const double CELL_SIZE = 80.0; // cell size of the switch in bytes
+        inline std::vector<PortInfo>& GetPorts()
+        {
+            return m_ports;
+        }
 
-      protected:
-        void IncrementIngressQueueCounter(uint32_t index, uint8_t priority, uint32_t packetCells);
-        void DecrementIngressQueueCounter(uint32_t index, uint8_t priority, uint32_t packetCells);
+        inline uint32_t GetSize() const
+        {
+            return m_totalSize;
+        }
+
+        /**
+         * \brief Only calculate shared size at first time. Then return the value directly, which
+         * means each queue's exclusive buffer size should not be changed after configuration.
+         */
+        uint32_t GetSharedSize();
+        uint32_t GetSharedUsed();
+
+        uint32_t GetSharedRemain()
+        {
+            return GetSharedSize() - GetSharedUsed();
+        }
+
+        void SetPortFcMmuBufferCallback(uint32_t portIndex);
 
       private:
-        static uint32_t CalcCellSize(uint32_t bytes);
-        uint32_t m_remainCells;
+        uint32_t m_totalSize;
+        uint32_t m_totalSharedSize;
+        bool m_hasCalSharedSize;
         std::vector<PortInfo> m_ports;
     }; // class Buffer
 
     Buffer m_buffer;
-
-    TracedCallback<Ptr<const Packet>> m_bufferOverflowTrace;
 };
 
 class DeviceIndexTag : public Tag

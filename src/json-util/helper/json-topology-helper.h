@@ -30,13 +30,14 @@
 #include "ns3/dcb-net-device.h"
 #include "ns3/dcb-pfc-port.h"
 #include "ns3/dcb-switch-stack-helper.h"
-#include "ns3/dcb-trace-application-helper.h"
+#include "ns3/dcb-traffic-gen-application-helper.h"
 #include "ns3/global-router-interface.h"
 #include "ns3/inet-socket-address.h"
 #include "ns3/ipv4-address-generator.h"
 #include "ns3/ipv4-global-routing-helper.h"
 #include "ns3/ipv4-global-routing.h"
 #include "ns3/ipv4-l3-protocol.h"
+#include "ns3/ipv4-static-routing.h"
 #include "ns3/ipv4.h"
 #include "ns3/log.h"
 #include "ns3/net-device-container.h"
@@ -45,6 +46,7 @@
 #include "ns3/object-factory.h"
 #include "ns3/queue-disc.h"
 #include "ns3/queue-size.h"
+#include "ns3/socket.h"
 #include "ns3/traced-value.h"
 
 #include <boost/json.hpp>

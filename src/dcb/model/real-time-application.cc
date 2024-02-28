@@ -31,14 +31,13 @@ TypeId
 RealTimeApplication::GetTypeId()
 {
     static TypeId tid =
-        TypeId("ns3::RealTimeApplication").SetParent<TraceApplication>().SetGroupName("Dcb");
+        TypeId("ns3::RealTimeApplication").SetParent<DcbTrafficGenApplication>().SetGroupName("Dcb");
     return tid;
 }
 
 RealTimeApplication::RealTimeApplication(Ptr<DcTopology> topology,
-                                         uint32_t nodeIndex,
-                                         int32_t destIndex /* = -1 */)
-    : TraceApplication(topology, nodeIndex, destIndex),
+                                         uint32_t nodeIndex)
+    : DcbTrafficGenApplication(topology, nodeIndex),
       m_pktSeq(0)
 {
     NS_LOG_FUNCTION(this);
@@ -47,17 +46,6 @@ RealTimeApplication::RealTimeApplication(Ptr<DcTopology> topology,
     m_stats = std::make_shared<Stats>();
 }
 
-RealTimeApplication::RealTimeApplication(Ptr<DcTopology> topology,
-                                         Ptr<Node> node,
-                                         InetSocketAddress destAddr)
-    : TraceApplication(topology, node, destAddr),
-      m_pktSeq(0)
-{
-    NS_LOG_FUNCTION(this);
-
-    // This will replace the base class's m_stats
-    m_stats = std::make_shared<Stats>();
-}
 
 RealTimeApplication::~RealTimeApplication()
 {
@@ -127,14 +115,14 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
     {
         if (InetSocketAddress::IsMatchingType(from))
         {
-            NS_LOG_LOGIC("TraceApplication: At time "
+            NS_LOG_LOGIC("DcbTrafficGenApplication: At time "
                          << Simulator::Now().As(Time::S) << " client received " << packet->GetSize()
                          << " bytes from " << InetSocketAddress::ConvertFrom(from).GetIpv4()
                          << " port " << InetSocketAddress::ConvertFrom(from).GetPort());
         }
         else if (Inet6SocketAddress::IsMatchingType(from))
         {
-            NS_LOG_LOGIC("TraceApplication: At time "
+            NS_LOG_LOGIC("DcbTrafficGenApplication: At time "
                          << Simulator::Now().As(Time::S) << " client received " << packet->GetSize()
                          << " bytes from " << Inet6SocketAddress::ConvertFrom(from).GetIpv6()
                          << " port " << Inet6SocketAddress::ConvertFrom(from).GetPort());
@@ -151,7 +139,9 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
             InetSocketAddress inetFrom = InetSocketAddress::ConvertFrom(from);
             Ipv4Address srcAddr = inetFrom.GetIpv4();
             uint32_t srcPort = inetFrom.GetPort();
-            Ipv4Address dstAddr = m_receiverSocket->GetLocalAddress();
+            Ptr<RoCEv2Socket> roceSocket =
+                DynamicCast<RoCEv2Socket>(m_receiverSocket); // XXX Not a good way
+            Ipv4Address dstAddr = roceSocket->GetLocalAddress();
             uint32_t dstPort = 100; // XXX Static for now
             FlowIdentifier flowId(srcAddr, dstAddr, srcPort, dstPort);
 
@@ -188,7 +178,7 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
     }
 }
 
-std::shared_ptr<TraceApplication::Stats>
+std::shared_ptr<DcbTrafficGenApplication::Stats>
 RealTimeApplication::GetStats() const
 {
     m_stats->CollectAndCheck(m_flows);
@@ -223,7 +213,7 @@ void
 RealTimeApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
 {
     // Call the base class's CollectAndCheck
-    TraceApplication::Stats::CollectAndCheck(flows);
+    DcbTrafficGenApplication::Stats::CollectAndCheck(flows);
 
     // Check if the stats is collected
     if (isCollected)

@@ -64,13 +64,11 @@ DcbPfcPort::~DcbPfcPort()
 }
 
 void
-DcbPfcPort::DoIngressProcess(Ptr<const Packet> packet,
-                             uint16_t protocol,
-                             const Address& from,
-                             const Address& to,
-                             NetDevice::PacketType packetType)
+DcbPfcPort::DoIngressProcess(Ptr<NetDevice> outDev, Ptr<QueueDiscItem> item)
 {
-    NS_LOG_FUNCTION(this << packet << protocol << from << to << packetType);
+    NS_LOG_FUNCTION(this << outDev << item);
+    Ptr<Packet> packet = item->GetPacket();
+    Ptr<DcbNetDevice> device = DynamicCast<DcbNetDevice>(m_dev);
 
     CoSTag cosTag;
     packet->PeekPacketTag(cosTag);
@@ -78,9 +76,9 @@ DcbPfcPort::DoIngressProcess(Ptr<const Packet> packet,
 
     if (CheckEnableVec(priority))
     {
-        if (CheckShouldSendPause(priority, packet->GetSize()))
+        if (CheckShouldSendPause(priority))
         {
-            DoSendPause(priority, from);
+            DoSendPause(priority, device->GetRemote());
         }
     }
 }
@@ -140,7 +138,7 @@ DcbPfcPort::UpstreamPauseExpired(uint8_t priority, Address from)
     // Check the queue length again
     if (CheckEnableVec(priority))
     {
-        if (CheckShouldSendPause(priority, 0))
+        if (CheckShouldSendPause(priority))
         {
             DoSendPause(priority, from);
         }
@@ -148,7 +146,7 @@ DcbPfcPort::UpstreamPauseExpired(uint8_t priority, Address from)
 }
 
 void
-DcbPfcPort::DoPacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet)
+DcbPfcPort::DoPacketOutCallbackProcess(uint32_t priority, Ptr<Packet> packet)
 {
     NS_LOG_FUNCTION(this);
 
@@ -238,15 +236,6 @@ DcbPfcPort::ReceivePfc(Ptr<NetDevice> dev,
     }
 }
 
-void
-DcbPfcPort::ConfigQueue(uint32_t priority, uint32_t reserve, uint32_t xon)
-{
-    NS_LOG_FUNCTION(this << priority << reserve << xon);
-    IngressPortInfo::IngressQueueInfo& q = m_port.getQueue(priority);
-    q.xon = xon;
-    q.reserve = reserve;
-}
-
 inline bool
 DcbPfcPort::CheckEnableVec(uint8_t cls)
 {
@@ -260,23 +249,22 @@ DcbPfcPort::SetEnableVec(uint8_t enableVec)
     m_port.m_enableVec = enableVec;
 }
 
-inline bool
-DcbPfcPort::CheckShouldSendPause(uint8_t priority, uint32_t packetSize) const
+bool
+DcbPfcPort::CheckShouldSendPause(uint8_t priority) const
 {
-    // TODO: add support for dynamic threshold
     const IngressPortInfo::IngressQueueInfo& q = m_port.getQueue(priority);
-    // XXX Why compare with reserve - packetSize?
-    return !q.isUpstreamPaused &&
-           m_tc->CompareIngressQueueLength(m_port.m_index, priority, q.reserve - packetSize) > 0;
+    Ptr<DcbPfcMmuQueue> queueMmu =
+        DynamicCast<DcbPfcMmuQueue>(m_tc->GetPorts().at(m_port.m_index).GetFCMmuQueue(priority));
+    return !q.isUpstreamPaused && queueMmu->CheckShouldSendPause();
 }
 
-inline bool
+bool
 DcbPfcPort::CheckShouldSendResume(uint8_t priority) const
 {
-    // TODO: add support for dynamic threshold
     const IngressPortInfo::IngressQueueInfo& q = m_port.getQueue(priority);
-    return q.isUpstreamPaused &&
-           m_tc->CompareIngressQueueLength(m_port.m_index, priority, q.xon) <= 0;
+    Ptr<DcbPfcMmuQueue> queueMmu =
+        DynamicCast<DcbPfcMmuQueue>(m_tc->GetPorts().at(m_port.m_index).GetFCMmuQueue(priority));
+    return q.isUpstreamPaused && queueMmu->CheckShouldSendResume();
 }
 
 inline void
@@ -334,9 +322,7 @@ DcbPfcPort::IngressPortInfo::getQueue(uint8_t priority)
  */
 
 DcbPfcPort::IngressPortInfo::IngressQueueInfo::IngressQueueInfo()
-    : reserve(0),
-      xon(0),
-      isUpstreamPaused(false),
+    : isUpstreamPaused(false),
       pauseEvent()
 {
 }

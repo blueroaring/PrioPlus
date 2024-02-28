@@ -42,6 +42,9 @@ class DcbHpccPort : public DcbPfcPort
   protected:
   private:
     uint64_t m_txBytes;
+    uint32_t
+        m_extraEgressHeaderSize; // When DoEgressProcess, packet does not include the Ethernet
+                                 // header and the IP header. So we need to add the size of them.
 }; // class DcbPfcPort
 
 } // namespace ns3

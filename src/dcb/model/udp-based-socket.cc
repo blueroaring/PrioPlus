@@ -19,6 +19,9 @@
 
 #include "udp-based-socket.h"
 
+#include "dcb-net-device.h"
+#include "pausable-queue-disc.h"
+#include "rocev2-l4-protocol.h"
 #include "udp-based-l4-protocol.h"
 
 #include "ns3/ethernet-header.h"
@@ -264,11 +267,12 @@ UdpBasedSocket::DoSend(Ptr<Packet> p)
     }
     if (Ipv4Address::IsMatchingType(m_defaultAddress))
     {
-        if (p->GetSize() > GetTxAvailable())
-        {
-            m_errno = ERROR_MSGSIZE;
-            return -1;
-        }
+        // FIXME: maybe in the real world, we should check the size of the packet
+        // if (p->GetSize() > GetTxAvailable())
+        // {
+        //     m_errno = ERROR_MSGSIZE;
+        //     return -1;
+        // }
         uint8_t tos = GetIpTos();
         uint8_t priority = GetPriority();
         if (tos)
@@ -293,7 +297,7 @@ UdpBasedSocket::DoSend(Ptr<Packet> p)
         //   2. manually set TTL
         //   3. specifying don't fragment
         //   4. broadcast
-        if (ipv4->GetRoutingProtocol() != 0)
+        if (ipv4->GetRoutingProtocol() != nullptr)
         {
             Ipv4Address daddr = Ipv4Address::ConvertFrom(m_defaultAddress);
             Ipv4Header header;
@@ -304,7 +308,7 @@ UdpBasedSocket::DoSend(Ptr<Packet> p)
             Ptr<NetDevice> oif = m_boundnetdevice; // specify non-zero if bound to a specific device
             // TBD-- we could cache the route and just check its validity
             route = ipv4->GetRoutingProtocol()->RouteOutput(p, header, oif, errno_);
-            if (route != 0)
+            if (route != nullptr)
             {
                 NS_LOG_LOGIC("Route exists");
 
@@ -618,12 +622,38 @@ UdpBasedSocketFactory::~UdpBasedSocketFactory()
 uint32_t
 UdpBasedSocketFactory::AddUdpBasedProtocol(Ptr<Node> node, Ptr<NetDevice> dev, TypeId protoTid)
 {
+    // Check if the protocol is already added
+    Ptr<UdpBasedL4Protocol> protoObj = node->GetObject<UdpBasedL4Protocol>(protoTid);
+    if (protoObj != nullptr)
+    {
+        // Already added, return the header size
+        return protoObj->GetHeaderSize();
+    }
+
+    // Create the protocol and aggrate to the node
     ObjectFactory factory;
     factory.SetTypeId(protoTid);
     Ptr<UdpBasedL4Protocol> innerProto = DynamicCast<UdpBasedL4Protocol>(factory.Create());
     innerProto->Setup(node, dev);
-    uint16_t udpPort = innerProto->GetProtocolNumber();
+    node->AggregateObject(innerProto);
 
+    // Register a sendDataCb to the device if it is a DcbNetDevice and the proto is RoCEv2
+    if (protoTid == RoCEv2L4Protocol::GetTypeId())
+    {
+        Ptr<RoCEv2L4Protocol> rocev2Proto = DynamicCast<RoCEv2L4Protocol>(innerProto);
+        for (uint32_t idx = 1; idx < node->GetNDevices(); idx++)
+        {
+            Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(node->GetDevice(idx));
+            if (dcbDev != nullptr)
+            {
+                Ptr<PausableQueueDisc> queueDisc = dcbDev->GetQueueDisc();
+                queueDisc->RegisterSendDataCallback(
+                    MakeCallback(&RoCEv2L4Protocol::NotifyCouldSend, rocev2Proto));
+            }
+        }
+    }
+
+    uint16_t udpPort = innerProto->GetProtocolNumber();
     auto proto = m_protoMapper.find(udpPort);
     if (proto == m_protoMapper.end())
     {

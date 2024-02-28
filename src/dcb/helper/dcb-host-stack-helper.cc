@@ -25,7 +25,10 @@
 #include "ns3/config.h"
 #include "ns3/core-config.h"
 #include "ns3/dcb-net-device.h"
+#include "ns3/dcb-pfc-port.h"
+#include "ns3/dcb-traffic-control.h"
 #include "ns3/global-router-interface.h"
+#include "ns3/global-value.h"
 #include "ns3/icmpv6-l4-protocol.h"
 #include "ns3/ipv4-global-routing-helper.h"
 #include "ns3/ipv4-global-routing.h"
@@ -129,14 +132,15 @@ void
 DcbHostStackHelper::Initialize()
 {
     SetTcp("ns3::TcpL4Protocol");
-    Ipv4StaticRoutingHelper staticRouting;
+    // Ipv4StaticRoutingHelper staticRouting;
     Ipv4GlobalRoutingHelper globalRouting;
     Ipv4ListRoutingHelper listRouting;
     Ipv6StaticRoutingHelper staticRoutingv6;
-    listRouting.Add(staticRouting, 0);
+    // listRouting.Add(staticRouting, 0);
     listRouting.Add(globalRouting, -10);
     SetRoutingHelper(listRouting);
     SetRoutingHelper(staticRoutingv6);
+    m_fcEnabled = false;
 }
 
 DcbHostStackHelper::~DcbHostStackHelper()
@@ -180,6 +184,34 @@ DcbHostStackHelper::SetRoutingHelper(const Ipv6RoutingHelper& routing)
 }
 
 void
+DcbHostStackHelper::SetFCEnabled(bool enable)
+{
+    m_fcEnabled = enable;
+}
+
+void
+DcbHostStackHelper::InstallPortsProtos(Ptr<Node> node) const
+{
+    Ptr<TrafficControlLayer> tc = node->GetObject<TrafficControlLayer>();
+    NS_ASSERT(tc);
+
+    const uint32_t devN = node->GetNDevices();
+
+    for (uint32_t i = 1; i < devN; i++)
+    {
+        Ptr<NetDevice> dev = node->GetDevice(i);
+        Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
+        Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(node, i);
+        // Set the queue size to 100KB, which is not critical to performance
+        qDisc->SetQueueSize(QueueSize(QueueSizeUnit::BYTES, 1e9));
+        qDisc->SetFCEnabled(true);
+        dcbDev->SetQueueDisc(qDisc);
+        tc->SetRootQueueDiscOnDevice(dcbDev, qDisc);
+        dcbDev->SetFcEnabled(true); // all NetDevices should support FC
+    }
+}
+
+void
 DcbHostStackHelper::SetIpv4StackInstall(bool enable)
 {
     m_ipv4Enabled = enable;
@@ -211,35 +243,35 @@ DcbHostStackHelper::AssignStreams(NodeContainer c, int64_t stream)
     {
         Ptr<Node> node = *i;
         Ptr<GlobalRouter> router = node->GetObject<GlobalRouter>();
-        if (router != 0)
+        if (router != nullptr)
         {
             Ptr<Ipv4GlobalRouting> gr = router->GetRoutingProtocol();
-            if (gr != 0)
+            if (gr != nullptr)
             {
                 currentStream += gr->AssignStreams(currentStream);
             }
         }
         Ptr<Ipv6ExtensionDemux> demux = node->GetObject<Ipv6ExtensionDemux>();
-        if (demux != 0)
+        if (demux != nullptr)
         {
             Ptr<Ipv6Extension> fe = demux->GetExtension(Ipv6ExtensionFragment::EXT_NUMBER);
             NS_ASSERT(fe); // should always exist in the demux
             currentStream += fe->AssignStreams(currentStream);
         }
         Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
-        if (ipv4 != 0)
+        if (ipv4 != nullptr)
         {
             Ptr<ArpL3Protocol> arpL3Protocol = ipv4->GetObject<ArpL3Protocol>();
-            if (arpL3Protocol != 0)
+            if (arpL3Protocol != nullptr)
             {
                 currentStream += arpL3Protocol->AssignStreams(currentStream);
             }
         }
         Ptr<Ipv6> ipv6 = node->GetObject<Ipv6>();
-        if (ipv6 != 0)
+        if (ipv6 != nullptr)
         {
             Ptr<Icmpv6L4Protocol> icmpv6L4Protocol = ipv6->GetObject<Icmpv6L4Protocol>();
-            if (icmpv6L4Protocol != 0)
+            if (icmpv6L4Protocol != nullptr)
             {
                 currentStream += icmpv6L4Protocol->AssignStreams(currentStream);
             }
@@ -283,7 +315,7 @@ DcbHostStackHelper::Install(Ptr<Node> node) const
 {
     if (m_ipv4Enabled)
     {
-        if (node->GetObject<Ipv4>() != 0)
+        if (node->GetObject<Ipv4>() != nullptr)
         {
             NS_FATAL_ERROR("DcbHostStackHelper::Install (): Aggregating "
                            "an InternetStack to a node with an existing Ipv4 object");
@@ -304,6 +336,13 @@ DcbHostStackHelper::Install(Ptr<Node> node) const
         Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
         Ptr<Ipv4RoutingProtocol> ipv4Routing = m_routing->Create(node);
         ipv4->SetRoutingProtocol(ipv4Routing);
+        // enable ECMP
+        int16_t priority;
+        Ptr<Ipv4ListRouting> routing = DynamicCast<Ipv4ListRouting>(ipv4Routing);
+        DynamicCast<Ipv4GlobalRouting>(routing->GetRoutingProtocol(0, priority))
+            ->SetAttribute("RandomEcmpRouting",
+                           UintegerValue(Ipv4GlobalRouting::EcmpMode::PER_FLOW_ECMP));
+        // paramenter 0 should be consistent with Initialize()
     }
 
     if (m_ipv6Enabled)
@@ -819,7 +858,7 @@ DcbHostStackHelper::EnableAsciiIpv4Internal(Ptr<OutputStreamWrapper> stream,
     // since there will be one file per context and therefore the context would
     // be redundant.
     //
-    if (stream == 0)
+    if (stream == nullptr)
     {
         //
         // Set up an output stream object to deal with private ofstream copy
@@ -1162,7 +1201,7 @@ DcbHostStackHelper::EnableAsciiIpv6Internal(Ptr<OutputStreamWrapper> stream,
     // since there will be one file per context and therefore the context would
     // be redundant.
     //
-    if (stream == 0)
+    if (stream == nullptr)
     {
         //
         // Set up an output stream object to deal with private ofstream copy

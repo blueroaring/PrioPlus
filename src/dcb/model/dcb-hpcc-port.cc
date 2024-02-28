@@ -19,8 +19,11 @@
 
 #include "dcb-hpcc-port.h"
 
+#include "rocev2-congestion-ops.h"
+#include "rocev2-hpcc.h"
 #include "rocev2-l4-protocol.h"
 
+#include "ns3/ethernet-header.h"
 #include "ns3/hpcc-header.h"
 #include "ns3/rocev2-header.h"
 #include "ns3/simulator.h"
@@ -44,6 +47,10 @@ DcbHpccPort::DcbHpccPort(Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc)
       m_txBytes(0)
 {
     NS_LOG_FUNCTION(this);
+
+    EthernetHeader ethHeader;
+    Ipv4Header ipv4Header;
+    m_extraEgressHeaderSize = ethHeader.GetSerializedSize() + ipv4Header.GetSerializedSize();
 }
 
 DcbHpccPort::~DcbHpccPort()
@@ -59,7 +66,19 @@ DcbHpccPort::DoEgressProcess(Ptr<Packet> packet)
     // DcbPfcPort::DoEgressProcess(packet);
 
     // Add m_txBytes
-    m_txBytes += packet->GetSize();
+    m_txBytes += packet->GetSize() + m_extraEgressHeaderSize;
+    /**
+     * considering that multiple CC algorithms are used at the same time, we should check current
+     * packet's CC algorithm
+     */
+    CongestionTypeTag ctTag;
+    if (packet->PeekPacketTag(ctTag))
+    {
+        if (ctTag.GetCongestionTypeId() != RoCEv2Hpcc::GetTypeId())
+        {
+            return;
+        }
+    }
 
     // Check and Remove packet's RoCEv2 Header
     UdpHeader udpHeader;

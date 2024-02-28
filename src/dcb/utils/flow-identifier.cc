@@ -47,8 +47,8 @@ bool
 FlowIdentifier::operator<(const FlowIdentifier& other) const
 {
     // Compare via tuple
-    return std::tuple(srcAddr, dstAddr, srcPort, dstPort) <
-           std::tuple(other.srcAddr, other.dstAddr, other.srcPort, other.dstPort);
+    return std::tuple(srcAddr,srcPort, dstAddr, dstPort) <
+           std::tuple(other.srcAddr, other.srcPort, other.dstAddr, other.dstPort);
 }
 
 bool

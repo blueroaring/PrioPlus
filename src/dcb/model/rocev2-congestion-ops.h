@@ -65,6 +65,10 @@ class RoCEv2CongestionOps : public Object
      * \brief When the sender sending out a packet, update the state if needed.
      *
      * Do nothing in this class. And implementions in subclasses is not necessary.
+     *
+     * Note: This function has the pointer of the packet to send as parameter, which has the
+     * RoCev2Header and is used after calling this function in RoCEv2Socket::DoSendDataPacket. So,
+     * the packet should be carefully modified in this.
      */
     virtual void UpdateStateSend(Ptr<Packet> packet)
     {
@@ -111,7 +115,8 @@ class RoCEv2CongestionOps : public Object
     }
 
     /**
-     * \brief When RoCEv2Socket is binded to netdevice, start some initialization if needed.
+     * \brief When RoCEv2Socket is binded to netdevice and has configured everything about
+     * sockState, start some initialization if needed.
      *
      * Do nothing in this class. And implementions in subclasses is not necessary.
      *
@@ -120,15 +125,49 @@ class RoCEv2CongestionOps : public Object
      */
     virtual void SetReady()
     {
+        SetRateRatio(m_startRateRatio);
     }
 
     /**
      * \brief Get headersize.
      */
-    virtual uint32_t GetHeaderSize()
+    inline uint32_t GetExtraHeaderSize()
     {
-        return m_headerSize;
+        return m_extraHeaderSize;
     }
+
+    /**
+     * \brief Get the TypeId of congestion control algorithm.
+     */
+    static TypeId GetCongestionTypeId(uint16_t idx)
+    {
+        return m_mCongestionTypeIds[idx];
+    }
+
+    /**
+     * \brief Get extra ACK size.
+     */
+    inline uint32_t GetExtraAckSize()
+    {
+        return m_extraAckSize;
+    }
+
+    typedef std::pair<std::string, Ptr<AttributeValue>> CcOpsConfigPair_t;
+
+    class Stats
+    {
+      public:
+        // constructor
+        Stats()
+        {
+        }
+
+        virtual ~Stats()
+        {
+        }
+    };
+
+    virtual std::shared_ptr<Stats> GetStats() const = 0;
 
   protected:
     /**
@@ -137,23 +176,97 @@ class RoCEv2CongestionOps : public Object
     bool CheckStopCondition();
     Ptr<RoCEv2SocketState> m_sockState;
     Time m_stopTime;
-    uint32_t m_headerSize;
+
+    uint32_t m_extraHeaderSize;
+    uint32_t m_extraAckSize; // if CCops add something to ACK, this should be set.
+
+    /**
+     * The map and recording the used congestion control algorithms in this simulation.
+     * In the map, the first uint16_t is the uid of the TypeId, and the second TypeId is the TypeId
+     * of algorithm. Thus we can get idx from name, and get name from idx in O(1).
+     */
+    static std::map<uint16_t, TypeId> m_mCongestionTypeIds;
+
+    /**
+     * \brief Register the congestion control algorithm.
+     * This function should be called in the constructor of subclass.
+     */
+    inline void RegisterCongestionType(TypeId typeId)
+    {
+        // The typeId of congestion control algorithm is form GetName().
+        // Check if the typeId is already registered.
+        if (m_mCongestionTypeIds.find(typeId.GetUid()) == m_mCongestionTypeIds.end())
+        {
+            // Not registered, register it.
+            m_mCongestionTypeIds[typeId.GetUid()] = typeId;
+        }
+    }
+
+    /**
+     ********** WINDOW-BASED **********
+     */
+
+    /**
+     * \brief This function will set the sockState's cwnd.
+     */
+    void SetCwnd(uint64_t cwnd);
+    bool m_isPacing; //!< if true, the Window-based CC will pace the sending rate.
+
+    inline void SetPacing(bool pacing)
+    {
+        m_isPacing = pacing;
+    }
 
     /**
      ********** RATE-BASED **********
      */
 
     /**
-     * \brief Check if rateRatio is less than 1. and greater than m_minRateRatio.
-     * if not, correct it.
-     * \return corrected rateRatio.
+     * \brief This function will set the sockState's rateRatio.
      */
-    double CheckRateRatio(double rateRatio);
-    double m_curRateRatio; //!< current rate
-    double m_minRateRatio; //!< minimum rate
+    void SetRateRatio(double rateRatio);
+    bool m_isLimiting; //!< if true, the Rate-based CC will limit the cwnd.
 
-    // TODO add window-based
+    inline void SetLimiting(bool limiting)
+    {
+        m_isLimiting = limiting;
+    }
+
+    bool m_isStaticLimiting; //!< if true, the cwnd is set to base BDP.
+
+    double m_startRateRatio; //!< the start rate ratio of Rate-based CC (or Cwnd-based CC if
+                             //!< m_isLimiting).
+    double m_maxRateRatio;   //!< the max rate ratio of Rate-based CC (or Cwnd-based CC if
+                             //!< m_isLimiting).
 };
+
+class CongestionTypeTag : public Tag
+{
+  public:
+    /**
+     * \brief Get the type ID.
+     * \return the object TypeId
+     */
+    static TypeId GetTypeId();
+    TypeId GetInstanceTypeId() const override;
+    uint32_t GetSerializedSize() const override;
+    void Serialize(TagBuffer buf) const override;
+    void Deserialize(TagBuffer buf) override;
+    void Print(std::ostream& os) const override;
+    CongestionTypeTag();
+
+    /**
+     * Constructs a CongestionTypeTag with the given Congestion Type
+     */
+    CongestionTypeTag(uint16_t congestionType);
+    void SetCongestionTypeIdx(uint16_t congestionType);
+    uint16_t GetCongestionTypeIdx() const;
+    TypeId GetCongestionTypeId() const;
+
+  private:
+    uint16_t m_congestionType;
+};
+
 } // namespace ns3
 
 #endif

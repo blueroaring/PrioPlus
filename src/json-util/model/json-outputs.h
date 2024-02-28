@@ -16,14 +16,14 @@
  *
  * Author: Zhaochen Zhang (zhaochen.zhang@outlook.com)
  */
-#ifndef JSON_UTIL_H
-#define JSON_UTIL_H
+#ifndef JSON_OUTPUTS_H
+#define JSON_OUTPUTS_H
 
 #include "ns3/applications-module.h"
 #include "ns3/core-module.h"
 #include "ns3/dc-topology.h"
-#include "ns3/dcb-trace-application-helper.h"
-#include "ns3/dcb-trace-application.h"
+#include "ns3/dcb-traffic-gen-application-helper.h"
+#include "ns3/dcb-traffic-gen-application.h"
 #include "ns3/error-model.h"
 #include "ns3/flow-identifier.h"
 #include "ns3/global-route-manager.h"
@@ -38,57 +38,13 @@
 #include "ns3/traffic-control-module.h"
 
 #include <boost/json.hpp>
+#include <set>
 
 namespace ns3
 {
 
 namespace json_util
 {
-
-boost::json::object ReadConfig(std::string config_file);
-
-void SetDefault(boost::json::object& defaultObj);
-
-/**
- * \brief Automatically set the global value according to the global object.
- *
- * In this function, global value is allocated on heap without being freed intentionally.
- * As ns3 expected, the global should be static variable to keep it alive during the whole
- * simulation. To make the global values automatically set, we allocate them on heap and
- * never free them. Please take care of this and never overuse this function.
- *
- * In addition, if you want to use MTP, you should better only use global value to set config and
- * never rewrite it.
- */
-void SetGlobal(boost::json::object& globalObj);
-
-void PrettyPrint(std::ostream& os, const boost::json::value& jv, std::string* indent = nullptr);
-
-void SetRandomSeed(boost::json::object& configJsonObj);
-
-void SetRandomSeed(uint32_t seed);
-
-void SetStopTime(boost::json::object& configJsonObj);
-
-std::shared_ptr<TraceApplicationHelper> ConstructTraceAppHelper(const boost::json::object& conf,
-                                                                Ptr<DcTopology> topology);
-
-ApplicationContainer InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology);
-
-/**
- * \brief Constract the CDF from CDF config.
- *
- * This function will call trace application helper to read the CDF.
- *
- * \param conf The CDF config.
- */
-std::unique_ptr<TraceApplication::TraceCdf> ConstructCdf(const boost::json::object& conf);
-
-// Convert boost::json::value to number.
-// To use these functions, make sure you know the type of the value.
-double ConvertToDouble(const boost::json::value& v);
-int64_t ConvertToInt(const boost::json::value& v);
-uint64_t ConvertToUint(const boost::json::value& v);
 
 /**
  * \brief Write statistics to the file specified in the config.
@@ -98,8 +54,17 @@ uint64_t ConvertToUint(const boost::json::value& v);
  * \param conf The CDF config in a json object.
  * \param apps The trace application container.
  * \param topology The topology.
+ * \param confFileName The file name of the config file.
  */
-void OutputStats(boost::json::object& conf, ApplicationContainer& apps, Ptr<DcTopology> topology);
+void OutputStats(boost::json::object& conf,
+                 ApplicationContainer& apps,
+                 Ptr<DcTopology> topology,
+                 std::string confFileName);
+
+/**
+ * \brief Create the output file and return the file stream.
+ */
+std::ofstream CreateOutputFile(boost::json::object& conf, std::string confFileName);
 
 /**
  * \brief Store the app stats into a json object and return it.
@@ -124,8 +89,27 @@ void ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlow
  */
 void ConstructRealTimeFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStatsObjs);
 
+/**
+ * \brief Construct switch stats.
+ * \param topology The topology, used to get the switch.
+ * \param switchStatsObjs The map to store the switch stats.
+ * \param startTime The start time of the simulation, used to calc avg qlength.
+ * \param finishTime The finish time of the last flow, used to calc avg qlength.
+ */
+void ConstructSwitchStats(Ptr<DcTopology> topology,
+                          boost::json::object& switchStatsObjs,
+                          Time startTime,
+                          Time finishTime);
+
+/**
+ * \brief Disable the detailed switch stats for some switches.
+ *
+ * Used to save time and space when the topology is large.
+ */
+void DisableDetailedSwitchStats(boost::json::object& configObj, Ptr<DcTopology> topology);
+
 } // namespace json_util
 
 } // namespace ns3
 
-#endif /* JSON_UTIL_H */
+#endif /* JSON_OUTPUTS_H */

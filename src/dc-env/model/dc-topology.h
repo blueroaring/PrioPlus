@@ -20,13 +20,17 @@
 #ifndef DC_TOPOLOGY_H
 #define DC_TOPOLOGY_H
 
+#include "ns3/global-router-interface.h"
+#include "ns3/ipv4-global-routing.h"
 #include "ns3/ipv4-interface-address.h"
 #include "ns3/net-device.h"
 #include "ns3/object.h"
 #include "ns3/random-variable-stream.h"
+#include "ns3/timer.h"
 
 #include <cstddef>
 #include <iterator>
+#include <map>
 #include <vector>
 
 /**
@@ -73,6 +77,13 @@ class DcTopology : public Object
         }
     };
 
+    enum SwicthFCCateory
+    {
+        NeedRelay,
+        NxtToDst,
+        Highest
+    };
+
     void InstallNode(const uint32_t index, const TopoNode node);
 
     void InstallLink(const uint32_t node1, const uint32_t node2);
@@ -87,6 +98,99 @@ class DcTopology : public Object
 
     bool IsHost(const uint32_t index) const;
     bool IsSwitch(const uint32_t index) const;
+
+    uint32_t GetNHosts() const;
+    uint32_t GetNNodes() const;
+
+    /**
+     * \brief Add a key-value to the delay map.
+     */
+    void AddDelay(const Ipv4Address src, const Ipv4Address dst, const uint32_t hops, Time delay);
+
+    /**
+     * \brief Get the propagation delay between two nodes.
+     */
+    const Time GetDelay(const Ipv4Address src, const Ipv4Address dst) const;
+
+    /**
+     * \brief Get the number of hops between two nodes.
+     */
+    const uint32_t GetHops(const Ipv4Address src, const Ipv4Address dst) const;
+
+    /**
+     * \brief Log the delay map.
+     */
+    void LogDelayMap() const;
+
+    /**
+     * \brief Create the delay map.
+     */
+    void CreateDelayMap();
+
+    /**
+     * \brief Get Ptr<Ipv4Rout> for routing a packet in srcAddr to dsrAddr.
+     * \param route The Ptr<Ipv4GlobalRouting> in src node.
+     * \return Ptr<Ipv4Route> from srcAddr is srcAddr to dsrAddr.
+     */
+
+    Ptr<Ipv4Route> GetRoute(const Ptr<Ipv4GlobalRouting> route,
+                            const Ipv4Address srcAddr,
+                            const Ipv4Address dstAddr,
+                            Socket::SocketErrno& sockerr) const;
+    Ptr<Ipv4Route> GetRoute(const Ptr<Ipv4GlobalRouting> route,
+                            const Ipv4Address srcAddr,
+                            const Ipv4Address dstAddr,
+                            const uint32_t srcPort,
+                            const uint32_t dstPort,
+                            Socket::SocketErrno& sockerr) const;
+
+    /**
+     * \brief Get the idx of output port in srcNode to dstAddr. Compare the number of hops from all
+     * egress ports to the destination on the srcNode and randomly select the egress port with
+     * minimum hop count. (Only the number of hops is considered, and multi-path load balancing is
+     * not considered).
+     * \param srcNode The srcNode pointer.
+     * \param dstAddr The address for dstination.
+     * \param srcPort The srcPort of flow.
+     * \param dstPort The dstPort of flow.
+     * \return The index of output device in srcNode.
+     */
+    uint32_t GetOutDevIdx(const Ptr<Node> srcNode,
+                          const Ipv4Address dstAddr,
+                          const uint32_t srcPort,
+                          const uint32_t dstPort);
+
+    /**
+     * \brief Get the packet's queueIdx in current Node(switch).
+     * \param nxtNode The next hop node that the packet will pass.
+     * \param nxtDev The device in nxtNode that connect nxtNode and this node (used to get the next
+     * to next node(switch) in caculate qIdx)
+     * \param packet The packet.
+     * \param ipHdr the ipv4header of this packet.
+     * \param priority The original priority of this packet, used to tell if this packet should be
+     * put in the highest priority. \return The index of queue in current Node of this packet.
+     */
+    uint32_t GetSwitchQueueIdx(const Ptr<Node> nxtNode,
+                               const Ptr<NetDevice> nxtDev,
+                               const Ptr<Packet> packet,
+                               const Ipv4Header& ipHdr,
+                               uint8_t priority);
+
+    /**
+     * \brief Get the packet's queueIdx in current Node(host).
+     * \param currNode The current node.
+     * \param currDev The current netdevice in host, used to tell if current Node is the src of
+     * packet. \param nxtNode The next hop node that the packet will pass. \param packet The packet.
+     * \param priority The original priority of this packet, used to tell if this packet should be
+     * put in the highest priority.
+     * \return The index of queue in current Node of this packet.
+     */
+    uint32_t GetHostQueueIdx(const Ptr<Node> currNode,
+                             const Ptr<NetDevice> currDev,
+                             const Ptr<Node> nxtNode,
+                             const Ptr<Packet> packet,
+                             const Ipv4Header& ipHdr,
+                             uint8_t priority);
 
     /**
      * \brief Create a configured host index random number generator.
@@ -103,6 +207,10 @@ class DcTopology : public Object
     std::vector<TopoNode> m_nodes;
     std::vector<std::vector<uint32_t>> m_links;
     uint32_t m_nHosts;
+
+    // std::map<std::pair<uint32_t, uint32_t>, Time> m_delayMap; // <src, dst> -> propagation delay
+    std::map<std::pair<Ipv4Address, Ipv4Address>, std::pair<uint32_t, Time>>
+        m_delayMap; // <src, dst> -> <hops, propagation delay>
 
   public:
     /**

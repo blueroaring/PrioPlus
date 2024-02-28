@@ -624,6 +624,8 @@ Ipv4GlobalRouting::TcpEcmp(const Ipv4Header& header,
     buf._dstIp = header.GetDestination().Get();
     buf._srcPort = tcpHeader.GetSourcePort();
     buf._dstPort = tcpHeader.GetDestinationPort();
+    // salt
+    buf._srcPort += Simulator::GetContext();
     return Hash32(buf._b, HASH_BUF_SIZE) % totalRoutes;
 }
 
@@ -652,6 +654,8 @@ Ipv4GlobalRouting::UdpEcmp(const Ipv4Header& header,
         buf._srcPort = udpHeader.GetSourcePort();
         buf._dstPort = udpHeader.GetDestinationPort();
     }
+    // salt
+    buf._srcPort += Simulator::GetContext();
     return Hash32(buf._b, HASH_BUF_SIZE) % totalRoutes;
 }
 

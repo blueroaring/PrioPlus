@@ -20,14 +20,14 @@
 #ifndef REAL_TIME_APPLICATION_H
 #define REAL_TIME_APPLICATION_H
 
-#include "dcb-trace-application.h"
+#include "dcb-traffic-gen-application.h"
 
 #include "ns3/real-time-stats-tag.h"
 
 namespace ns3
 {
 
-class RealTimeApplication : public TraceApplication
+class RealTimeApplication : public DcbTrafficGenApplication
 {
   public:
     /**
@@ -40,7 +40,7 @@ class RealTimeApplication : public TraceApplication
      * \brief Create an application in topology node nodeIndex.
      * The application will randomly choose a node as destination and send flows.
      */
-    // TraceApplication (Ptr<DcTopology> topology, uint32_t nodeIndex);
+    // DcbTrafficGenApplication (Ptr<DcTopology> topology, uint32_t nodeIndex);
 
     /**
      * \brief Create an application in topology node nodeIndex destined to destIndex.
@@ -48,15 +48,14 @@ class RealTimeApplication : public TraceApplication
      * * If the destIndex is negative, the application will randomly choose a node as the
      * destination.
      */
-    RealTimeApplication(Ptr<DcTopology> topology, uint32_t nodeIndex, int32_t destIndex = -1);
-    RealTimeApplication(Ptr<DcTopology> topology, Ptr<Node> node, InetSocketAddress destAddr);
+    RealTimeApplication(Ptr<DcTopology> topology, uint32_t nodeIndex);
     virtual ~RealTimeApplication();
 
     /**
      * The statistics of the real time application mainly record the statistics of the
      * packet received.
      */
-    class Stats : public TraceApplication::Stats
+    class Stats : public DcbTrafficGenApplication::Stats
     {
       public:
         // constructor
@@ -101,7 +100,7 @@ class RealTimeApplication : public TraceApplication
         // No getter for simplicity
     };
 
-    virtual std::shared_ptr<TraceApplication::Stats> GetStats() const;
+    virtual std::shared_ptr<DcbTrafficGenApplication::Stats> GetStats() const;
 
   private:
     /**
