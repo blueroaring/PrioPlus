@@ -2,6 +2,6 @@
 */*
 
 !./*
-!topo/
-!trace/
-!demos/
+!topo/*
+!trace/*
+!demos/*

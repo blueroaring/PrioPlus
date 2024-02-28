@@ -43,6 +43,10 @@ namespace ns3
 
 class Socket;
 
+/**
+ * \ingroup dcb
+ * \brief A application that generates traffic and sends it to a destination.
+ */
 class TraceApplication : public Application
 {
   public:

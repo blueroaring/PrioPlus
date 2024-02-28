@@ -1,0 +1,112 @@
+{
+    "inputFile": {
+        "topo": "config/topo/simple-tree4.txt"
+    },
+    "outputFile": {
+        "resultFile": "output/*.json"
+    },
+    "runtimeConfig": {
+        "seed": 8259,
+        "runningTime": "1s",
+        "stopTime": "10s"
+    },
+    "defaultConfig": {
+        "TcpL4Protocol": {
+            "SocketType": "ns3::TcpNewReno"
+        },
+        "TcpSocket": {
+            "DelAckCount": 1,
+            "InitialCwnd": 1,
+            "SndBufSize": 1073741823,
+            "RcvBufSize": 1073741823,
+            "SegmentSize": 1500
+        },
+        "TcpSocketBase": {
+            "Timestamp": false
+        },
+        "TraceApplication": {
+            "CongestionType": "ns3::RoCEv2Dcqcn"
+        },
+        "RoCEv2Timely": {
+            "Tlow": "32us",
+            "Thigh": "16us"
+        },
+        "RoCEv2Socket": {
+            "RetxMode": "GBN"
+        },
+        "RoCEv2SocketState": {
+            "MinRateRatio": 0.01
+        }
+    },
+    "globalConfig": {
+        "detailedSenderStats": false,
+        "detailedRetxStats": false,
+        "detailedQlengthStats": false,
+        "qlengthRecordInterval": "10us",
+        "detailedThroughputStats": true,
+        "deviceThroughputRecordInterval": "10us"
+    },
+    "topologyConfig": {
+        "hostPort": {
+            "pfcEnabled": true,
+            "enableVec": 255
+        },
+        "switch": {
+            "pfcDynamic": true
+        },
+        "switchPort": {
+            "pfcEnabled": true,
+            "ecnEnabled": true,
+            "hpccEnabled": true,
+            "queues": 8
+        },
+        "switchPortQueue": {
+            "pfcReserve": "4KiB",
+            "pfcResumeOffset": "3KiB",
+            "pfcDynamicThreshold": true,
+            "ecnKMin": "400KiB",
+            "ecnKMax": "1600KiB",
+            "ecnPMax": 0.2
+        },
+        "link": {
+            "rate": "100Gbps",
+            "delay": "3us"
+        }
+    },
+    "applicationConfig": [
+        {
+            "NOTE": "Primary traffic",
+            "appName": "TraceApplication",
+            "nodes": "[0:4]",
+            "protocolGroup": "RoCEv2",
+            "applicationConfig":{
+                "CongestionType": "ns3::RoCEv2Dcqcn",
+                "SendEnabled": true,
+                "TrafficPattern": "SendOnce",
+                "TrafficSizeBytes": 10000000,
+                "TrafficLoad": 0.0,
+                "DestFixed": true,
+                "DestinationNode": 4
+            },
+            "socketConfig": {
+                "InnerPriority": 0
+            },
+            "congestionConfig": {
+                "RateAIRatio": 0.0012,
+                "G": 0.00390625
+            },
+            "startTime": "0.1s",
+            "flowInterval": "0.00002s"
+        },
+        {
+            "NOTE": "Recevier side applciation",
+            "appName": "TraceApplication",
+            "nodes": "[4:]",
+            "protocolGroup": "RoCEv2",
+            "applicationConfig":{
+                "SendEnabled": false
+            },
+            "startTime": "0.1s"
+        }
+    ]
+}
