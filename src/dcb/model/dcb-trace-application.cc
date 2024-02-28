@@ -564,7 +564,8 @@ TraceApplication::NodeIndexToAddr(uint32_t destNode) const
     }
 
     // 0 interface is LoopbackNetDevice
-    Ipv4Address ipv4Addr = m_topology->GetInterfaceOfNode(destNode, 1).GetAddress();
+    uint32_t idx = rand() % (m_topology->GetNode(destNode)->GetNDevices()-1);
+    Ipv4Address ipv4Addr = m_topology->GetInterfaceOfNode(destNode, idx+1).GetAddress(); //liuchangTODO: need randomly choose a destAddr in dstNode
     return InetSocketAddress(ipv4Addr, portNum);
 }
 
@@ -585,13 +586,23 @@ TraceApplication::CreateNewSocket(InetSocketAddress destAddr)
     Ptr<Socket> socket = Socket::CreateSocket(GetNode(), m_socketTid);
     // bool isRoce = false;
 
-    socket->BindToNetDevice(GetOutboundNetDevice());
-
     int ret = socket->Bind();
     if (ret == -1)
     {
         NS_FATAL_ERROR("Failed to bind socket");
     }
+    uint32_t srcPort = 0;
+    uint32_t dstPort = 0;
+    if(m_protoGroup == ProtocolGroup::RoCEv2)
+    {
+        Ptr<RoCEv2Socket> roceV2Socket = DynamicCast<RoCEv2Socket>(socket);
+        NS_ASSERT(roceV2Socket);
+        srcPort = roceV2Socket->GetSrcPort();
+        dstPort = roceV2Socket->GetDstPort();
+    }
+    uint32_t outDevIdx = m_topology->GetOutDevIdx(GetNode(), destAddr.GetIpv4(), srcPort, dstPort);
+    Ptr<NetDevice> outDev = GetNode()->GetDevice(outDevIdx);
+    socket->BindToNetDevice(outDev);
 
     if (m_ecnEnabled)
     {
@@ -636,7 +647,7 @@ TraceApplication::CreateNewSocket(InetSocketAddress destAddr)
                 // ack size should be at least 64B
                 uint32_t ackPayload = ackHeaderSize < 64 ? (64 - ackHeaderSize) : 0;
 
-                Ipv4Address srcIpAddr = m_topology->GetInterfaceOfNode(m_nodeIndex, 1).GetAddress();
+                Ipv4Address srcIpAddr = m_topology->GetInterfaceOfNode(m_nodeIndex, outDevIdx).GetAddress();
                 Ipv4Address destIpAddr = destAddr.GetIpv4();
 
                 roceSocket->SetBaseRttNOneWayDelay(m_topology->GetHops(srcIpAddr, destIpAddr),
@@ -711,6 +722,7 @@ TraceApplication::CreateRecovery()
             }
         }
     }
+    std::cout << m_recoveryIntervalNodes.size() << std::endl;
 }
 
 void

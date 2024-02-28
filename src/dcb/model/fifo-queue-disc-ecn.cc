@@ -66,7 +66,6 @@ bool
 FifoQueueDiscEcn::DoEnqueue(Ptr<QueueDiscItem> item)
 {
     NS_LOG_FUNCTION(this << item);
-
     if (GetCurrentSize() + item > GetMaxSize())
     {
         NS_LOG_LOGIC("Queue full -- dropping pkt");
@@ -176,28 +175,44 @@ FifoQueueDiscEcn::Stats::Stats(Ptr<FifoQueueDiscEcn> qdisc)
       nMaxQLengthPackets(0),
       nTotalQLengthBytes(0),
       nBackgroundQLengthBytes(0),
-      m_recordInterval(Seconds(0)),
-      m_recordEvent(EventId())
+      m_qlengthRecordInterval(Seconds(0)),
+      m_qlengthRecordEvent(EventId())
 {
     // Retrieve the global config values
     BooleanValue bv;
-    if (GlobalValue::GetValueByNameFailSafe("detailedSwitchStats", bv))
-        bDetailedSwitchStats = bv.Get();
+    if (GlobalValue::GetValueByNameFailSafe("detailedQlengthStats", bv))
+        bDetailedQlengthStats = bv.Get();
     else
-        bDetailedSwitchStats = false;
+        bDetailedQlengthStats = false;
 
-    // If detailedSwitchStats is disabled, record the qlength intervalic
-    if (!bDetailedSwitchStats)
+    if (GlobalValue::GetValueByNameFailSafe("detailedThroughputStats", bv))
+        bDetailedDeviceThroughputStats = bv.Get();
+    else
+        bDetailedDeviceThroughputStats = false;
+
+    // If detailedQlengthStats is disabled, record the qlength intervalic
+    if (!bDetailedQlengthStats)
     {
         StringValue sv;
-        if (GlobalValue::GetValueByNameFailSafe("switchRecordInterval", sv))
-            m_recordInterval = Time(sv.Get());
+        if (GlobalValue::GetValueByNameFailSafe("qlengthRecordInterval", sv))
+            m_qlengthRecordInterval = Time(sv.Get());
         else
             NS_FATAL_ERROR(
-                "Cannot find switchRecordInterval while detailedSwitchStats is disabled");
+                "Cannot find switchRecordInterval while detailedQlengthStats is disabled");
 
         // Do not need to schedule the record event as it will be scheduled when the first packet
         // enqueue
+    }
+
+    // If detailedDeviceThroughputStats is enabled, record the throughput intervalic
+    if (bDetailedDeviceThroughputStats)
+    {
+        StringValue sv;
+        if (GlobalValue::GetValueByNameFailSafe("deviceThroughputRecordInterval", sv))
+            m_throughputRecordInterval = Time(sv.Get());
+        else
+            NS_FATAL_ERROR("Cannot find deviceThroughputRecordInterval while "
+                           "detailedDeviceThroughputStats is enabled");
     }
 
     StringValue sv;
@@ -243,7 +258,7 @@ FifoQueueDiscEcn::Stats::RecordPktEnqueue(Ptr<Ipv4QueueDiscItem> ipv4Item)
         nBackgroundQLengthBytes += ipv4Item->GetSize() + m_extraEgressHeaderSize;
     }
 
-    if (bDetailedSwitchStats)
+    if (bDetailedQlengthStats)
     {
         vQLengthBytes.push_back(std::make_pair(Simulator::Now(), nTotalQLengthBytes));
         vBackgroundQLengthBytes.push_back(
@@ -251,7 +266,7 @@ FifoQueueDiscEcn::Stats::RecordPktEnqueue(Ptr<Ipv4QueueDiscItem> ipv4Item)
     }
     else
     {
-        if (m_recordEvent.IsExpired())
+        if (m_qlengthRecordEvent.IsExpired())
         {
             // If the record event is expired, record the queue length and this will reschedule the
             // record event
@@ -264,34 +279,43 @@ void
 FifoQueueDiscEcn::Stats::RecordPktDequeue(Ptr<Ipv4QueueDiscItem> ipv4Item)
 {
     nTotalQLengthBytes -= ipv4Item->GetSize() + m_extraEgressHeaderSize;
+    nDequeueBytes += ipv4Item->GetSize() + m_extraEgressHeaderSize;
     // Record the queuelength of the background congestion control algorithm
     if (CheckWhetherBackgroundCongestion(ipv4Item))
     {
         nBackgroundQLengthBytes -= ipv4Item->GetSize() + m_extraEgressHeaderSize;
     }
 
-    if (bDetailedSwitchStats)
+    if (bDetailedQlengthStats)
     {
         vQLengthBytes.push_back(std::make_pair(Simulator::Now(), nTotalQLengthBytes));
         vBackgroundQLengthBytes.push_back(
             std::make_pair(Simulator::Now(), nBackgroundQLengthBytes));
+    }
+
+    if (bDetailedDeviceThroughputStats && m_throughputRecordEvent.IsExpired())
+    {
+        // If the record event is expired, record the throughput and this will reschedule the
+        // record event
+        RecordThroughputIntervalic();
     }
 }
 
 void
 FifoQueueDiscEcn::Stats::RecordQLengthIntervalic()
 {
-    if (!bDetailedSwitchStats)
+    if (!bDetailedQlengthStats)
     {
-        if (nTotalQLengthBytes!=0)
+        if (nTotalQLengthBytes != 0)
         {
             vQLengthBytes.push_back(std::make_pair(Simulator::Now(), nTotalQLengthBytes));
             vBackgroundQLengthBytes.push_back(
                 std::make_pair(Simulator::Now(), nBackgroundQLengthBytes));
             // Reschedule the record event only when the queue is not empty
-            m_recordEvent = Simulator::Schedule(m_recordInterval,
-                                                &FifoQueueDiscEcn::Stats::RecordQLengthIntervalic,
-                                                this);
+            m_qlengthRecordEvent =
+                Simulator::Schedule(m_qlengthRecordInterval,
+                                    &FifoQueueDiscEcn::Stats::RecordQLengthIntervalic,
+                                    this);
         }
         else
         {
@@ -301,9 +325,33 @@ FifoQueueDiscEcn::Stats::RecordQLengthIntervalic()
 }
 
 void
+FifoQueueDiscEcn::Stats::RecordThroughputIntervalic()
+{
+    if (bDetailedDeviceThroughputStats)
+    {
+        if (nDequeueBytes != 0)
+        {
+            vDeviceThroughput.push_back(std::make_pair(
+                Simulator::Now(),
+                DataRate(nDequeueBytes * 8 / m_throughputRecordInterval.GetSeconds())));
+            nDequeueBytes = 0;
+            // Reschedule the record event only when the dequeue is not stopped
+            m_throughputRecordEvent =
+                Simulator::Schedule(m_throughputRecordInterval,
+                                    &FifoQueueDiscEcn::Stats::RecordThroughputIntervalic,
+                                    this);
+        }
+        else
+        {
+            NS_LOG_DEBUG("No bytes dequeued in the last record interval, do not record the throughput");
+        }
+    }
+}
+
+void
 FifoQueueDiscEcn::Stats::RecordEcn(Ptr<Ipv4QueueDiscItem> ipv4Item)
 {
-    if (bDetailedSwitchStats)
+    if (bDetailedQlengthStats)
     {
         // Check if the packet is a UDP-RoCEv2 packet
         bool isRocev2 = false;

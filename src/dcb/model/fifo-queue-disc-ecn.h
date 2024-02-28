@@ -24,6 +24,7 @@
 #include "ns3/flow-identifier.h"
 #include "ns3/ipv4-queue-disc-item.h"
 #include "ns3/random-variable-stream.h"
+#include "ns3/data-rate.h"
 
 namespace ns3
 {
@@ -77,7 +78,7 @@ class FifoQueueDiscEcn : public FifoQueueDisc
          * When disabled, the vQLengthBytes will be recorded at the end of each record interval. And
          * if in a interval there is no packet in the queue, the queue length will not be recorded.
          */
-        bool bDetailedSwitchStats;
+        bool bDetailedQlengthStats;
         std::vector<std::pair<Time, uint32_t>>
             vQLengthBytes; //<! Record the queue length and the time when the queue length is
                            // recorded
@@ -89,18 +90,30 @@ class FifoQueueDiscEcn : public FifoQueueDisc
             vBackgroundQLengthBytes; //<! Record the queue length and the time when the queue length
                                      // is recorded
         // Variables for the intervalic statistics
-        Time m_recordInterval;
-        EventId m_recordEvent;
+        Time m_qlengthRecordInterval;
+        EventId m_qlengthRecordEvent;
         std::vector<std::tuple<Time, FlowIdentifier, uint32_t, uint32_t>>
             vEcn; //<! Record the <time, 4-tuple, psn, pkt size> when the ECN is marked
 
         uint32_t m_extraEgressHeaderSize;
+
+        /**
+         * When enabled, the vDeviceThroughput will be recorded each m_throughputRecordInterval.
+         * When disabled, the vDeviceThroughput will not be recorded.
+         */
+        bool bDetailedDeviceThroughputStats;
+        std::vector<std::pair<Time, DataRate>>
+            vDeviceThroughput; //<! Record the throughput and the time when the throughput is recorded
+        uint32_t nDequeueBytes;
+        Time m_throughputRecordInterval;
+        EventId m_throughputRecordEvent;
 
         // Recorder function
         void RecordPktEnqueue(Ptr<Ipv4QueueDiscItem> ipv4Item);
         void RecordPktDequeue(Ptr<Ipv4QueueDiscItem> ipv4Item);
         // void RecordQLengthDetailed();
         void RecordQLengthIntervalic();
+        void RecordThroughputIntervalic();
         void RecordEcn(Ptr<Ipv4QueueDiscItem> ipv4Item);
         bool CheckWhetherBackgroundCongestion(Ptr<Ipv4QueueDiscItem> ipv4Item) const;
 

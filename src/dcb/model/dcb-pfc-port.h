@@ -83,7 +83,7 @@ class DcbPfcPort : public DcbFlowControlPort
      * \brief Process when a packet previously came from this port is going to send
      * out though other port.
      */
-    virtual void DoPacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet) override;
+    virtual void DoPacketOutCallbackProcess(uint32_t priority, Ptr<Packet> packet) override;
 
     /**
      * \brief Egress process. Do nothing in PFC.

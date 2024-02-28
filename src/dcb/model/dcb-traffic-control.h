@@ -155,7 +155,7 @@ class DcbTrafficControl : public TrafficControlLayer
      * \brief Called after egress queue pops out a packet.
      * For example, it can be used for flow control doing some egress action.
      */
-    void EgressProcess(uint32_t port, uint8_t priority, Ptr<Packet> packet);
+    void EgressProcess(uint32_t port, uint32_t priority, Ptr<Packet> packet);
 
     // int32_t CompareIngressQueueLength(uint32_t port, uint8_t priority, uint32_t bytes) const;
 
@@ -173,7 +173,7 @@ class DcbTrafficControl : public TrafficControlLayer
     class PortInfo
     {
       public:
-        typedef Callback<void, uint8_t, Ptr<Packet>> FCPacketOutCb;
+        typedef Callback<void, uint32_t, Ptr<Packet>> FCPacketOutCb;
 
         PortInfo();
 
@@ -229,6 +229,9 @@ class DcbTrafficControl : public TrafficControlLayer
         return m_buffer.GetPorts();
     }
 
+  protected:
+    TracedCallback<Ptr<const Packet>> m_bufferOverflowTrace;
+
   private:
     class Buffer
     {
@@ -241,14 +244,14 @@ class DcbTrafficControl : public TrafficControlLayer
          * Returns whether the packet is accomondated into the buffer, false for packet drop.
          */
         bool InPacketProcess(uint32_t inPortIndex,
-                             uint8_t inQueuePriority,
+                             uint32_t inQueuePriority,
                              uint32_t outPortIndex,
-                             uint8_t outQueuePriority,
+                             uint32_t outQueuePriority,
                              uint32_t packetSize);
         void OutPacketProcess(uint32_t inPortIndex,
-                              uint8_t inQueuePriority,
+                              uint32_t inQueuePriority,
                               uint32_t outPortIndex,
-                              uint8_t outQueuePriority,
+                              uint32_t outQueuePriority,
                               uint32_t packetSize);
 
         inline PortInfo& GetPort(uint32_t portIndex)
@@ -288,8 +291,6 @@ class DcbTrafficControl : public TrafficControlLayer
     }; // class Buffer
 
     Buffer m_buffer;
-
-    TracedCallback<Ptr<const Packet>> m_bufferOverflowTrace;
 };
 
 class DeviceIndexTag : public Tag

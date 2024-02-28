@@ -64,7 +64,7 @@ DcbFlowControlPort::IngressProcess(Ptr<NetDevice> outDev, Ptr<QueueDiscItem> ite
 }
 
 void
-DcbFlowControlPort::PacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet)
+DcbFlowControlPort::PacketOutCallbackProcess(uint32_t priority, Ptr<Packet> packet)
 {
     NS_LOG_FUNCTION(this << packet);
     if (m_enableIngressControl)

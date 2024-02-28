@@ -117,7 +117,7 @@ UdpBasedL4Protocol::Setup(Ptr<Node> node, Ptr<NetDevice> dev)
     NS_ASSERT_MSG(m_udp != nullptr,
                   "UdpL4Protocol must be aggregated before UdpBasedL4Protocol::Setup()");
     m_udpEndPoint = m_udp->Allocate(dev, GetProtocolNumber());
-    m_udpEndPoint->BindToNetDevice(dev);
+    // m_udpEndPoint->BindToNetDevice(dev);
     FinishSetup(m_udpEndPoint); // bind callbacks
 }
 

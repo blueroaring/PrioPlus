@@ -83,9 +83,7 @@ DcbFcHelper::InstallPFCtoNodePort(Ptr<Node> node,
 
 // static
 void
-DcbFcHelper::InstallPFCtoHostPort(Ptr<Node> node,
-                                  const uint32_t port,
-                                  const uint8_t enableVec)
+DcbFcHelper::InstallPFCtoHostPort(Ptr<Node> node, const uint32_t port, const uint8_t enableVec)
 {
     Ptr<NetDevice> dev = node->GetDevice(port);
 
@@ -102,7 +100,6 @@ DcbFcHelper::InstallPFCtoHostPort(Ptr<Node> node,
                                   PfcFrame::PROT_NUMBER,
                                   dev);
 }
-
 
 void
 DcbFcHelper::InstallHpccPFCtoNodePort(Ptr<Node> node,

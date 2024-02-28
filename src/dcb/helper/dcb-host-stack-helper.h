@@ -73,6 +73,12 @@ class DcbHostStackHelper : public PcapHelperForIpv4,
      */
     void SetRoutingHelper(const Ipv6RoutingHelper& routing);
 
+    void SetFCEnabled(bool enable);
+
+    void SetPPfcEnabled(bool enable);
+
+    void InstallPortsProtos (Ptr<Node> node) const;
+
     void AddUdpBasedL4Protocol(const std::string tid);
 
     /**
@@ -309,6 +315,7 @@ class DcbHostStackHelper : public PcapHelperForIpv4,
     bool m_ipv6NsRsJitterEnabled;
 
     ObjectFactory m_tcFactory;
+    bool m_fcEnabled;
 };
 
 } // namespace ns3

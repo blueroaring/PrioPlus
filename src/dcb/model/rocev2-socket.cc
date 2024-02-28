@@ -197,13 +197,14 @@ RoCEv2Socket::SendPendingPacket()
     //     return;
     // }
     Ptr<RoCEv2L4Protocol> rocev2Proto = DynamicCast<RoCEv2L4Protocol>(m_innerProto);
-    if (rocev2Proto->CheckCouldSend(m_boundnetdevice->GetIfIndex(), GetPriority()) == false)
+    uint32_t outPortPriority = GetPriority();
+    if (rocev2Proto->CheckCouldSend(m_boundnetdevice->GetIfIndex(), outPortPriority) == false)
     {
         // The queue disc is unavaliable, register a callback to RoCEv2L4Proto and wait for the
         // shedule
         rocev2Proto->RegisterSendPendingDataCallback(
             m_boundnetdevice->GetIfIndex(),
-            GetPriority(),
+            outPortPriority,
             m_innerPrio,
             MakeCallback(&RoCEv2Socket::NotifyCouldSend, this));
         m_waitingForSchedule = true;
@@ -222,6 +223,11 @@ RoCEv2Socket::SendPendingPacket()
          * This is a rare case, so the judgement is placed at the last.
          */
         return;
+    }
+
+    if (Simulator::Now().GetNanoSeconds() >= 129942575)
+    {
+        NS_LOG_DEBUG("Break point");
     }
 
     // rateRatio is controled by congestion control
@@ -548,8 +554,10 @@ RoCEv2Socket::IrnReactToNack(uint32_t expectedPsn, IrnHeader irnH)
 {
     NS_LOG_FUNCTION(this);
     uint32_t ackedPsn = irnH.GetAckedPsn();
-
-    m_txBuffer.AcknowledgeTo(expectedPsn - 1);
+    if(expectedPsn != 0)
+    {
+        m_txBuffer.AcknowledgeTo(expectedPsn - 1);
+    } 
     m_txBuffer.Acknowledge(ackedPsn);
     m_txBuffer.Retransmit(expectedPsn);
 
@@ -615,8 +623,6 @@ int
 RoCEv2Socket::Bind()
 {
     NS_LOG_FUNCTION(this);
-    NS_ASSERT_MSG(m_boundnetdevice,
-                  "RoCEv2Socket should be bound to a net device before calling Bind");
     m_endPoint = m_innerProto->Allocate();
     m_endPoint->SetRxCallback(MakeCallback(&RoCEv2Socket::ForwardUp, this));
     return 0;
@@ -741,6 +747,20 @@ Time
 RoCEv2Socket::GetFlowStartTime() const
 {
     return m_flowStartTime;
+}
+
+uint32_t
+RoCEv2Socket::GetSrcPort() const
+{
+    NS_ASSERT(m_endPoint != nullptr);
+    return m_endPoint->GetLocalPort();
+}
+
+uint32_t
+RoCEv2Socket::GetDstPort() const
+{
+    NS_ASSERT(m_endPoint != nullptr);
+    return m_endPoint->GetPeerPort();
 }
 
 RoCEv2Header

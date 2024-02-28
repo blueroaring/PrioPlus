@@ -641,12 +641,15 @@ UdpBasedSocketFactory::AddUdpBasedProtocol(Ptr<Node> node, Ptr<NetDevice> dev, T
     if (protoTid == RoCEv2L4Protocol::GetTypeId())
     {
         Ptr<RoCEv2L4Protocol> rocev2Proto = DynamicCast<RoCEv2L4Protocol>(innerProto);
-        Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
-        if (dcbDev != nullptr)
+        for (uint32_t idx = 1; idx < node->GetNDevices(); idx++)
         {
-            Ptr<PausableQueueDisc> queueDisc = dcbDev->GetQueueDisc();
-            queueDisc->RegisterSendDataCallback(
-                MakeCallback(&RoCEv2L4Protocol::NotifyCouldSend, rocev2Proto));
+            Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(node->GetDevice(idx));
+            if (dcbDev != nullptr)
+            {
+                Ptr<PausableQueueDisc> queueDisc = dcbDev->GetQueueDisc();
+                queueDisc->RegisterSendDataCallback(
+                    MakeCallback(&RoCEv2L4Protocol::NotifyCouldSend, rocev2Proto));
+            }
         }
     }
 

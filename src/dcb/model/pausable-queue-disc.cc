@@ -73,31 +73,31 @@ PausableQueueDisc::GetTypeId()
 }
 
 PausableQueueDisc::PausableQueueDisc()
-    : m_stats(std::make_shared<Stats>(this)),
-      m_node(0),
+    : m_node(0),
       m_fcEnabled(false),
       m_portIndex(0x7fffffff),
-      m_queueSize("1000p")
+      m_queueSize("1000p"),
+      m_stats(std::make_shared<Stats>(this))
 {
     NS_LOG_FUNCTION(this);
 }
 
 PausableQueueDisc::PausableQueueDisc(uint32_t port)
-    : m_stats(std::make_shared<Stats>(this)),
-      m_node(0),
+    : m_node(0),
       m_fcEnabled(false),
       m_portIndex(port),
-      m_queueSize("1000p")
+      m_queueSize("1000p"),
+      m_stats(std::make_shared<Stats>(this))
 {
     NS_LOG_FUNCTION(this);
 }
 
 PausableQueueDisc::PausableQueueDisc(Ptr<Node> node, uint32_t port)
-    : m_stats(std::make_shared<Stats>(this)),
-      m_node(node),
+    : m_node(node),
       m_fcEnabled(false),
       m_portIndex(port),
-      m_queueSize("1000p")
+      m_queueSize("1000p"),
+      m_stats(std::make_shared<Stats>(this))
 {
     NS_LOG_FUNCTION(this);
 }
@@ -111,7 +111,8 @@ Ptr<PausableQueueDiscClass>
 PausableQueueDisc::GetQueueDiscClass(std::size_t i) const
 {
     NS_LOG_FUNCTION(this);
-    return DynamicCast<PausableQueueDiscClass>(QueueDisc::GetQueueDiscClass(i));
+    Ptr<QueueDiscClass> q = QueueDisc::GetQueueDiscClass(i);
+    return DynamicCast<PausableQueueDiscClass>(q);
 }
 
 void
@@ -157,7 +158,7 @@ PausableQueueDisc::SetQueueSize(QueueSize qSize)
 }
 
 void
-PausableQueueDisc::SetPaused(uint8_t priority, bool paused)
+PausableQueueDisc::SetPaused(uint32_t priority, bool paused)
 {
     NS_LOG_FUNCTION(this);
     GetQueueDiscClass(priority)->SetPaused(paused);
@@ -179,10 +180,14 @@ PausableQueueDisc::RegisterTrafficControlCallback(TCEgressCallback cb)
 }
 
 QueueSize
-PausableQueueDisc::GetInnerQueueSize(uint8_t priority) const
+PausableQueueDisc::GetInnerQueueSize(uint32_t priority) const
 {
     NS_LOG_FUNCTION(this);
-    return GetQueueDiscClass(priority)->GetQueueDisc()->GetCurrentSize();
+    Ptr<PausableQueueDiscClass> clas = GetQueueDiscClass(priority);
+    Ptr<QueueDisc> qdisc = clas->GetQueueDisc();
+    QueueSize ans = qdisc->GetCurrentSize();
+    return ans;
+    // return GetQueueDiscClass(priority)->GetQueueDisc()->GetCurrentSize();
 }
 
 bool
@@ -196,7 +201,7 @@ PausableQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
     // We use tag rather than DSCP field to get the priority because in this way
     // we can use different strategies to set priority.
     CoSTag cosTag;
-    uint8_t priority;
+    uint32_t priority;
     if (item->GetPacket()->PeekPacketTag(
             cosTag)) // costag should be removed in DcbTrafficControl::EgressProcess
     {
@@ -250,7 +255,7 @@ PausableQueueDisc::DoDequeue()
                 // If we are at switch, the m_sendData Callback is null
                 if (!m_sendDataCallback.IsNull())
                     // Note that the first device is LoopbackNetDevice, but this is not safe
-                    m_sendDataCallback(m_portIndex + 1, i);
+                    m_sendDataCallback(m_portIndex, i);
             }
 
             if (!m_tcEgress.IsNull())
@@ -345,9 +350,9 @@ PausableQueueDisc::GetStats() const
 }
 
 void
-PausableQueueDisc::SetDetailedSwitchStats(bool bDetailedSwitchStats)
+PausableQueueDisc::SetDetailedSwitchStats(bool bDetailedQlengthStats)
 {
-    m_stats->bDetailedSwitchStats = bDetailedSwitchStats;
+    m_stats->bDetailedQlengthStats = bDetailedQlengthStats;
     for (uint8_t i = 0; i < 8; i++)
     {
         Ptr<FifoQueueDiscEcn> qd =
@@ -358,7 +363,7 @@ PausableQueueDisc::SetDetailedSwitchStats(bool bDetailedSwitchStats)
             NS_LOG_ERROR("PausableQueueDisc: cannot cast inner queue to FifoQueueDiscEcn");
             return;
         }
-        qd->GetStatsWithoutCollect()->bDetailedSwitchStats = bDetailedSwitchStats;
+        qd->GetStatsWithoutCollect()->bDetailedQlengthStats = bDetailedQlengthStats;
     }
 }
 
@@ -367,16 +372,16 @@ PausableQueueDisc::Stats::Stats(Ptr<PausableQueueDisc> qdisc)
 {
     // Retrieve the global config values
     BooleanValue bv;
-    if (GlobalValue::GetValueByNameFailSafe("detailedSwitchStats", bv))
-        bDetailedSwitchStats = bv.Get();
+    if (GlobalValue::GetValueByNameFailSafe("detailedQlengthStats", bv))
+        bDetailedQlengthStats = bv.Get();
     else
-        bDetailedSwitchStats = false;
+        bDetailedQlengthStats = false;
 }
 
 void
-PausableQueueDisc::Stats::RecordPauseResume(uint8_t prio, bool paused)
+PausableQueueDisc::Stats::RecordPauseResume(uint32_t prio, bool paused)
 {
-    if (bDetailedSwitchStats)
+    if (bDetailedQlengthStats)
     {
         vPauseResumeTime.emplace_back(Simulator::Now(), prio, paused);
     }

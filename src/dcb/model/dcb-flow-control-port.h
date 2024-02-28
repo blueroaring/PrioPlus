@@ -51,7 +51,7 @@ class DcbFlowControlPort : public Object
      * \brief Process when a packet previously came from this port is going to send
      * out through other port.
      */
-    void PacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet);
+    void PacketOutCallbackProcess(uint32_t priority, Ptr<Packet> packet);
 
     /**
      * \brief Process when a packet come out of this port.
@@ -64,7 +64,7 @@ class DcbFlowControlPort : public Object
   protected:
     virtual void DoIngressProcess(Ptr<NetDevice> outDev, Ptr<QueueDiscItem> item) = 0;
 
-    virtual void DoPacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet) = 0;
+    virtual void DoPacketOutCallbackProcess(uint32_t priority, Ptr<Packet> packet) = 0;
     virtual void DoEgressProcess(Ptr<Packet> packet) = 0;
 
   protected:

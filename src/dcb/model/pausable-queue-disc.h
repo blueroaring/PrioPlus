@@ -72,9 +72,9 @@ class PausableQueueDisc : public QueueDisc
     void SetFCEnabled(bool enable);
     void SetQueueSize(QueueSize qSize);
 
-    void SetPaused(uint8_t priority, bool paused);
+    void SetPaused(uint32_t priority, bool paused);
 
-    typedef Callback<void, uint32_t, uint8_t, Ptr<Packet>> TCEgressCallback;
+    typedef Callback<void, uint32_t, uint32_t, Ptr<Packet>> TCEgressCallback;
 
     /**
      * \brief Called when install the qdisc, to register the callback called after packet is
@@ -86,7 +86,7 @@ class PausableQueueDisc : public QueueDisc
      * \brief Get the i-th inner queue size.
      * Used by host's socket to determine whether to send more packets down.
      */
-    QueueSize GetInnerQueueSize(uint8_t priority) const;
+    QueueSize GetInnerQueueSize(uint32_t priority) const;
 
     std::pair<uint32_t, uint32_t> GetNodeAndPortId() const;
 
@@ -104,7 +104,7 @@ class PausableQueueDisc : public QueueDisc
 
         Ptr<PausableQueueDisc> m_qdisc;
 
-        bool bDetailedSwitchStats;
+        bool bDetailedQlengthStats;
         std::vector<std::tuple<Time, uint8_t, bool>>
             vPauseResumeTime; //<! Record the pause/resume time and the priority, true for paused,
                               // false for resumed
@@ -113,7 +113,7 @@ class PausableQueueDisc : public QueueDisc
         std::vector<std::shared_ptr<FifoQueueDiscEcn::Stats>>
             vQueueStats; //<! The queue statistics for each inner queue
         // Recorder function
-        void RecordPauseResume(uint8_t prio, bool paused);
+        void RecordPauseResume(uint32_t prio, bool paused);
 
         // Collect the statistics and check if the statistics is correct
         void CollectAndCheck();
@@ -130,8 +130,25 @@ class PausableQueueDisc : public QueueDisc
      * queue. It will break the design of stats configuration, but the switch's stats is so heavy
      * that we have to do this. Sorry for that.
      */
-    void SetDetailedSwitchStats(bool bDetailedSwitchStats);
+    void SetDetailedSwitchStats(bool bDetailedQlengthStats);
 
+  protected:
+    Ptr<Node> m_node; //!< Node owning this NetDevice
+
+    bool m_fcEnabled;    // Whether flow control is enabled, once enabled, the queue disc will be
+                         // pausable
+    int32_t m_portIndex; //!< the port index this QueueDisc belongs to
+    TCEgressCallback m_tcEgress; // Costum callback, called after packet is dequeued
+
+    QueueSize m_queueSize;
+    /// Traced callback: fired when a packet is enqueued, trace with item, host and port id,
+    /// priority
+    TracedCallback<Ptr<const QueueDiscItem>, std::pair<uint32_t, uint32_t>, uint32_t>
+        m_traceEnqueueWithId;
+
+    Callback<void, uint32_t, uint32_t>
+        m_sendDataCallback; //<! Callback function to notify the RoCEv2L4Proto
+                            // to send a packet down
   private:
     virtual bool DoEnqueue(Ptr<QueueDiscItem> item) override;
 
@@ -144,26 +161,6 @@ class PausableQueueDisc : public QueueDisc
     virtual void InitializeParams(void) override;
 
     std::shared_ptr<Stats> m_stats;
-
-    Ptr<Node> m_node; //!< Node owning this NetDevice
-
-    bool m_fcEnabled; // Whether flow control is enabled, once enabled, the queue disc will be
-                      // pausable
-
-    TCEgressCallback m_tcEgress; // Costum callback, called after packet is dequeued
-
-    int32_t m_portIndex; //!< the port index this QueueDisc belongs to
-
-    QueueSize m_queueSize;
-
-    /// Traced callback: fired when a packet is enqueued, trace with item, host and port id,
-    /// priority
-    TracedCallback<Ptr<const QueueDiscItem>, std::pair<uint32_t, uint32_t>, uint8_t>
-        m_traceEnqueueWithId;
-
-    Callback<void, uint32_t, uint32_t> m_sendDataCallback; //<! Callback function to notify the RoCEv2L4Proto
-                                                 // to send a packet down
-
 }; // class PausableQueueDisc
 
 } // namespace ns3

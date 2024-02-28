@@ -430,6 +430,14 @@ class RoCEv2Socket : public UdpBasedSocket
     Time GetFlowStartTime() const;
 
     /**
+     * \brief get the srcPort/dstPort of this socket, only be called after call Bind()!
+     * used for generate RoceV2Header to find the outport in srcNode.
+     * \return the srcPort/dstPort of this socket.
+     */
+    uint32_t GetSrcPort() const;
+    uint32_t GetDstPort() const;
+
+    /**
      * \brief Get the congestion control algorithm.
      */
     Ptr<RoCEv2CongestionOps> GetCcOps() const;

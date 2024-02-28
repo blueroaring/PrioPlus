@@ -108,6 +108,18 @@ ConfigureSwitch(boost::json::object& configObj, Ptr<Node> sw)
     // Get switch config from config json object
     boost::json::object switchConfigObj =
         configObj["topologyConfig"].get_object().find("switch")->value().get_object();
+    // Configure the port and its queues according to the config object
+    boost::json::object switchPortConfigObj =
+        configObj["topologyConfig"].get_object().find("switchPort")->value().get_object();
+    boost::json::object switchPortQueueConfigObj =
+        configObj["topologyConfig"].get_object().find("switchPortQueue")->value().get_object();
+
+    // check pfc enbale
+    bool pfcEnabled = false;
+    if (switchPortConfigObj.contains("pfcEnabled"))
+    {
+        pfcEnabled = switchPortConfigObj.find("pfcEnabled")->value().as_bool();
+    }
     // Add protocol to each port, must be called after
     // 1. all ports has been added to switch
     // 2. the switch protocols have been installed
@@ -139,30 +151,28 @@ ConfigureSwitch(boost::json::object& configObj, Ptr<Node> sw)
         bufferSize = QueueSize(QueueSizeUnit::BYTES, bufferSizeBytes);
     }
     switchStack.SetBufferSize(bufferSize);
+    switchStack.SetFCEnabled(pfcEnabled);
     switchStack.InstallPortsProtos(sw);
-
-    // Configure the port and its queues according to the config object
-    boost::json::object switchPortConfigObj =
-        configObj["topologyConfig"].get_object().find("switchPort")->value().get_object();
-    boost::json::object switchPortQueueConfigObj =
-        configObj["topologyConfig"].get_object().find("switchPortQueue")->value().get_object();
 
     // Configure all ports one by one
     // Note that the first device is the loopback device install by Ipv4L3Protocol
     for (uint32_t portIdx = 1; portIdx < sw->GetNDevices(); portIdx++)
     {
-        uint32_t nPortQueues = switchPortConfigObj.find("queues")->value().as_int64();
-        if (nPortQueues != 0 && nPortQueues != 8)
-        {
-            NS_FATAL_ERROR("The port configuration should have 8 queues or 0 queue, not "
-                           << nPortQueues);
-        }
-
         // Assign IPv4 Address to this port
         AssignAddress(sw, sw->GetDevice(portIdx));
 
         // Configure PFC
-        bool pfcEnabled = switchPortConfigObj.find("pfcEnabled")->value().as_bool();
+        uint32_t nPortQueues = 0;
+        if (switchPortConfigObj.contains("queues"))
+        {
+            nPortQueues = switchPortConfigObj.find("queues")->value().as_int64();
+        }
+        if (pfcEnabled && nPortQueues != 0 &&
+            nPortQueues != 8) // liuchang: only in pfc mode to check queueNum == 8
+        {
+            NS_FATAL_ERROR("The port configuration should have 8 queues or 0 queue, not "
+                           << nPortQueues);
+        }
         if (pfcEnabled)
         {
             // read reserve
@@ -287,37 +297,28 @@ ConfigureSwitch(boost::json::object& configObj, Ptr<Node> sw)
     }
 }
 
-/**
- * Install flow control protocols for the ports of this host.
- */
 void
 ConfigureHost(boost::json::object& configObj, Ptr<Node> h)
 {
-    // Install pausable queue disc
-    Ptr<TrafficControlLayer> tc = h->GetObject<TrafficControlLayer>();
-    NS_ASSERT(tc);
-    const uint32_t devN = h->GetNDevices();
-    for (uint32_t i = 1; i < devN; i++)
-    {
-        Ptr<NetDevice> dev = h->GetDevice(i);
-        Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
-        Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(h, 0);
-        // Set the queue size to 100KB, which is not critical to performance
-        qDisc->SetQueueSize(QueueSize(QueueSizeUnit::BYTES, 1e9));
-        qDisc->SetFCEnabled(true);
-        dcbDev->SetQueueDisc(qDisc);
-        tc->SetRootQueueDiscOnDevice(dev, qDisc);
-        dcbDev->SetFcEnabled(true); // all NetDevices should support FC
-    }
-
-    // Install PFC
+    // check PFC enable
     boost::json::object hostConfigObj =
         configObj["topologyConfig"].get_object().find("hostPort")->value().get_object();
     bool pfcEnabled = hostConfigObj.find("pfcEnabled")->value().as_bool();
+
+    // set fc enbale in host stack
+    DcbHostStackHelper hostStack;
+    hostStack.SetFCEnabled(pfcEnabled);
+
+    // Install pausable queue disc
+    hostStack.InstallPortsProtos(h);
+
     uint8_t enableVec = hostConfigObj.find("enableVec")->value().as_int64();
-    if (pfcEnabled)
+    for (uint32_t portIdx = 1; portIdx < h->GetNDevices(); portIdx++)
     {
-        DcbFcHelper::InstallPFCtoHostPort(h, 1, enableVec);
+        if (pfcEnabled)
+        {
+            DcbFcHelper::InstallPFCtoHostPort(h, portIdx, enableVec);
+        }
     }
 }
 
@@ -544,74 +545,7 @@ BuildTopology(boost::json::object& configObj)
     topof.close();
 
     // Calculate the propagation delay between each pair of hosts, and store it in the topology
-    for (DcTopology::HostIterator hostSrc = topology->hosts_begin();
-         hostSrc != topology->hosts_end();
-         hostSrc++)
-    {
-        // traverse hostDst
-        for (DcTopology::HostIterator hostDst = topology->hosts_begin();
-             hostDst != topology->hosts_end();
-             hostDst++)
-        {
-            if (hostSrc == hostDst)
-            {
-                continue;
-            }
-            Ptr<GlobalRouter> router = (*hostSrc)->GetObject<GlobalRouter>();
-            Ptr<Ipv4GlobalRouting> route = router->GetRoutingProtocol();
-            // assert if n > 1
-            NS_ASSERT(route->GetNRoutes() == 1);
-            // XXX Not support multiple interfaces
-            Ipv4Address srcAddr = (*hostSrc)->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
-            Ipv4Address dstAddr = (*hostDst)->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
-            // create an Ipv4Header and set the destination address
-            Ipv4Header ipHdr;
-            ipHdr.SetDestination(dstAddr);
-            // create a packet
-            Ptr<Packet> packet = Create<Packet>();
-            NS_LOG_DEBUG("======== Route from hostSrc "
-                         << (*hostSrc)->GetId() << " srcAddr " << srcAddr << " hostDst "
-                         << (*hostDst)->GetId() << " dstAddr " << dstAddr << " ========");
-            Time delays = Seconds(0);
-            uint32_t hops = 0;
-            while (1)
-            {
-                Socket::SocketErrno theerrno;
-                // find the route by using RouteOutput
-                Ptr<Ipv4Route> found = route->RouteOutput(packet, ipHdr, 0, theerrno);
-                if (theerrno == Socket::ERROR_NOTERROR)
-                {
-                    NS_LOG_DEBUG("found " << *found);
-                    Ptr<DcbChannel> channel =
-                        DynamicCast<DcbChannel>(found->GetOutputDevice()->GetChannel());
-                    hops++;
-                    delays += channel->GetDelay();
-                    if (found->GetGateway() == dstAddr)
-                    {
-                        break;
-                    }
-                    // traverse channel's devices and find another one
-                    for (uint32_t i = 0; i < channel->GetNDevices(); i++)
-                    {
-                        Ptr<NetDevice> dev = channel->GetDevice(i);
-                        if (dev != found->GetOutputDevice()) // find the other head of device
-                        {
-                            route = dev->GetNode()->GetObject<GlobalRouter>()->GetRoutingProtocol();
-                            break;
-                        }
-                    }
-                }
-                else
-                {
-                    NS_LOG_DEBUG("not found");
-                    break;
-                }
-            }
-            // NS_LOG_DEBUG("hops " << hops);
-            topology->AddDelay(srcAddr, dstAddr, hops, delays);
-        }
-    }
-
+    topology->CreateDelayMap();
     topology->LogDelayMap();
 
     return topology;

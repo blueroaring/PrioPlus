@@ -113,7 +113,8 @@ DcbTrafficControl::Receive(Ptr<NetDevice> device,
                            NetDevice::PacketType packetType)
 {
     NS_LOG_FUNCTION(this << device << packet << protocol << from << to << packetType);
-
+    Ipv4Header ipv4Header;
+    packet->PeekHeader(ipv4Header);
     // Add priority to packet tag
     uint8_t priority = PeekPriorityOfPacket(packet);
     CoSTag cosTag;
@@ -184,7 +185,7 @@ DcbTrafficControl::Send(Ptr<NetDevice> device, Ptr<QueueDiscItem> item)
 }
 
 void
-DcbTrafficControl::EgressProcess(uint32_t outPort, uint8_t priority, Ptr<Packet> packet)
+DcbTrafficControl::EgressProcess(uint32_t outPort, uint32_t priority, Ptr<Packet> packet)
 {
     NS_LOG_FUNCTION(this << outPort << priority << packet);
     DeviceIndexTag devTag;
@@ -193,7 +194,7 @@ DcbTrafficControl::EgressProcess(uint32_t outPort, uint8_t priority, Ptr<Packet>
 
     CoSTag cosTag;
     packet->RemovePacketTag(cosTag);
-    uint8_t inQueuePriority = cosTag.GetCoS() & 0x0f;
+    uint32_t inQueuePriority = cosTag.GetCoS() & 0x0f;
 
     m_buffer.OutPacketProcess(inPortIndex, inQueuePriority, outPort, priority, packet->GetSize());
 
@@ -293,9 +294,9 @@ DcbTrafficControl::Buffer::RegisterPortNumber(const uint32_t num)
 
 bool
 DcbTrafficControl::Buffer::InPacketProcess(uint32_t inPortIndex,
-                                           uint8_t inQueuePriority,
+                                           uint32_t inQueuePriority,
                                            uint32_t outPortIndex,
-                                           uint8_t outQueuePriority,
+                                           uint32_t outQueuePriority,
                                            uint32_t packetSize)
 {
     Ptr<DcbFlowControlMmuQueue> inQueue = m_ports[inPortIndex].GetFCMmuQueue(inQueuePriority);
@@ -314,9 +315,9 @@ DcbTrafficControl::Buffer::InPacketProcess(uint32_t inPortIndex,
 
 void
 DcbTrafficControl::Buffer::OutPacketProcess(uint32_t inPortIndex,
-                                            uint8_t inQueuePriority,
+                                            uint32_t inQueuePriority,
                                             uint32_t outPortIndex,
-                                            uint8_t outQueuePriority,
+                                            uint32_t outQueuePriority,
                                             uint32_t packetSize)
 {
     Ptr<DcbFlowControlMmuQueue> inQueue = m_ports[inPortIndex].GetFCMmuQueue(inQueuePriority);

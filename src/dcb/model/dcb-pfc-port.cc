@@ -146,7 +146,7 @@ DcbPfcPort::UpstreamPauseExpired(uint8_t priority, Address from)
 }
 
 void
-DcbPfcPort::DoPacketOutCallbackProcess(uint8_t priority, Ptr<Packet> packet)
+DcbPfcPort::DoPacketOutCallbackProcess(uint32_t priority, Ptr<Packet> packet)
 {
     NS_LOG_FUNCTION(this);
 

@@ -508,13 +508,13 @@ ConstructSwitchStats(Ptr<DcTopology> topology,
                 queueStatsObj.emplace("maxQLengthBytes", qStats->nMaxQLengthBytes);
 
                 // Calculate average and percentile queue length
-                // The calculate is only precise when detailedSwitchStats is false
+                // The calculate is only precise when detailedQlengthStats is false
                 std::vector<uint32_t> vQLengthBytes;
                 for (auto qLength : qStats->vQLengthBytes)
                 {
                     vQLengthBytes.push_back(qLength.second);
                 }
-                if (!qStats->bDetailedSwitchStats)
+                if (!qStats->bDetailedQlengthStats)
                 {
                     // Complement 0 queue length points according to (finishTime - startTime) /
                     // switchRecordInterval
@@ -544,7 +544,7 @@ ConstructSwitchStats(Ptr<DcTopology> topology,
                     queueStatsObj.emplace("p99QLengthBytes", p99QLengthBytes);
                 }
 
-                if (qStats->bDetailedSwitchStats)
+                if (qStats->bDetailedQlengthStats)
                 {
                     // Detailed stats
                     boost::json::array qLengthArray;
@@ -586,6 +586,18 @@ ConstructSwitchStats(Ptr<DcTopology> topology,
                     // Add a pfcTimeArray to the queueStatsObj, which will be filled later
                     boost::json::array pfcTimeArray;
                     queueStatsObj.emplace("pfcTime", pfcTimeArray);
+                }
+
+                if (qStats->bDetailedDeviceThroughputStats)
+                {
+                    boost::json::array deviceThroughputArray;
+                    for (auto& [time, throughput] : qStats->vDeviceThroughput)
+                    {
+                        deviceThroughputArray.emplace_back(
+                            boost::json::object{{"timeNs", time.GetNanoSeconds()},
+                                                {"throughputBitps", throughput.GetBitRate()}});
+                    }
+                    queueStatsObj.emplace("deviceThroughput", deviceThroughputArray);
                 }
 
                 // Add the queueStatsObj to the portStatsArray
