@@ -40,11 +40,11 @@ class RoCEv2Dcqcn : public RoCEv2CongestionOps
      * \brief Get the type ID.
      * \return the object TypeId
      */
-    static TypeId GetTypeId(void);
+    static TypeId GetTypeId();
 
     RoCEv2Dcqcn();
     RoCEv2Dcqcn(Ptr<RoCEv2SocketState> sockState);
-    ~RoCEv2Dcqcn();
+    ~RoCEv2Dcqcn() override;
 
     void SetRateAIRatio(double ratio);
     void SetRateHyperAIRatio(double ratio);
@@ -66,7 +66,7 @@ class RoCEv2Dcqcn : public RoCEv2CongestionOps
 
     std::string GetName() const override;
 
-    inline std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const
+    inline std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const override
     {
         // This has no Stats now
         return nullptr;

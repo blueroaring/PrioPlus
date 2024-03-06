@@ -39,10 +39,10 @@ class RoCEv2CongestionOps : public Object
      *
      * \return the object TypeId
      */
-    static TypeId GetTypeId(void);
+    static TypeId GetTypeId();
     RoCEv2CongestionOps();
     RoCEv2CongestionOps(Ptr<RoCEv2SocketState> sockState);
-    ~RoCEv2CongestionOps();
+    ~RoCEv2CongestionOps() override;
 
     void SetStopTime(Time stopTime);
 
@@ -131,7 +131,7 @@ class RoCEv2CongestionOps : public Object
     /**
      * \brief Get headersize.
      */
-    inline uint32_t GetExtraHeaderSize()
+    inline uint32_t GetExtraHeaderSize() const
     {
         return m_extraHeaderSize;
     }
@@ -147,7 +147,7 @@ class RoCEv2CongestionOps : public Object
     /**
      * \brief Get extra ACK size.
      */
-    inline uint32_t GetExtraAckSize()
+    inline uint32_t GetExtraAckSize() const
     {
         return m_extraAckSize;
     }

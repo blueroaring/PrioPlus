@@ -63,7 +63,7 @@ class DcbTxBuffer : public Object
      * \brief Get the type ID.
      * \return the object TypeId
      */
-    static TypeId GetTypeId(void);
+    static TypeId GetTypeId();
 
     // No default constructor, as we need the sendCb
     DcbTxBuffer(Callback<void> sendCb, Callback<RoCEv2Header> createRocev2HeaderCb);
@@ -186,21 +186,21 @@ class DcbTxBuffer : public Object
 
     /**
      * \brief The CreateRoCEv2Header() call back, called when a new packet is created.
-     * 
+     *
      * Note that this callback should be called only once for a psn.
      */
     Callback<RoCEv2Header> m_createRocev2HeaderCb;
 
     std::deque<DcbTxBufferItem> m_buffer;
     uint32_t m_frontPsn; // PSN of the front item in the buffer. Only increase when acked.
-    std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>
+    std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<>>
         m_txQueue;             // PSN of the items to be sent
     std::vector<bool> m_acked; // Whether the packet with the PSN is acked, serve as a bitmap in
                                // retx mode IRN. The index is the PSN.
     uint32_t m_maxAckedPsn;    // The max PSN which has been acknowledged, used to detect gap.
 
     uint32_t m_remainSize;  // The size of data to be sent
-    uint32_t m_nextGenPsn;  // The next PSN to be generated
+    // uint32_t m_nextGenPsn;  // The next PSN to be generated
     Ipv4Address m_daddr;    // The destination address to send the packet
     Ptr<Ipv4Route> m_route; // The route to send the packet
     uint32_t m_mss;
@@ -226,7 +226,7 @@ class DcbRxBuffer : public Object
      * \brief Get the type ID.
      * \return the object TypeId
      */
-    static TypeId GetTypeId(void);
+    static TypeId GetTypeId();
 
     // No default constructor
     DcbRxBuffer(Callback<void, Ptr<Packet>, Ipv4Header, uint32_t, Ptr<Ipv4Interface>> forwardCb,
@@ -259,7 +259,7 @@ class RoCEv2SocketState : public Object
      * \brief Get the type ID.
      * \return the object TypeId
      */
-    static TypeId GetTypeId(void);
+    static TypeId GetTypeId();
 
     RoCEv2SocketState();
 
@@ -329,10 +329,11 @@ class RoCEv2SocketState : public Object
      */
     inline uint64_t GetBaseBdp() const
     {
-        if (m_deviceRate != nullptr)
+        if (m_deviceRate != nullptr) {
             return static_cast<uint64_t>(m_deviceRate->GetBitRate() / 8 * m_baseRtt.GetSeconds());
-        else
+        } else {
             return 0;
+        }
     }
 
     inline void SetBaseOneWayDelay(Time baseOneWayDelay)
@@ -370,7 +371,7 @@ class RoCEv2SocketState : public Object
      * if not, return the corrected rateRatio.
      * \return the corrected rateRatio.
      */
-    inline double CheckRateRatio(double rateRatio)
+    inline double CheckRateRatio(double rateRatio) const
     {
         return std::min(std::max(rateRatio, m_minRateRatio), 1.);
     }
@@ -403,13 +404,13 @@ class RoCEv2Socket : public UdpBasedSocket
      * \brief Get the type ID.
      * \return the object TypeId
      */
-    static TypeId GetTypeId(void);
+    static TypeId GetTypeId();
 
     RoCEv2Socket();
-    ~RoCEv2Socket();
+    ~RoCEv2Socket() override;
 
-    virtual int Bind() override;
-    virtual void BindToNetDevice(Ptr<NetDevice> netdevice) override;
+    int Bind() override;
+    void BindToNetDevice(Ptr<NetDevice> netdevice) override;
 
     int BindToLocalPort(uint32_t port);
 
@@ -434,8 +435,8 @@ class RoCEv2Socket : public UdpBasedSocket
      * used for generate RoceV2Header to find the outport in srcNode.
      * \return the srcPort/dstPort of this socket.
      */
-    uint32_t GetSrcPort() const;
-    uint32_t GetDstPort() const;
+    uint32_t GetSrcPort() const override;
+    uint32_t GetDstPort() const override;
 
     /**
      * \brief Get the congestion control algorithm.
@@ -507,7 +508,7 @@ class RoCEv2Socket : public UdpBasedSocket
     std::shared_ptr<Stats> GetStats() const;
 
   protected:
-    virtual void DoSendTo(Ptr<Packet> p, Ipv4Address daddr, Ptr<Ipv4Route> route) override;
+    void DoSendTo(Ptr<Packet> p, Ipv4Address daddr, Ptr<Ipv4Route> route) override;
 
     /**
      * \brief Try to send a pending packet.
@@ -526,10 +527,10 @@ class RoCEv2Socket : public UdpBasedSocket
      */
     void DoSendDataPacket(const DcbTxBuffer::DcbTxBufferItem& item);
 
-    virtual void ForwardUp(Ptr<Packet> packet,
-                           Ipv4Header header,
-                           uint32_t port,
-                           Ptr<Ipv4Interface> incomingInterface) override;
+    void ForwardUp(Ptr<Packet> packet,
+                   Ipv4Header header,
+                   uint32_t port,
+                   Ptr<Ipv4Interface> incomingInterface) override;
 
     /**
      * \brief Called by flow scheduler at RoCEv2L4Proto to notify the socket to send a packet down.
@@ -669,7 +670,7 @@ class RoCEv2Socket : public UdpBasedSocket
     enum FlowState
     {
         PENDING,
-        RUNNING, 
+        RUNNING,
         FINISHED
     };
     FlowState m_flowState;
@@ -686,11 +687,11 @@ class IrnHeader : public Header
   public:
     IrnHeader();
     static TypeId GetTypeId();
-    virtual TypeId GetInstanceTypeId(void) const override;
-    virtual uint32_t GetSerializedSize() const override;
-    virtual void Serialize(Buffer::Iterator start) const override;
-    virtual uint32_t Deserialize(Buffer::Iterator start) override;
-    virtual void Print(std::ostream& os) const override;
+    TypeId GetInstanceTypeId() const override;
+    uint32_t GetSerializedSize() const override;
+    void Serialize(Buffer::Iterator start) const override;
+    uint32_t Deserialize(Buffer::Iterator start) override;
+    void Print(std::ostream& os) const override;
     void SetAckedPsn(uint32_t psn);
     uint32_t GetAckedPsn() const;
 

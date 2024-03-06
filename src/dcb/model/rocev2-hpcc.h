@@ -46,11 +46,11 @@ class RoCEv2Hpcc : public RoCEv2CongestionOps
      * \brief Get the type ID.
      * \return the object TypeId
      */
-    static TypeId GetTypeId(void);
+    static TypeId GetTypeId();
 
     RoCEv2Hpcc();
     RoCEv2Hpcc(Ptr<RoCEv2SocketState> sockState);
-    ~RoCEv2Hpcc();
+    ~RoCEv2Hpcc() override;
 
     /**
      * After configuring the HPCC, call this function.
@@ -102,7 +102,7 @@ class RoCEv2Hpcc : public RoCEv2CongestionOps
         // No getter for simplicity
     };
 
-    std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const;
+    std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const override;
 
   private:
     /**
