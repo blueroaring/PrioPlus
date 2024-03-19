@@ -62,6 +62,15 @@ uint64_t ConvertToUint(const boost::json::value& v);
  */
 std::vector<uint32_t> ConvertRangeToVector(std::string range, uint32_t max);
 
+typedef std::pair<std::string, Ptr<AttributeValue>> ConfigEntry_t;
+/**
+ * \brief Construct a vector of ConfigEntry_t from a json object.
+ * \param configObj The json object.
+ * \return A vector of ConfigEntry_t.
+ */
+std::unique_ptr<std::vector<ConfigEntry_t>>
+ConstructConfigVector(const boost::json::object& configObj);
+
 /*****************************************************
  * A series of functions to extract field from json.
  *****************************************************/

@@ -161,12 +161,12 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
             uint32_t pktSeq = tag.GetPktSeq();
             flowStats->nMaxRecvSeq = std::max(flowStats->nMaxRecvSeq, pktSeq);
 
-            flowStats->vArriveDelay.push_back(Simulator::Now() - Time(tag.GetTArriveNs()));
-            flowStats->vTxDelay.push_back(Simulator::Now() - Time(tag.GetTTxNs()));
+            flowStats->vArriveDelay.push_back(Simulator::Now() -NanoSeconds(tag.GetTArriveNs()));
+            flowStats->vTxDelay.push_back(Simulator::Now() -NanoSeconds(tag.GetTTxNs()));
 
             flowStats->nTotalRecvBytes += packet->GetSize();
             flowStats->nTotalRecvPkts++;
-            flowStats->tFirstPktArrive = std::min(flowStats->tFirstPktArrive, Time(tag.GetTArriveNs()));
+            flowStats->tFirstPktArrive = std::min(flowStats->tFirstPktArrive,NanoSeconds(tag.GetTArriveNs()));
             flowStats->tFirstPktRecv = std::min(flowStats->tFirstPktRecv, Simulator::Now());
             flowStats->tLastPktRecv = std::max(flowStats->tLastPktRecv, Simulator::Now());
 
@@ -178,7 +178,7 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
     }
 }
 
-std::shared_ptr<DcbTrafficGenApplication::Stats>
+std::shared_ptr<DcbBaseApplication::Stats>
 RealTimeApplication::GetStats() const
 {
     m_stats->CollectAndCheck(m_flows);

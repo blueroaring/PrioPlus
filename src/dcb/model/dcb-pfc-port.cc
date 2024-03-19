@@ -39,6 +39,22 @@ DcbPfcPort::GetTypeId()
         TypeId("ns3::DcbPfcPort")
             .SetParent<DcbFlowControlPort>()
             .SetGroupName("Dcb")
+            .AddConstructor<DcbPfcPort>()
+            .AddAttribute("ReactionType",
+                          "The reaction type of the PFC",
+                          EnumValue(RESEND_PAUSE),
+                          MakeEnumAccessor(&DcbPfcPort::m_reactionType),
+                          MakeEnumChecker(NEVER_EXPIRE,
+                                          "NEVER_EXPIRE",
+                                          RESEND_PAUSE,
+                                          "RESEND_PAUSE",
+                                          RESET_UPSTREAM_PAUSED,
+                                          "RESET_UPSTREAM_PAUSED"))
+            .AddAttribute("EnableVec",
+                          "The enable vector of the PFC",
+                          UintegerValue(0xff),
+                          MakeUintegerAccessor(&DcbPfcPort::SetEnableVec),
+                          MakeUintegerChecker<uint8_t>())
             .AddTraceSource("PfcSent",
                             "PFC pause frame sent",
                             MakeTraceSourceAccessor(&DcbPfcPort::m_tracePfcSent),
@@ -48,6 +64,13 @@ DcbPfcPort::GetTypeId()
                             MakeTraceSourceAccessor(&DcbPfcPort::m_tracePfcReceived),
                             "ns3::Packet::TracedCallback");
     return tid;
+}
+
+DcbPfcPort::DcbPfcPort()
+    : m_port(0)
+{
+    NS_LOG_FUNCTION(this);
+    m_egressResumeEvents.resize(DcbTrafficControl::PRIORITY_NUMBER);
 }
 
 DcbPfcPort::DcbPfcPort(Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc)
@@ -219,7 +242,7 @@ DcbPfcPort::ReceivePfc(Ptr<NetDevice> dev,
             else
             {
                 qDisc->SetPaused(priority, false);
-                
+
                 if (m_reactionType != NEVER_EXPIRE)
                 {
                     // Cancel egress resume event
@@ -247,6 +270,14 @@ DcbPfcPort::SetEnableVec(uint8_t enableVec)
 {
     NS_LOG_FUNCTION(this << enableVec);
     m_port.m_enableVec = enableVec;
+}
+
+void
+DcbPfcPort::SetDevice(Ptr<NetDevice> dev)
+{
+    NS_LOG_FUNCTION(this << dev);
+    m_dev = dev;
+    m_port.m_index = dev->GetIfIndex();
 }
 
 bool

@@ -189,10 +189,6 @@ SetRuntime(boost::json::object& configJsonObj)
     uint32_t seed =
         JsonGetInt64OrRaise(runtimeConfig, "seed", "Cannot find seed field in runtimeConfig");
     SetRandomSeed(seed);
-    std::string stopTime = JsonGetStringOrRaise(runtimeConfig,
-                                                "stopTime",
-                                                "Cannot find stopTime field in runtimeConfig");
-    Simulator::Stop(Time(stopTime));
     JsonCallIfExistsInt<uint32_t>(runtimeConfig, "mtpThreads", [](uint32_t threads) {
         if (threads > 1)
         {
@@ -200,6 +196,10 @@ SetRuntime(boost::json::object& configJsonObj)
             MtpInterface::Enable(threads);
         }
     });
+    std::string stopTime = JsonGetStringOrRaise(runtimeConfig,
+                                                "stopTime",
+                                                "Cannot find stopTime field in runtimeConfig");
+    Simulator::Stop(Time(stopTime));
 }
 
 } // namespace json_util

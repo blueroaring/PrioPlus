@@ -21,7 +21,7 @@
 
 #include "csv-writer.h"
 #include "dcb-net-device-helper.h"
-#include "dcb-switch-stack-helper.h"
+#include "dcb-stack-helper.h"
 
 #include "ns3/dcb-net-device.h"
 #include "ns3/dcb-traffic-control.h"
@@ -170,7 +170,7 @@ EnableSwitchIpv4Pcap(Ptr<Node> sw, std::string fileNamePrefix)
         NS_FATAL_ERROR("Ipv4 is not bound to the switch " << sw);
     }
     const uint32_t nintf = ipv4->GetNInterfaces();
-    DcbSwitchStackHelper switchStack;
+    DcbStackHelper switchStack;
     for (uint32_t i = 1; i < nintf; i++) // interface 0 is loopback so we skip it.
     {
         switchStack.EnablePcapIpv4(GetRealFileName(fileNamePrefix), ipv4, i, false);

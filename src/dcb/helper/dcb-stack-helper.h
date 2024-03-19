@@ -17,8 +17,8 @@
  * Author: Pavinberg <pavin0702@gmail.com>
  */
 
-#ifndef DCB_HOST_STACK_HELPER_H
-#define DCB_HOST_STACK_HELPER_H
+#ifndef DCB_STACK_HELPER_H
+#define DCB_STACK_HELPER_H
 
 #include "ns3/internet-trace-helper.h"
 #include "ns3/ipv4-l3-protocol.h"
@@ -39,15 +39,15 @@ namespace ns3
  * \ingroup dcb
  * \brief subclass of InternetStackHelper where user can customize TrafficControlLayer
  */
-class DcbHostStackHelper : public PcapHelperForIpv4,
+class DcbStackHelper : public PcapHelperForIpv4,
                            public PcapHelperForIpv6,
                            public AsciiTraceHelperForIpv4,
                            public AsciiTraceHelperForIpv6
 {
   public:
-    DcbHostStackHelper();
+    DcbStackHelper();
 
-    virtual ~DcbHostStackHelper();
+    virtual ~DcbStackHelper();
 
     /**
      * Return helper internal state to that of a newly constructed one
@@ -75,20 +75,7 @@ class DcbHostStackHelper : public PcapHelperForIpv4,
 
     void SetFCEnabled(bool enable);
 
-    void SetPPfcEnabled(bool enable);
-
-    void InstallPortsProtos (Ptr<Node> node) const;
-
-    void AddUdpBasedL4Protocol(const std::string tid);
-
-    /**
-     * Aggregate implementations of the ns3::Ipv4, ns3::Ipv6, ns3::Udp, and ns3::Tcp classes
-     * onto the provided node.  This method will assert if called on a node that
-     * already has an Ipv4 object aggregated to it.
-     *
-     * \param nodeName The name of the node on which to install the stack.
-     */
-    void Install(std::string nodeName) const;
+    void InstallStack(Ptr<Node> node) const;
 
     /**
      * Aggregate implementations of the ns3::Ipv4, ns3::Ipv6, ns3::Udp, and ns3::Tcp classes
@@ -97,23 +84,16 @@ class DcbHostStackHelper : public PcapHelperForIpv4,
      *
      * \param node The node on which to install the stack.
      */
-    void Install(Ptr<Node> node) const;
+    void InstallHostStack(Ptr<Node> node) const;
 
     /**
-     * For each node in the input container, aggregate implementations of the
-     * ns3::Ipv4, ns3::Ipv6, ns3::Udp, and, ns3::Tcp classes.  The program will assert
-     * if this method is called on a container with a node that already has
-     * an Ipv4 object aggregated to it.
+     * Aggregate implementations of the ns3::Ipv4, ns3::Ipv6, ns3::Udp, and ns3::Tcp classes
+     * onto the provided node.  This method will assert if called on a node that
+     * already has an Ipv4 object aggregated to it.
      *
-     * \param c NodeContainer that holds the set of nodes on which to install the
-     * new stacks.
+     * \param node The node on which to install the stack.
      */
-    void Install(NodeContainer c) const;
-
-    /**
-     * Aggregate IPv4, IPv6, UDP, and TCP stacks to all nodes in the simulation
-     */
-    void InstallAll(void) const;
+    void InstallSwitchStack(Ptr<Node> node);
 
     /**
      * Aggregate implementations of the Rocev2L4Protocol.
@@ -320,4 +300,4 @@ class DcbHostStackHelper : public PcapHelperForIpv4,
 
 } // namespace ns3
 
-#endif // DCB_HOST_STACK_HELPER_H
+#endif // DCB_STACK_HELPER_H

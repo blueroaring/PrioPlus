@@ -68,6 +68,7 @@ class PausableQueueDisc : public QueueDisc
 
     virtual void Run(void) override;
 
+    void SetNode(Ptr<Node> node);
     void SetPortIndex(uint32_t portIndex);
     void SetFCEnabled(bool enable);
     void SetQueueSize(QueueSize qSize);

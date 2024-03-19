@@ -41,10 +41,26 @@ NS_OBJECT_ENSURE_REGISTERED(FifoQueueDiscEcn);
 TypeId
 FifoQueueDiscEcn::GetTypeId()
 {
-    static TypeId tid = TypeId("ns3::FifoQueueDiscEcn")
-                            .SetParent<FifoQueueDisc>()
-                            .SetGroupName("dcb")
-                            .AddConstructor<FifoQueueDiscEcn>();
+    static TypeId tid =
+        TypeId("ns3::FifoQueueDiscEcn")
+            .SetParent<FifoQueueDisc>()
+            .SetGroupName("dcb")
+            .AddConstructor<FifoQueueDiscEcn>()
+            .AddAttribute("EcnKMin",
+                          "The minimum number of bytes in the queue to start marking ECN",
+                          QueueSizeValue(QueueSize(QueueSizeUnit::BYTES, UINT32_MAX - 1)),
+                          MakeQueueSizeAccessor(&FifoQueueDiscEcn::SetEcnKMin),
+                          MakeQueueSizeChecker())
+            .AddAttribute("EcnKMax",
+                          "The maximum number of bytes in the queue to start marking ECN",
+                          QueueSizeValue(QueueSize(QueueSizeUnit::BYTES, UINT32_MAX)),
+                          MakeQueueSizeAccessor(&FifoQueueDiscEcn::SetEcnKMax),
+                          MakeQueueSizeChecker())
+            .AddAttribute("EcnPMax",
+                          "The maximum probability of marking ECN",
+                          DoubleValue(0.),
+                          MakeDoubleAccessor(&FifoQueueDiscEcn::m_ecnPMax),
+                          MakeDoubleChecker<double>(0., 1.));
     return tid;
 }
 
@@ -54,6 +70,11 @@ FifoQueueDiscEcn::FifoQueueDiscEcn()
       m_ecnPMax(0.)
 {
     NS_LOG_FUNCTION(this);
+    // Create a uniform random variable in the range of [0,1] for ECN marking
+    m_rng = CreateObject<UniformRandomVariable>();
+    m_rng->SetAttribute("Min", DoubleValue(0.0));
+    m_rng->SetAttribute("Max", DoubleValue(1.0));
+
     m_stats = std::make_shared<Stats>(this);
 }
 
@@ -113,28 +134,6 @@ FifoQueueDiscEcn::DoDequeue()
     return item;
 }
 
-void
-FifoQueueDiscEcn::ConfigECN(uint32_t kmin, uint32_t kmax, double pmax)
-{
-    NS_LOG_FUNCTION(this);
-
-    if (kmin >= kmax)
-    {
-        NS_FATAL_ERROR("ECN kMin should be smaller than kMax");
-    }
-    if (pmax > 1.0 || pmax < 0.)
-    {
-        NS_FATAL_ERROR("ECN pMAx should be between 0 and 1");
-    }
-    m_ecnKMin = kmin;
-    m_ecnKMax = kmax;
-    m_ecnPMax = pmax;
-
-    m_rng = CreateObject<UniformRandomVariable>();
-    m_rng->SetAttribute("Min", DoubleValue(0.0));
-    m_rng->SetAttribute("Max", DoubleValue(1.0));
-}
-
 bool
 FifoQueueDiscEcn::CheckShouldMarkECN(Ptr<Ipv4QueueDiscItem> item) const
 {
@@ -154,6 +153,18 @@ FifoQueueDiscEcn::CheckShouldMarkECN(Ptr<Ipv4QueueDiscItem> item) const
         double prob = m_ecnPMax * 1024 * (nbytes - m_ecnKMin) / (m_ecnKMax - m_ecnKMin);
         return m_rng->GetValue() * 1024 < prob;
     }
+}
+
+void
+FifoQueueDiscEcn::SetEcnKMin(QueueSize kmin)
+{
+    m_ecnKMin = kmin.GetValue();
+}
+
+void
+FifoQueueDiscEcn::SetEcnKMax(QueueSize kmax)
+{
+    m_ecnKMax = kmax.GetValue();
 }
 
 std::shared_ptr<FifoQueueDiscEcn::Stats>
@@ -176,7 +187,8 @@ FifoQueueDiscEcn::Stats::Stats(Ptr<FifoQueueDiscEcn> qdisc)
       nTotalQLengthBytes(0),
       nBackgroundQLengthBytes(0),
       m_qlengthRecordInterval(Seconds(0)),
-      m_qlengthRecordEvent(EventId())
+      m_qlengthRecordEvent(EventId()),
+      nDequeueBytes(0)
 {
     // Retrieve the global config values
     BooleanValue bv;
@@ -343,7 +355,8 @@ FifoQueueDiscEcn::Stats::RecordThroughputIntervalic()
         }
         else
         {
-            NS_LOG_DEBUG("No bytes dequeued in the last record interval, do not record the throughput");
+            NS_LOG_DEBUG(
+                "No bytes dequeued in the last record interval, do not record the throughput");
         }
     }
 }

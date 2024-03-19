@@ -35,6 +35,8 @@
 #include "ns3/point-to-point-helper.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/traffic-control-module.h"
+#include "ns3/mtp-interface.h"
+
 
 #include <boost/json.hpp>
 #include <fstream>
@@ -88,19 +90,24 @@ main(int argc, char* argv[])
     // LogComponentEnable ("FifoQueueDiscEcn", LOG_LEVEL_INFO);
     LogComponentEnable("ScratchSimulator", LOG_LEVEL_DEBUG);
     // LogComponentEnable("JsonTopologyHelper", LOG_LEVEL_DEBUG);
-    // LogComponentEnable("RoCEv2Harvest", LOG_DEBUG);
+    // LogComponentEnable("ChannelRingApplication", LOG_DEBUG);
+
+    Time::SetResolution(Time::PS);
 
     // Read config in json from config file
     boost::json::object configObj = json_util::ReadConfig(config_file);
 
     /***** Automatical settings *****/
+    // Set runtime configuration
+    json_util::SetRuntime(configObj);
     // Automatically set default values using ns3 Config system
     json_util::SetDefault(configObj["defaultConfig"].get_object());
     // Automatically set global values using ns3 GlobalValue system
     json_util::SetGlobal(configObj["globalConfig"].get_object());
     // Set global seed for random generator
-    json_util::SetRandomSeed(
-        configObj["runtimeConfig"].get_object().find("seed")->value().as_int64());
+    // json_util::SetRandomSeed(
+    //     configObj["runtimeConfig"].get_object().find("seed")->value().as_int64());
+
     // Set the stop time of simulation
     json_util::SetStopTime(configObj);
 

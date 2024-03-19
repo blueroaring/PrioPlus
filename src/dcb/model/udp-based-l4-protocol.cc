@@ -144,7 +144,7 @@ UdpBasedL4Protocol::ForwardUp(Ptr<Packet> packet,
             return;
         }
         NS_LOG_WARN("No endPoints matched in UDP-based L4 protocol with inner port "
-                       << innerPort << " on node " << Simulator::GetContext());
+                       << innerPort << " on node " << Simulator::GetContext()<<" on time "<<Simulator::Now());
     }
 }
 

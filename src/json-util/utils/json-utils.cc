@@ -207,7 +207,6 @@ ConvertToUint(const boost::json::value& v)
     }
 }
 
-
 std::vector<uint32_t>
 ConvertRangeToVector(std::string range, uint32_t max)
 {
@@ -255,6 +254,40 @@ ConvertRangeToVector(std::string range, uint32_t max)
     }
 
     return vRange;
+}
+
+std::unique_ptr<std::vector<ConfigEntry_t>>
+ConstructConfigVector(const boost::json::object& configObj)
+{
+    std::unique_ptr<std::vector<ConfigEntry_t>> configVector =
+        std::make_unique<std::vector<ConfigEntry_t>>();
+    // Each value is .Copy() to get Ptr<AttributeValue> as it is forbidden to construct directly
+    for (auto kvPair : configObj)
+    {
+        std::string name = kvPair.key();
+        boost::json::value value = kvPair.value();
+        switch (value.kind())
+        {
+        case boost::json::kind::string:
+            configVector->push_back(
+                std::make_pair(name, StringValue(value.get_string().c_str()).Copy()));
+            break;
+        case boost::json::kind::uint64:
+            configVector->push_back(std::make_pair(name, UintegerValue(value.get_uint64()).Copy()));
+            break;
+        case boost::json::kind::int64:
+            configVector->push_back(std::make_pair(name, UintegerValue(value.get_int64()).Copy()));
+            break;
+        case boost::json::kind::bool_:
+            configVector->push_back(std::make_pair(name, BooleanValue(value.get_bool()).Copy()));
+            break;
+        case boost::json::kind::double_:
+            configVector->push_back(std::make_pair(name, DoubleValue(value.get_double()).Copy()));
+            break;
+        default:;
+        }
+    }
+    return configVector;
 }
 
 } // namespace json_util

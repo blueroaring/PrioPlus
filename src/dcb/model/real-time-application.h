@@ -100,7 +100,7 @@ class RealTimeApplication : public DcbTrafficGenApplication
         // No getter for simplicity
     };
 
-    virtual std::shared_ptr<DcbTrafficGenApplication::Stats> GetStats() const;
+    virtual std::shared_ptr<DcbBaseApplication::Stats> GetStats() const;
 
   private:
     /**

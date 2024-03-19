@@ -20,11 +20,12 @@
 #ifndef FIFO_QUEUE_DISC_ECN_H
 #define FIFO_QUEUE_DISC_ECN_H
 
+#include "ns3/data-rate.h"
 #include "ns3/fifo-queue-disc.h"
 #include "ns3/flow-identifier.h"
 #include "ns3/ipv4-queue-disc-item.h"
+#include "ns3/queue-size.h"
 #include "ns3/random-variable-stream.h"
-#include "ns3/data-rate.h"
 
 namespace ns3
 {
@@ -60,8 +61,6 @@ class FifoQueueDiscEcn : public FifoQueueDisc
     static TypeId GetTypeId();
     FifoQueueDiscEcn();
     virtual ~FifoQueueDiscEcn();
-
-    void ConfigECN(uint32_t kmin, uint32_t kmax, double pmax);
 
     class Stats
     {
@@ -103,7 +102,8 @@ class FifoQueueDiscEcn : public FifoQueueDisc
          */
         bool bDetailedDeviceThroughputStats;
         std::vector<std::pair<Time, DataRate>>
-            vDeviceThroughput; //<! Record the throughput and the time when the throughput is recorded
+            vDeviceThroughput; //<! Record the throughput and the time when the throughput is
+                               // recorded
         uint32_t nDequeueBytes;
         Time m_throughputRecordInterval;
         EventId m_throughputRecordEvent;
@@ -137,6 +137,9 @@ class FifoQueueDiscEcn : public FifoQueueDisc
     Ptr<QueueDiscItem> DoDequeue() override;
 
     bool CheckShouldMarkECN(Ptr<Ipv4QueueDiscItem> item) const;
+
+    void SetEcnKMin(QueueSize kmin);
+    void SetEcnKMax(QueueSize kmax);
 
     std::shared_ptr<Stats> m_stats;
 

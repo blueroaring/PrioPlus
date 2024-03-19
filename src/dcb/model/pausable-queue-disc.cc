@@ -31,6 +31,7 @@
 #include "ns3/log.h"
 #include "ns3/object-base.h"
 #include "ns3/object-factory.h"
+#include "ns3/pointer.h"
 #include "ns3/queue-disc.h"
 #include "ns3/queue-item.h"
 #include "ns3/queue-size.h"
@@ -55,11 +56,26 @@ PausableQueueDisc::GetTypeId()
             .SetParent<QueueDisc>()
             .SetGroupName("Dcb")
             .AddConstructor<PausableQueueDisc>()
+            // .AddAttribute("Node",
+            //               "The node this queue disc is attached to",
+            //               PointerValue(),
+            //               MakePointerAccessor(&PausableQueueDisc::m_node),
+            //               MakePointerChecker<Node>())
+            // .AddAttribute("PortIndex",
+            //               "The port index this queue disc is attached to",
+            //               UintegerValue(0x7fffffff),
+            //               MakeUintegerAccessor(&PausableQueueDisc::m_portIndex),
+            //               MakeUintegerChecker<uint32_t>())
             .AddAttribute("FcEnabled",
                           "Whether flow control is enabled",
                           BooleanValue(false),
                           MakeBooleanAccessor(&PausableQueueDisc::m_fcEnabled),
                           MakeBooleanChecker())
+            .AddAttribute("QueueSize",
+                          "The size of the queue, default if infinite size.",
+                          QueueSizeValue(QueueSize(QueueSizeUnit::BYTES, UINT32_MAX)),
+                          MakeQueueSizeAccessor(&PausableQueueDisc::m_queueSize),
+                          MakeQueueSizeChecker())
             .AddAttribute("TrafficControlCallback",
                           "Callback when deque completed",
                           CallbackValue(MakeNullCallback<void, uint32_t, uint32_t, Ptr<Packet>>()),
@@ -76,7 +92,7 @@ PausableQueueDisc::PausableQueueDisc()
     : m_node(0),
       m_fcEnabled(false),
       m_portIndex(0x7fffffff),
-      m_queueSize("1000p"),
+      m_queueSize(QueueSize(QueueSizeUnit::BYTES, UINT32_MAX)),
       m_stats(std::make_shared<Stats>(this))
 {
     NS_LOG_FUNCTION(this);
@@ -86,7 +102,7 @@ PausableQueueDisc::PausableQueueDisc(uint32_t port)
     : m_node(0),
       m_fcEnabled(false),
       m_portIndex(port),
-      m_queueSize("1000p"),
+      m_queueSize(QueueSize(QueueSizeUnit::BYTES, UINT32_MAX)),
       m_stats(std::make_shared<Stats>(this))
 {
     NS_LOG_FUNCTION(this);
@@ -96,7 +112,7 @@ PausableQueueDisc::PausableQueueDisc(Ptr<Node> node, uint32_t port)
     : m_node(node),
       m_fcEnabled(false),
       m_portIndex(port),
-      m_queueSize("1000p"),
+      m_queueSize(QueueSize(QueueSizeUnit::BYTES, UINT32_MAX)),
       m_stats(std::make_shared<Stats>(this))
 {
     NS_LOG_FUNCTION(this);
@@ -135,6 +151,13 @@ PausableQueueDisc::Run()
         }
     }
     // RunEnd () is called by DcbNetDevice::TransmitComplete ()
+}
+
+void
+PausableQueueDisc::SetNode(Ptr<Node> node)
+{
+    NS_LOG_FUNCTION(this << node);
+    m_node = node;
 }
 
 void
@@ -247,6 +270,7 @@ PausableQueueDisc::DoDequeue()
         if ((!m_fcEnabled || !qdclass->IsPaused()) &&
             (item = qdclass->GetQueueDisc()->Dequeue()) != nullptr)
         {
+            // FC is not enabled or the queue is not paused
             NS_LOG_LOGIC("Popoed from priority " << i << ": " << item);
 
             // If the qdice is empty after dequeue, try to call the m_sendDataCb

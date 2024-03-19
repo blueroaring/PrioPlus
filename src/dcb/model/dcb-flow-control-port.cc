@@ -35,8 +35,28 @@ NS_OBJECT_ENSURE_REGISTERED(DcbFlowControlPort);
 TypeId
 DcbFlowControlPort::GetTypeId()
 {
-    static TypeId tid = TypeId("ns3::DcbFlowControlPort").SetParent<Object>().SetGroupName("Dcb");
+    static TypeId tid =
+        TypeId("ns3::DcbFlowControlPort")
+            .SetParent<Object>()
+            .SetGroupName("Dcb")
+            .AddAttribute("EnableIngressControl",
+                          "Enable Ingress Control",
+                          BooleanValue(true),
+                          MakeBooleanAccessor(&DcbFlowControlPort::SetFcIngressEnabled),
+                          MakeBooleanChecker())
+            .AddAttribute("EnableEgressControl",
+                          "Enable Egress Control",
+                          BooleanValue(false),
+                          MakeBooleanAccessor(&DcbFlowControlPort::SetFcEgressEnabled),
+                          MakeBooleanChecker());
     return tid;
+}
+
+DcbFlowControlPort::DcbFlowControlPort()
+    : m_enableIngressControl(true),
+      m_enableEgressControl(false)
+{
+    NS_LOG_FUNCTION(this);
 }
 
 DcbFlowControlPort::DcbFlowControlPort(Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc)
@@ -51,6 +71,20 @@ DcbFlowControlPort::DcbFlowControlPort(Ptr<NetDevice> dev, Ptr<DcbTrafficControl
 DcbFlowControlPort::~DcbFlowControlPort()
 {
     NS_LOG_FUNCTION(this);
+}
+
+void 
+DcbFlowControlPort::SetDevice(Ptr<NetDevice> dev)
+{
+    NS_LOG_FUNCTION(this << dev);
+    m_dev = dev;
+}
+
+void 
+DcbFlowControlPort::SetDcbTrafficControl(Ptr<DcbTrafficControl> tc)
+{
+    NS_LOG_FUNCTION(this << tc);
+    m_tc = tc;
 }
 
 void
