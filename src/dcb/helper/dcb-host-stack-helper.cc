@@ -348,7 +348,7 @@ DcbHostStackHelper::Install(Ptr<Node> node) const
     if (m_ipv6Enabled)
     {
         /* IPv6 stack */
-        if (node->GetObject<Ipv6>() != 0)
+        if (node->GetObject<Ipv6>())
         {
             NS_FATAL_ERROR("DcbHostStackHelper::Install (): Aggregating "
                            "an InternetStack to a node with an existing Ipv6 object");
