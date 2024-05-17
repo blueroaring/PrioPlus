@@ -104,9 +104,6 @@ main(int argc, char* argv[])
     json_util::SetDefault(configObj["defaultConfig"].get_object());
     // Automatically set global values using ns3 GlobalValue system
     json_util::SetGlobal(configObj["globalConfig"].get_object());
-    // Set global seed for random generator
-    // json_util::SetRandomSeed(
-    //     configObj["runtimeConfig"].get_object().find("seed")->value().as_int64());
 
     // Set the stop time of simulation
     json_util::SetStopTime(configObj);

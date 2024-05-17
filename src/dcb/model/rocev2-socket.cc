@@ -851,7 +851,7 @@ RoCEv2Socket::RetransmissionTimeout()
 {
     NS_LOG_FUNCTION(this);
 
-    if (m_retxMode == RoCEv2RetxMode::IRN && m_txBuffer.GetOnTheFly() <= m_irnPktThresh)
+    if (m_retxMode == RoCEv2RetxMode::IRN && m_txBuffer.GetOnTheFly() > m_irnPktThresh)
     {
         // last time schedule retx use rto_low
         if (m_lastRto == m_irnRtoLow)
@@ -1228,7 +1228,7 @@ uint32_t
 DcbTxBuffer::GetOnTheFly()
 {
     NS_ASSERT(m_maxSentPsn >= m_maxAckedPsn);
-    return m_maxSentPsn - m_maxAckedPsn;
+    return m_maxSentPsn - m_frontPsn;
 }
 
 uint32_t
