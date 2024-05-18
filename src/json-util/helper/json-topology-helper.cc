@@ -457,10 +457,6 @@ BuildTopology(boost::json::object& configObj)
     topology->CreateDelayMap();
     topology->LogDelayMap();
 
-    // Calculate the propagation delay between each pair of hosts, and store it in the topology
-    topology->CreateDelayMap();
-    topology->LogDelayMap();
-
     return topology;
 }
 

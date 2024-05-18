@@ -262,7 +262,7 @@ DcbPfcPort::ReceivePfc(Ptr<NetDevice> dev,
 inline bool
 DcbPfcPort::CheckEnableVec(uint8_t cls)
 {
-    return (m_port.m_enableVec & (1 << cls)) == 1;
+    return (m_port.m_enableVec & (1 << cls));
 }
 
 void
