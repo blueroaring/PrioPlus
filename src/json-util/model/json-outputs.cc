@@ -153,7 +153,7 @@ ConstructAppStatsObj(ApplicationContainer& apps)
 
     for (uint32_t i = 0; i < apps.GetN(); ++i)
     {
-        Ptr<DcbTrafficGenApplication> app = DynamicCast<DcbTrafficGenApplication>(apps.Get(i));
+        Ptr<DcbBaseApplication> app = DynamicCast<DcbBaseApplication>(apps.Get(i));
         if (app == nullptr)
             continue;
         auto appStats = app->GetStats();
@@ -204,7 +204,7 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
 {
     for (uint32_t i = 0; i < apps.GetN(); ++i)
     {
-        Ptr<DcbTrafficGenApplication> app = DynamicCast<DcbTrafficGenApplication>(apps.Get(i));
+        Ptr<DcbBaseApplication> app = DynamicCast<DcbBaseApplication>(apps.Get(i));
         if (app == nullptr)
             continue;
         auto appStats = app->GetStats();
@@ -377,8 +377,9 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                 boost::json::array recvAckArray;
                 // vExpectedPsn must has stats, but vAckedPsn may not
                 bool bHasAckedPsn = flowStats->vAckedPsn.size() > 0;
-                // vAckedPsn's number of elements must be leq than vExpectedPsn's as a ack may carry
-                // acked psn, but must carry expected psn. Thus we use a index to iterate vAckedPsn.
+                // vAckedPsn's number of elements must be leq than vExpectedPsn's as a ack may
+                // carry acked psn, but must carry expected psn. Thus we use a index to iterate
+                // vAckedPsn.
                 uint32_t ackedPsnIndex = 0;
                 for (auto expectedPsn : flowStats->vExpectedPsn)
                 {
@@ -556,7 +557,8 @@ ConstructSwitchStats(Ptr<DcTopology> topology,
                     }
                     queueStatsObj.emplace("qLength", qLengthArray);
 
-                    // If background congestion control type is set, add the backgroundCongestion
+                    // If background congestion control type is set, add the
+                    // backgroundCongestion
                     if (qStats->backgroundCongestionTypeId != TypeId())
                     {
                         boost::json::array bgQlengthArray;

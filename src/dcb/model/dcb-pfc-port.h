@@ -75,6 +75,7 @@ class DcbPfcPort : public DcbFlowControlPort
   public:
     static TypeId GetTypeId();
 
+    DcbPfcPort();
     DcbPfcPort(Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc);
     virtual ~DcbPfcPort();
 
@@ -103,6 +104,8 @@ class DcbPfcPort : public DcbFlowControlPort
      * PFC is enabled on the corresponding priority.
      */
     void SetEnableVec(uint8_t enableVec);
+
+    virtual void SetDevice(Ptr<NetDevice> dev) override;
 
   protected:
     /**
@@ -165,7 +168,7 @@ class DcbPfcPort : public DcbFlowControlPort
         RESET_UPSTREAM_PAUSED,
         NEVER_EXPIRE
     }; // enum PFCExpireReactionType
-    const enum PFCExpireReactionType m_reactionType = RESEND_PAUSE;
+    enum PFCExpireReactionType m_reactionType;
 
     /// Traced callback: fired a PFC frame is sent, trace with node and port id, priority, pause or
     /// resume

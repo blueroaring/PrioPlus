@@ -120,7 +120,7 @@ class DcbTrafficControl : public TrafficControlLayer
     DcbTrafficControl& operator=(const DcbTrafficControl&) = delete;
 
     using TrafficControlLayer::SetRootQueueDiscOnDevice;
-    virtual void SetRootQueueDiscOnDevice(Ptr<DcbNetDevice> device, Ptr<PausableQueueDisc> qDisc);
+    virtual void SetRootQueueDiscOnDevice(Ptr<NetDevice> device, Ptr<QueueDisc> qDisc);
 
     /**
      * Register NetDevice number for PFC to initiate counters.

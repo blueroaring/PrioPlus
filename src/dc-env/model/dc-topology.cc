@@ -142,6 +142,23 @@ DcTopology::GetInterfaceOfNode(const uint32_t nodei, uint32_t intfi) const
     return std::move(ipv4->GetAddress(intfi, 0)); // TODO: just return the first address for now
 }
 
+uint32_t
+DcTopology::GetNodeIdxFormIp(const Ipv4Address ip) const
+{
+    for (uint32_t i = 0; i < m_nodes.size(); i++)
+    {
+        Ptr<Ipv4> ipv4 = m_nodes[i].nodePtr->GetObject<Ipv4>();
+        for (uint32_t j = 0; j < ipv4->GetNInterfaces(); j++)
+        {
+            if (ipv4->GetAddress(j, 0).GetLocal() == ip)
+            {
+                return i;
+            }
+        }
+    }
+    NS_FATAL_ERROR("ip " << ip << " is not found in the topology");
+}
+
 bool
 DcTopology::IsHost(const uint32_t index) const
 {

@@ -17,9 +17,11 @@
  * Author: Pavinberg <pavin0702@gmail.com>
  */
 
-#include "dcb-switch-stack-helper.h"
+#include "dcb-stack-helper.h"
 
 #include "ns3/arp-l3-protocol.h"
+#include "ns3/assert.h"
+#include "ns3/callback.h"
 #include "ns3/config.h"
 #include "ns3/core-config.h"
 #include "ns3/dcb-net-device.h"
@@ -38,12 +40,17 @@
 #include "ns3/ipv6-extension.h"
 #include "ns3/ipv6-static-routing-helper.h"
 #include "ns3/ipv6.h"
+#include "ns3/log.h"
 #include "ns3/names.h"
 #include "ns3/net-device.h"
+#include "ns3/node-list.h"
+#include "ns3/node.h"
+#include "ns3/object.h"
 #include "ns3/packet-socket-factory.h"
+#include "ns3/pausable-queue-disc.h"
 #include "ns3/simulator.h"
 #include "ns3/string.h"
-#include "ns3/uinteger.h"
+#include "ns3/traffic-control-layer.h"
 
 #include <limits>
 #include <map>
@@ -51,7 +58,7 @@
 namespace ns3
 {
 
-NS_LOG_COMPONENT_DEFINE("DcbSwitchStackHelper");
+NS_LOG_COMPONENT_DEFINE("DcbStackHelper");
 
 //
 // Historically, the only context written to ascii traces was the protocol.
@@ -108,10 +115,12 @@ static InterfaceFileMapIpv6
 static InterfaceStreamMapIpv6
     g_interfaceStreamMapIpv6; /**< A mapping of Ipv6/interface pairs to pcap files */
 
-DcbSwitchStackHelper::DcbSwitchStackHelper()
+DcbStackHelper::DcbStackHelper()
     : m_routing(0),
       m_routingv6(0),
-      m_ipv6Enabled(false),
+      m_ipv4Enabled(true),
+      m_ipv6Enabled(true),
+      m_ipv4ArpJitterEnabled(true),
       m_ipv6NsRsJitterEnabled(true)
 
 {
@@ -120,85 +129,93 @@ DcbSwitchStackHelper::DcbSwitchStackHelper()
 
 // private method called by both constructor and Reset ()
 void
-DcbSwitchStackHelper::Initialize()
+DcbStackHelper::Initialize()
 {
+    SetTcp("ns3::TcpL4Protocol");
     // Ipv4StaticRoutingHelper staticRouting;
     Ipv4GlobalRoutingHelper globalRouting;
     Ipv4ListRoutingHelper listRouting;
-    // Ipv6StaticRoutingHelper staticRoutingv6;
-    // listRouting.Add (staticRouting, 0);
+    Ipv6StaticRoutingHelper staticRoutingv6;
+    // listRouting.Add(staticRouting, 0);
     listRouting.Add(globalRouting, -10);
     SetRoutingHelper(listRouting);
-    // SetRoutingHelper (staticRoutingv6);
-    m_tcFactory.SetTypeId(DcbTrafficControl::GetTypeId());
-    m_bufferSize = QueueSize("32MiB"); // 32 MB
-    m_fcEnabled = true;
+    SetRoutingHelper(staticRoutingv6);
+    m_fcEnabled = false;
+    m_tcFactory.SetTypeId(TrafficControlLayer::GetTypeId());
 }
 
-DcbSwitchStackHelper::~DcbSwitchStackHelper()
+DcbStackHelper::~DcbStackHelper()
 {
     delete m_routing;
     delete m_routingv6;
 }
 
 void
-DcbSwitchStackHelper::Reset(void)
+DcbStackHelper::Reset(void)
 {
     delete m_routing;
     m_routing = 0;
     delete m_routingv6;
     m_routingv6 = 0;
-    m_ipv6Enabled = false;
+    m_ipv4Enabled = true;
+    m_ipv6Enabled = true;
+    m_ipv4ArpJitterEnabled = true;
     m_ipv6NsRsJitterEnabled = true;
     Initialize();
 }
 
 void
-DcbSwitchStackHelper::SetTrafficControlLayer(const std::string tid)
+DcbStackHelper::SetTrafficControlLayer(const std::string tid)
 {
     m_tcFactory.SetTypeId(tid);
 }
 
 void
-DcbSwitchStackHelper::SetRoutingHelper(const Ipv4RoutingHelper& routing)
+DcbStackHelper::SetRoutingHelper(const Ipv4RoutingHelper& routing)
 {
     delete m_routing;
     m_routing = routing.Copy();
 }
 
 void
-DcbSwitchStackHelper::SetRoutingHelper(const Ipv6RoutingHelper& routing)
+DcbStackHelper::SetRoutingHelper(const Ipv6RoutingHelper& routing)
 {
     delete m_routingv6;
     m_routingv6 = routing.Copy();
 }
 
 void
-DcbSwitchStackHelper::SetFCEnabled(bool enable)
+DcbStackHelper::SetFCEnabled(bool enable)
 {
     m_fcEnabled = enable;
 }
 
 void
-DcbSwitchStackHelper::SetBufferSize(QueueSize bufSize)
+DcbStackHelper::SetIpv4StackInstall(bool enable)
 {
-    m_bufferSize = bufSize;
+    m_ipv4Enabled = enable;
 }
 
 void
-DcbSwitchStackHelper::SetIpv6StackInstall(bool enable)
+DcbStackHelper::SetIpv6StackInstall(bool enable)
 {
     m_ipv6Enabled = enable;
 }
 
 void
-DcbSwitchStackHelper::SetIpv6NsRsJitter(bool enable)
+DcbStackHelper::SetIpv4ArpJitter(bool enable)
+{
+    m_ipv4ArpJitterEnabled = enable;
+}
+
+void
+DcbStackHelper::SetIpv6NsRsJitter(bool enable)
 {
     m_ipv6NsRsJitterEnabled = enable;
 }
 
 int64_t
-DcbSwitchStackHelper::AssignStreams(NodeContainer c, int64_t stream)
+DcbStackHelper::AssignStreams(NodeContainer c, int64_t stream)
 {
     int64_t currentStream = stream;
     for (NodeContainer::Iterator i = c.Begin(); i != c.End(); ++i)
@@ -243,22 +260,13 @@ DcbSwitchStackHelper::AssignStreams(NodeContainer c, int64_t stream)
 }
 
 void
-DcbSwitchStackHelper::Install(NodeContainer c) const
+DcbStackHelper::SetTcp(const std::string tid)
 {
-    for (NodeContainer::Iterator i = c.Begin(); i != c.End(); ++i)
-    {
-        Install(*i);
-    }
+    m_tcpFactory.SetTypeId(tid);
 }
 
 void
-DcbSwitchStackHelper::InstallAll(void) const
-{
-    Install(NodeContainer::GetGlobal());
-}
-
-void
-DcbSwitchStackHelper::CreateAndAggregateObjectFromTypeId(Ptr<Node> node, const std::string typeId)
+DcbStackHelper::CreateAndAggregateObjectFromTypeId(Ptr<Node> node, const std::string typeId)
 {
     ObjectFactory factory;
     factory.SetTypeId(typeId);
@@ -267,39 +275,46 @@ DcbSwitchStackHelper::CreateAndAggregateObjectFromTypeId(Ptr<Node> node, const s
 }
 
 void
-DcbSwitchStackHelper::InstallSwitchProtos(Ptr<Node> node)
+DcbStackHelper::InstallStack(Ptr<Node> node) const
 {
-    if (node->GetObject<Ipv4>() != nullptr)
+    if (m_ipv4Enabled)
     {
-        NS_FATAL_ERROR("DcbSwitchStackHelper::Install (): Aggregating "
-                       "an InternetStack to a node with an existing Ipv4 object");
-        return;
+        if (node->GetObject<Ipv4>() != nullptr)
+        {
+            NS_FATAL_ERROR("DcbStackHelper::Install (): Aggregating "
+                           "an InternetStack to a node with an existing Ipv4 object");
+            return;
+        }
+
+        CreateAndAggregateObjectFromTypeId(node, "ns3::ArpL3Protocol");
+        CreateAndAggregateObjectFromTypeId(node, "ns3::Ipv4L3Protocol");
+        CreateAndAggregateObjectFromTypeId(node, "ns3::Icmpv4L4Protocol");
+        if (m_ipv4ArpJitterEnabled == false)
+        {
+            Ptr<ArpL3Protocol> arp = node->GetObject<ArpL3Protocol>();
+            NS_ASSERT(arp);
+            arp->SetAttribute("RequestJitter",
+                              StringValue("ns3::ConstantRandomVariable[Constant=0.0]"));
+        }
+        // Set routing
+        Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
+        Ptr<Ipv4RoutingProtocol> ipv4Routing = m_routing->Create(node);
+        ipv4->SetRoutingProtocol(ipv4Routing);
+        // enable ECMP
+        int16_t priority;
+        Ptr<Ipv4ListRouting> routing = DynamicCast<Ipv4ListRouting>(ipv4Routing);
+        DynamicCast<Ipv4GlobalRouting>(routing->GetRoutingProtocol(0, priority))
+            ->SetAttribute("RandomEcmpRouting",
+                           UintegerValue(Ipv4GlobalRouting::EcmpMode::PER_FLOW_ECMP));
+        // paramenter 0 should be consistent with Initialize()
     }
-
-    CreateAndAggregateObjectFromTypeId(node, "ns3::ArpL3Protocol");
-    CreateAndAggregateObjectFromTypeId(node, "ns3::Ipv4L3Protocol");
-    CreateAndAggregateObjectFromTypeId(node, "ns3::Icmpv4L4Protocol");
-    node->AggregateObject(m_tcFactory.Create<Object>());
-
-    // Set routing
-    Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
-    Ptr<Ipv4RoutingProtocol> ipv4Routing = m_routing->Create(node);
-    ipv4->SetRoutingProtocol(ipv4Routing);
-
-    // enable ECMP
-    int16_t priority;
-    Ptr<Ipv4ListRouting> routing = DynamicCast<Ipv4ListRouting>(ipv4Routing);
-    DynamicCast<Ipv4GlobalRouting>(routing->GetRoutingProtocol(0, priority))
-        ->SetAttribute("RandomEcmpRouting",
-                       UintegerValue(Ipv4GlobalRouting::EcmpMode::PER_FLOW_ECMP));
-    // paramenter 0 should be consistent with Initialize()
 
     if (m_ipv6Enabled)
     {
         /* IPv6 stack */
         if (node->GetObject<Ipv6>() != nullptr)
         {
-            NS_FATAL_ERROR("DcbSwitchStackHelper::Install (): Aggregating "
+            NS_FATAL_ERROR("DcbStackHelper::Install (): Aggregating "
                            "an InternetStack to a node with an existing Ipv6 object");
             return;
         }
@@ -322,80 +337,44 @@ DcbSwitchStackHelper::InstallSwitchProtos(Ptr<Node> node)
         ipv6->RegisterExtensions();
         ipv6->RegisterOptions();
     }
-
-    Ptr<ArpL3Protocol> arp = node->GetObject<ArpL3Protocol>();
-    Ptr<TrafficControlLayer> tc = node->GetObject<TrafficControlLayer>();
-    NS_ASSERT(arp);
-    NS_ASSERT(tc);
-    arp->SetTrafficControl(tc);
 }
 
 void
-DcbSwitchStackHelper::InstallPortsProtos(Ptr<Node> node) const
+DcbStackHelper::InstallHostStack(Ptr<Node> node) const
 {
-    Ptr<TrafficControlLayer> tc = node->GetObject<TrafficControlLayer>();
-    NS_ASSERT(tc);
+    InstallStack(node);
+    CreateAndAggregateObjectFromTypeId(node, "ns3::UdpL4Protocol");
+    CreateAndAggregateObjectFromTypeId(node, "ns3::UdpBasedSocketFactory");
 
-    /*
-     * In Pavin's pervious implementation, the last device is LoopbackDevice.
-     * To respect the convention of ns-3, I move the loopback device to the first one.
-     * I achive this by split the proto install process into two parts,
-     * and install the loopback device by call switch protos install before install other ports.
-     */
-    const uint32_t devN = node->GetNDevices();
+    node->AggregateObject(m_tcpFactory.Create<Object>());
+    Ptr<PacketSocketFactory> factory = CreateObject<PacketSocketFactory>();
+    node->AggregateObject(factory);
+}
 
-    if (m_fcEnabled)
+void
+DcbStackHelper::InstallSwitchStack(Ptr<Node> node)
+{
+    m_tcFactory.SetTypeId(TypeId::LookupByName("ns3::DcbTrafficControl"));
+    InstallStack(node);
+    return;
+}
+
+void
+DcbStackHelper::InstallRocev2L4(Ptr<Node> node) const
+{
+    if (m_ipv4Enabled || m_ipv6Enabled)
     {
-        Ptr<DcbTrafficControl> dcbTc = node->GetObject<DcbTrafficControl>();
-        if (dcbTc == nullptr)
-        {
-            NS_FATAL_ERROR(
-                "Flow control enabled but there is no DcbTrafficControl aggregated to the node");
-        }
-        dcbTc->SetBufferSize(m_bufferSize.GetValue());
-
-        PausableQueueDisc::TCEgressCallback tcCallback =
-            MakeCallback(&DcbTrafficControl::EgressProcess, dcbTc);
-
-        dcbTc->RegisterDeviceNumber(devN); // to initialize the vector of ports info
-        for (uint32_t i = 1; i < devN; i++)
-        {
-            Ptr<NetDevice> dev = node->GetDevice(i);
-            Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
-            NS_ASSERT_MSG(dcbDev, "DcbNetDevice is not installed");
-
-            Ptr<PausableQueueDisc> qDisc = CreateObject<PausableQueueDisc>(node, i);
-            qDisc->RegisterTrafficControlCallback(tcCallback);
-            // The queue size of a pauseable queue disc is fixed to the size of the switch
-            qDisc->SetQueueSize(m_bufferSize);
-            qDisc->SetFCEnabled(true);
-            dcbTc->SetRootQueueDiscOnDevice(dcbDev, qDisc);
-            dcbDev->SetFcEnabled(true); // all NetDevices should support FC;
-        }
-    }
-    else
-    {
-        // Set queue disc normally
-        ObjectFactory qDiscFactory;
-        qDiscFactory.SetTypeId(PausableQueueDisc::GetTypeId());
-        for (uint32_t i = 1; i < devN; i++)
-        {
-            Ptr<NetDevice> dev = node->GetDevice(i);
-            Ptr<PausableQueueDisc> qDisc = qDiscFactory.Create<PausableQueueDisc>();
-            // XXX Have not set the queue size of the queue disc here
-            qDisc->SetFCEnabled(false);
-            tc->SetRootQueueDiscOnDevice(dev, qDisc);
-            Ptr<DcbNetDevice> dcbDev = DynamicCast<DcbNetDevice>(dev);
-            dcbDev->SetFcEnabled(false); // all NetDevices should support FC
-        }
+        CreateAndAggregateObjectFromTypeId(node, "ns3::UdpBasedSocketFactory");
     }
 }
 
 void
-DcbSwitchStackHelper::Install(std::string nodeName) const
+DcbStackHelper::InstallRocev2L4(NodeContainer c) const
 {
-    Ptr<Node> node = Names::Find<Node>(nodeName);
-    Install(node);
+    for (NodeContainer::Iterator i = c.Begin(); i != c.End(); ++i)
+    {
+        InstallRocev2L4(*i);
+    }
 }
 
 /**
@@ -427,7 +406,7 @@ Ipv4L3ProtocolRxTxSink(Ptr<const Packet> p, Ptr<Ipv4> ipv4, uint32_t interface)
 }
 
 bool
-DcbSwitchStackHelper::PcapHooked(Ptr<Ipv4> ipv4)
+DcbStackHelper::PcapHooked(Ptr<Ipv4> ipv4)
 {
     for (InterfaceFileMapIpv4::const_iterator i = g_interfaceFileMapIpv4.begin();
          i != g_interfaceFileMapIpv4.end();
@@ -442,12 +421,19 @@ DcbSwitchStackHelper::PcapHooked(Ptr<Ipv4> ipv4)
 }
 
 void
-DcbSwitchStackHelper::EnablePcapIpv4Internal(std::string prefix,
-                                             Ptr<Ipv4> ipv4,
-                                             uint32_t interface,
-                                             bool explicitFilename)
+DcbStackHelper::EnablePcapIpv4Internal(std::string prefix,
+                                       Ptr<Ipv4> ipv4,
+                                       uint32_t interface,
+                                       bool explicitFilename)
 {
     NS_LOG_FUNCTION(prefix << ipv4 << interface);
+
+    if (!m_ipv4Enabled)
+    {
+        NS_LOG_INFO("Call to enable Ipv4 pcap tracing but Ipv4 not enabled");
+        return;
+    }
+
     //
     // We have to create a file and a mapping from protocol/interface to file
     // irrespective of how many times we want to trace a particular protocol.
@@ -478,19 +464,19 @@ DcbSwitchStackHelper::EnablePcapIpv4Internal(std::string prefix,
         //
         Ptr<Ipv4L3Protocol> ipv4L3Protocol = ipv4->GetObject<Ipv4L3Protocol>();
         NS_ASSERT_MSG(ipv4L3Protocol,
-                      "DcbSwitchStackHelper::EnablePcapIpv4Internal(): "
-                      "ipv4L3Protocol not enabled");
+                      "DcbStackHelper::EnablePcapIpv4Internal(): "
+                      "m_ipv4Enabled and ipv4L3Protocol inconsistent");
 
         bool result =
             ipv4L3Protocol->TraceConnectWithoutContext("Tx", MakeCallback(&Ipv4L3ProtocolRxTxSink));
         NS_ASSERT_MSG(result == true,
-                      "DcbSwitchStackHelper::EnablePcapIpv4Internal():  "
+                      "DcbStackHelper::EnablePcapIpv4Internal():  "
                       "Unable to connect ipv4L3Protocol \"Tx\"");
 
         result =
             ipv4L3Protocol->TraceConnectWithoutContext("Rx", MakeCallback(&Ipv4L3ProtocolRxTxSink));
         NS_ASSERT_MSG(result == true,
-                      "DcbSwitchStackHelper::EnablePcapIpv4Internal():  "
+                      "DcbStackHelper::EnablePcapIpv4Internal():  "
                       "Unable to connect ipv4L3Protocol \"Rx\"");
     }
 
@@ -526,7 +512,7 @@ Ipv6L3ProtocolRxTxSink(Ptr<const Packet> p, Ptr<Ipv6> ipv6, uint32_t interface)
 }
 
 bool
-DcbSwitchStackHelper::PcapHooked(Ptr<Ipv6> ipv6)
+DcbStackHelper::PcapHooked(Ptr<Ipv6> ipv6)
 {
     for (InterfaceFileMapIpv6::const_iterator i = g_interfaceFileMapIpv6.begin();
          i != g_interfaceFileMapIpv6.end();
@@ -541,10 +527,10 @@ DcbSwitchStackHelper::PcapHooked(Ptr<Ipv6> ipv6)
 }
 
 void
-DcbSwitchStackHelper::EnablePcapIpv6Internal(std::string prefix,
-                                             Ptr<Ipv6> ipv6,
-                                             uint32_t interface,
-                                             bool explicitFilename)
+DcbStackHelper::EnablePcapIpv6Internal(std::string prefix,
+                                       Ptr<Ipv6> ipv6,
+                                       uint32_t interface,
+                                       bool explicitFilename)
 {
     NS_LOG_FUNCTION(prefix << ipv6 << interface);
 
@@ -584,19 +570,19 @@ DcbSwitchStackHelper::EnablePcapIpv6Internal(std::string prefix,
         //
         Ptr<Ipv6L3Protocol> ipv6L3Protocol = ipv6->GetObject<Ipv6L3Protocol>();
         NS_ASSERT_MSG(ipv6L3Protocol,
-                      "DcbSwitchStackHelper::EnablePcapIpv6Internal(): "
+                      "DcbStackHelper::EnablePcapIpv6Internal(): "
                       "m_ipv6Enabled and ipv6L3Protocol inconsistent");
 
         bool result =
             ipv6L3Protocol->TraceConnectWithoutContext("Tx", MakeCallback(&Ipv6L3ProtocolRxTxSink));
         NS_ASSERT_MSG(result == true,
-                      "DcbSwitchStackHelper::EnablePcapIpv6Internal():  "
+                      "DcbStackHelper::EnablePcapIpv6Internal():  "
                       "Unable to connect ipv6L3Protocol \"Tx\"");
 
         result =
             ipv6L3Protocol->TraceConnectWithoutContext("Rx", MakeCallback(&Ipv6L3ProtocolRxTxSink));
         NS_ASSERT_MSG(result == true,
-                      "DcbSwitchStackHelper::EnablePcapIpv6Internal():  "
+                      "DcbStackHelper::EnablePcapIpv6Internal():  "
                       "Unable to connect ipv6L3Protocol \"Rx\"");
     }
 
@@ -790,7 +776,7 @@ Ipv4L3ProtocolRxSinkWithContext(Ptr<OutputStreamWrapper> stream,
 }
 
 bool
-DcbSwitchStackHelper::AsciiHooked(Ptr<Ipv4> ipv4)
+DcbStackHelper::AsciiHooked(Ptr<Ipv4> ipv4)
 {
     for (InterfaceStreamMapIpv4::const_iterator i = g_interfaceStreamMapIpv4.begin();
          i != g_interfaceStreamMapIpv4.end();
@@ -805,12 +791,18 @@ DcbSwitchStackHelper::AsciiHooked(Ptr<Ipv4> ipv4)
 }
 
 void
-DcbSwitchStackHelper::EnableAsciiIpv4Internal(Ptr<OutputStreamWrapper> stream,
-                                              std::string prefix,
-                                              Ptr<Ipv4> ipv4,
-                                              uint32_t interface,
-                                              bool explicitFilename)
+DcbStackHelper::EnableAsciiIpv4Internal(Ptr<OutputStreamWrapper> stream,
+                                        std::string prefix,
+                                        Ptr<Ipv4> ipv4,
+                                        uint32_t interface,
+                                        bool explicitFilename)
 {
+    if (!m_ipv4Enabled)
+    {
+        NS_LOG_INFO("Call to enable Ipv4 ascii tracing but Ipv4 not enabled");
+        return;
+    }
+
     //
     // Our trace sinks are going to use packet printing, so we have to
     // make sure that is turned on.
@@ -875,19 +867,19 @@ DcbSwitchStackHelper::EnableAsciiIpv4Internal(Ptr<OutputStreamWrapper> stream,
                 "Drop",
                 MakeBoundCallback(&Ipv4L3ProtocolDropSinkWithoutContext, theStream));
             NS_ASSERT_MSG(result == true,
-                          "DcbSwitchStackHelper::EnableAsciiIpv4Internal():  "
+                          "DcbStackHelper::EnableAsciiIpv4Internal():  "
                           "Unable to connect ipv4L3Protocol \"Drop\"");
             result = ipv4L3Protocol->TraceConnectWithoutContext(
                 "Tx",
                 MakeBoundCallback(&Ipv4L3ProtocolTxSinkWithoutContext, theStream));
             NS_ASSERT_MSG(result == true,
-                          "DcbSwitchStackHelper::EnableAsciiIpv4Internal():  "
+                          "DcbStackHelper::EnableAsciiIpv4Internal():  "
                           "Unable to connect ipv4L3Protocol \"Tx\"");
             result = ipv4L3Protocol->TraceConnectWithoutContext(
                 "Rx",
                 MakeBoundCallback(&Ipv4L3ProtocolRxSinkWithoutContext, theStream));
             NS_ASSERT_MSG(result == true,
-                          "DcbSwitchStackHelper::EnableAsciiIpv4Internal():  "
+                          "DcbStackHelper::EnableAsciiIpv4Internal():  "
                           "Unable to connect ipv4L3Protocol \"Rx\"");
         }
 
@@ -1127,7 +1119,7 @@ Ipv6L3ProtocolRxSinkWithContext(Ptr<OutputStreamWrapper> stream,
 }
 
 bool
-DcbSwitchStackHelper::AsciiHooked(Ptr<Ipv6> ipv6)
+DcbStackHelper::AsciiHooked(Ptr<Ipv6> ipv6)
 {
     for (InterfaceStreamMapIpv6::const_iterator i = g_interfaceStreamMapIpv6.begin();
          i != g_interfaceStreamMapIpv6.end();
@@ -1142,11 +1134,11 @@ DcbSwitchStackHelper::AsciiHooked(Ptr<Ipv6> ipv6)
 }
 
 void
-DcbSwitchStackHelper::EnableAsciiIpv6Internal(Ptr<OutputStreamWrapper> stream,
-                                              std::string prefix,
-                                              Ptr<Ipv6> ipv6,
-                                              uint32_t interface,
-                                              bool explicitFilename)
+DcbStackHelper::EnableAsciiIpv6Internal(Ptr<OutputStreamWrapper> stream,
+                                        std::string prefix,
+                                        Ptr<Ipv6> ipv6,
+                                        uint32_t interface,
+                                        bool explicitFilename)
 {
     if (!m_ipv6Enabled)
     {
@@ -1208,19 +1200,19 @@ DcbSwitchStackHelper::EnableAsciiIpv6Internal(Ptr<OutputStreamWrapper> stream,
                 "Drop",
                 MakeBoundCallback(&Ipv6L3ProtocolDropSinkWithoutContext, theStream));
             NS_ASSERT_MSG(result == true,
-                          "DcbSwitchStackHelper::EnableAsciiIpv6Internal():  "
+                          "DcbStackHelper::EnableAsciiIpv6Internal():  "
                           "Unable to connect ipv6L3Protocol \"Drop\"");
             result = ipv6L3Protocol->TraceConnectWithoutContext(
                 "Tx",
                 MakeBoundCallback(&Ipv6L3ProtocolTxSinkWithoutContext, theStream));
             NS_ASSERT_MSG(result == true,
-                          "DcbSwitchStackHelper::EnableAsciiIpv6Internal():  "
+                          "DcbStackHelper::EnableAsciiIpv6Internal():  "
                           "Unable to connect ipv6L3Protocol \"Tx\"");
             result = ipv6L3Protocol->TraceConnectWithoutContext(
                 "Rx",
                 MakeBoundCallback(&Ipv6L3ProtocolRxSinkWithoutContext, theStream));
             NS_ASSERT_MSG(result == true,
-                          "DcbSwitchStackHelper::EnableAsciiIpv6Internal():  "
+                          "DcbStackHelper::EnableAsciiIpv6Internal():  "
                           "Unable to connect ipv6L3Protocol \"Rx\"");
         }
 

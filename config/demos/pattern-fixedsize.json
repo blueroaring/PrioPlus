@@ -6,7 +6,7 @@
         "resultFile": "output/*.json"
     },
     "runtimeConfig": {
-        "seed": 15,
+        "seed": 5,
         "runningTime": "1s",
         "stopTime": "10s"
     },
@@ -107,16 +107,17 @@
     },
     "applicationConfig": [
         {
-            "NOTE": "Foreground traffic",
             "appType": "ns3::DcbTrafficGenApplication",
-            "nodes": "all",
+            "nodes": "[0:1]",
             "protocolGroup": "RoCEv2",
             "applicationConfig":{
                 "CongestionType": "ns3::RoCEv2Dcqcn",
                 "SendEnabled": true,
-                "TrafficPattern": "CDF",
-                "TrafficLoad": 0.1,
-                "TrafficType": "Foreground"
+                "TrafficPattern": "FixedSize",
+                "TrafficLoad": 0.5,
+                "FixedFlowArrive": true,
+                "DestFixed": true,
+                "DestinationNode": 4
             },
             "cdf": {
                 "cdfFile": "config/trace/WebSearch_distribution.txt",
@@ -127,28 +128,7 @@
                 "InnerPriority": 0
             },
             "startTime": "0.100s",
-            "stopTime": "0.11s",
-            "flowInterval": "0.0000s"
-        },
-        {
-            "NOTE": "Background traffic",
-            "appType": "ns3::DcbTrafficGenApplication",
-            "nodes": "all",
-            "protocolGroup": "RoCEv2",
-            "applicationConfig":{
-                "CongestionType": "ns3::RoCEv2Dcqcn",
-                "SendEnabled": true,
-                "TrafficPattern": "FileRequest",
-                "FileRequestNodesNum":3,
-                "TrafficSizeBytes": 100000,
-                "TrafficLoad": 0.5,
-                "TrafficType": "Background"
-            },
-            "socketConfig": {
-                "InnerPriority": 0
-            },
-            "startTime": "0.10s",
-            "stopTime": "0.105s",
+            "stopTime": "0.12s",
             "flowInterval": "0.0000s"
         },
         {

@@ -38,8 +38,22 @@ NS_OBJECT_ENSURE_REGISTERED(DcbHpccPort);
 TypeId
 DcbHpccPort::GetTypeId()
 {
-    static TypeId tid = TypeId("ns3::DcbHpccPort").SetParent<DcbPfcPort>().SetGroupName("Dcb");
+    static TypeId tid = TypeId("ns3::DcbHpccPort")
+                            .SetParent<DcbPfcPort>()
+                            .SetGroupName("Dcb")
+                            .AddConstructor<DcbHpccPort>();
     return tid;
+}
+
+DcbHpccPort::DcbHpccPort()
+    : DcbPfcPort(),
+      m_txBytes(0)
+{
+    NS_LOG_FUNCTION(this);
+
+    EthernetHeader ethHeader;
+    Ipv4Header ipv4Header;
+    m_extraEgressHeaderSize = ethHeader.GetSerializedSize() + ipv4Header.GetSerializedSize();
 }
 
 DcbHpccPort::DcbHpccPort(Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc)
@@ -111,7 +125,7 @@ DcbHpccPort::DoEgressProcess(Ptr<Packet> packet)
             }
 
             // Push into HpccHeader
-            hpccHeader.PushHop(Simulator::Now().GetTimeStep(),
+            hpccHeader.PushHop(Simulator::Now().GetNanoSeconds(),
                                m_txBytes,
                                qLen,
                                device->GetDataRate());

@@ -55,6 +55,16 @@ DcbTrafficControl::GetTypeId(void)
             .SetParent<TrafficControlLayer>()
             .SetGroupName("Dcb")
             .AddConstructor<DcbTrafficControl>()
+            // .AddAttribute("FcEnabled",
+            //               "Whether flow control is enabled",
+            //               BooleanValue(false),
+            //               MakeBooleanAccessor(&DcbTrafficControl::m_fcEnabled),
+            //               MakeBooleanChecker())
+            .AddAttribute("BufferSize",
+                          "The size of the buffer",
+                          UintegerValue(32 * 1024 * 1024),
+                          MakeUintegerAccessor(&DcbTrafficControl::SetBufferSize),
+                          MakeUintegerChecker<uint32_t>())
             .AddTraceSource("BufferOverflow",
                             "Trace source indicating buffer overflow",
                             MakeTraceSourceAccessor(&DcbTrafficControl::m_bufferOverflowTrace),
@@ -81,11 +91,16 @@ DcbTrafficControl::~DcbTrafficControl()
 }
 
 void
-DcbTrafficControl::SetRootQueueDiscOnDevice(Ptr<DcbNetDevice> device, Ptr<PausableQueueDisc> qDisc)
+DcbTrafficControl::SetRootQueueDiscOnDevice(Ptr<NetDevice> device, Ptr<QueueDisc> qDisc)
 {
     NS_LOG_FUNCTION(this << device << qDisc);
 
-    device->SetQueueDisc(qDisc);
+    Ptr<DcbNetDevice> dcbNetDevice = DynamicCast<DcbNetDevice>(device);
+    NS_ABORT_MSG_IF(dcbNetDevice == nullptr, "DcbTrafficControl requires DcbNetDevice");
+    Ptr<PausableQueueDisc> pausableQueueDisc = DynamicCast<PausableQueueDisc>(qDisc);
+    NS_ABORT_MSG_IF(pausableQueueDisc == nullptr, "DcbTrafficControl requires PausableQueueDisc");
+    dcbNetDevice->SetQueueDisc(pausableQueueDisc);
+    
     TrafficControlLayer::SetRootQueueDiscOnDevice(device, qDisc);
 }
 

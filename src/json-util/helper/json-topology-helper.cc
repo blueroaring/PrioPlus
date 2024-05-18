@@ -19,6 +19,8 @@
 
 #include "json-topology-helper.h"
 
+#include "ns3/json-utils.h"
+
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -32,6 +34,130 @@ NS_LOG_COMPONENT_DEFINE("JsonTopologyHelper");
 namespace json_util
 {
 
+std::shared_ptr<DcbFcHelper>
+ConstructFcHelper(const boost::json::object& fcConfig)
+{
+    std::shared_ptr<DcbFcHelper> fcHelper = std::make_shared<DcbFcHelper>();
+
+    // Read and set the attributes of fcHelper
+    JsonCallIfExistsString(fcConfig, "bufferSize", [fcHelper](std::string bufferSize) {
+        fcHelper->SetBufferSize(QueueSize(bufferSize));
+    });
+    JsonCallIfExistsString(fcConfig, "bufferPerPort", [fcHelper](std::string bufferPerPort) {
+        fcHelper->SetBufferPerPort(QueueSize(bufferPerPort));
+    });
+    JsonCallIfExistsInt<uint32_t>(
+        fcConfig,
+        "numQueuePerPort",
+        [fcHelper](uint32_t numQueuePerPort) { fcHelper->SetNumQueuePerPort(numQueuePerPort); });
+    JsonCallIfExistsInt<uint32_t>(
+        fcConfig,
+        "numLosslessQueue",
+        [fcHelper](uint32_t numLosslessQueue) { fcHelper->SetNumLosslessQueue(numLosslessQueue); });
+
+    // Read and set TypeId and Attributes of
+    // TrafficControlLayer, flowControlPort, flowControlMmuQueue, outerQdisc, innerQdisc
+    std::string tclType =
+        JsonGetStringOrRaise(fcConfig, "trafficControlLayer", "trafficControlLayer is not found");
+    std::unique_ptr<std::vector<ConfigEntry_t>> tclConfigVector = ConstructConfigVector(
+        JsonGetObjectOrRaise(fcConfig,
+                             "trafficControlLayerConfig",
+                             "trafficControlLayertrafficControlLayerConfig is not found"));
+    fcHelper->SetTrafficControlTypeId(tclType);
+    fcHelper->SetTrafficControlAttributes(std::move(*tclConfigVector));
+
+    std::string fcpType =
+        JsonGetStringOrRaise(fcConfig, "flowControlPort", "flowControlPort is not found");
+    std::unique_ptr<std::vector<ConfigEntry_t>> fcpConfigVector =
+        ConstructConfigVector(JsonGetObjectOrRaise(fcConfig,
+                                                   "flowControlPortConfig",
+                                                   "flowControlPortConfig is not found"));
+    fcHelper->SetFlowControlPortTypeId(fcpType);
+    fcHelper->SetFlowControlPortAttributes(std::move(*fcpConfigVector));
+
+    // flowControlMmuQueue is optional
+    JsonCallIfExistsString(
+        fcConfig,
+        "flowControlMmuQueue",
+        [fcConfig, fcHelper](std::string fcqType) {
+            fcHelper->SetFlowControlMmuQueueTypeId(fcqType);
+            std::unique_ptr<std::vector<ConfigEntry_t>> fcqConfigVector = ConstructConfigVector(
+                JsonGetObjectOrRaise(fcConfig,
+                                     "flowControlMmuQueueConfig",
+                                     "flowControlMmuQueueConfig is not found"));
+            fcHelper->SetFlowControlMmuQueueAttributes(std::move(*fcqConfigVector));
+        });
+
+    std::string oqdType =
+        JsonGetStringOrRaise(fcConfig, "outerQueueDisc", "outerQueueDisc is not found");
+    std::unique_ptr<std::vector<ConfigEntry_t>> oqdConfigVector =
+        ConstructConfigVector(JsonGetObjectOrRaise(fcConfig,
+                                                   "outerQueueDiscConfig",
+                                                   "outerQueueDiscConfig is not found"));
+    fcHelper->SetOuterQueueDiscTypeId(oqdType);
+    fcHelper->SetOuterQueueDiscAttributes(std::move(*oqdConfigVector));
+
+    std::string iqdType =
+        JsonGetStringOrRaise(fcConfig, "innerQueueDisc", "innerQueueDisc is not found");
+    std::unique_ptr<std::vector<ConfigEntry_t>> iqdConfigVector =
+        ConstructConfigVector(JsonGetObjectOrRaise(fcConfig,
+                                                   "innerQueueDiscConfig",
+                                                   "innerQueueDiscConfig is not found"));
+    fcHelper->SetInnerQueueDiscTypeId(iqdType);
+    fcHelper->SetInnerQueueDiscAttributes(std::move(*iqdConfigVector));
+
+    return fcHelper;
+}
+
+[[maybe_unused]] static void
+InstallFlowControl(const boost::json::object& fcConfig, Ptr<DcTopology> topology)
+{
+    std::shared_ptr<DcbFcHelper> fcHelper = ConstructFcHelper(fcConfig);
+
+    // Install the flow control protocols on the specified nodes
+    std::string nodes = JsonGetStringOrRaise(fcConfig, "nodes", "nodes is not found");
+    if (nodes == "host")
+    {
+        for (auto hostIter = topology->hosts_begin(); hostIter != topology->hosts_end(); hostIter++)
+        {
+            if (hostIter->type != DcTopology::TopoNode::NodeType::HOST)
+            {
+                NS_FATAL_ERROR("Node "
+                               << topology->GetNodeIndex(hostIter->nodePtr)
+                               << " is not a host and thus could not install an application.");
+            }
+            Ptr<Node> node = hostIter->nodePtr;
+            fcHelper->Install(node);
+        }
+    }
+    else if (nodes == "switch")
+    {
+        for (auto swIter = topology->switches_begin(); swIter != topology->switches_end(); swIter++)
+        {
+            if (swIter->type != DcTopology::TopoNode::NodeType::SWITCH)
+            {
+                NS_FATAL_ERROR("Node "
+                               << topology->GetNodeIndex(swIter->nodePtr)
+                               << " is not a switch and thus could not install an application.");
+            }
+            Ptr<Node> node = swIter->nodePtr;
+            fcHelper->Install(node);
+        }
+    }
+    else
+    {
+        // If the nodes are specified, convert the string to vector
+        // Here we assume the nodes are specified in the format like "[1:3,5,7:]".
+        std::vector<uint32_t> vNodes = ConvertRangeToVector(nodes.c_str(), topology->GetNNodes());
+
+        for (uint32_t i = 0; i < vNodes.size(); ++i)
+        {
+            Ptr<Node> node = topology->GetNode(vNodes[i]).nodePtr;
+            fcHelper->Install(node);
+        }
+    }
+}
+
 /***** Utilities about topology *****/
 static void AssignAddress(const Ptr<Node> node, const Ptr<NetDevice> device);
 
@@ -40,14 +166,28 @@ CreateOneHost()
 {
     const Ptr<Node> host = CreateObject<Node>();
 
-    DcbHostStackHelper hostStack;
-    hostStack.Install(host);
+    DcbStackHelper hostStack;
+    hostStack.InstallHostStack(host);
 
     return {.type = DcTopology::TopoNode::NodeType::HOST, .nodePtr = host};
 }
 
+static DcTopology::TopoNode
+CreateOneSwitch()
+{
+    const Ptr<Node> sw = CreateObject<Node>();
+
+    // Add protocol to switch
+    DcbStackHelper hostStack;
+    hostStack.InstallSwitchStack(sw);
+
+    // Basic configurations
+    // sw->SetEcmpSeed (m_ecmpSeed);
+    return {.type = DcTopology::TopoNode::NodeType::SWITCH, .nodePtr = sw};
+}
+
 static Ptr<DcbNetDevice>
-AddPortToHost(const Ptr<Node> host)
+AddPortToNode(const Ptr<Node> node)
 {
     // Create device for this port
     const Ptr<DcbNetDevice> dev = CreateObject<DcbNetDevice>();
@@ -62,278 +202,47 @@ AddPortToHost(const Ptr<Node> host)
     queue->SetMaxSize(QueueSize("10p"));
     dev->SetQueue(queue);
 
-    host->AddDevice(dev);
+    node->AddDevice(dev);
 
-    AssignAddress(host, dev);
-
-    return dev;
-}
-
-static Ptr<DcbNetDevice>
-AddPortToSwitch(const Ptr<Node> sw)
-{
-    // Create a net device for this port
-    Ptr<DcbNetDevice> dev = CreateObject<DcbNetDevice>();
-    dev->SetAddress(Mac48Address::Allocate());
-
-    // Create queue on the device
-    ObjectFactory queueFactory;
-    queueFactory.SetTypeId(DropTailQueue<Packet>::GetTypeId());
-    Ptr<Queue<Packet>> queue = queueFactory.Create<Queue<Packet>>();
-    queue->SetMaxSize(QueueSize("10p"));
-    dev->SetQueue(queue);
-
-    sw->AddDevice(dev);
+    if (node->GetObject<TrafficControlLayer>())
+        AssignAddress(node, dev);
 
     return dev;
 }
 
-static DcTopology::TopoNode
-CreateOneSwitch()
+struct LinkConfig
 {
-    const Ptr<Node> sw = CreateObject<Node>();
+    DataRate rate;
+    Time delay;
+};
 
-    // Add protocol to switch
-    DcbSwitchStackHelper switchStack;
-    switchStack.InstallSwitchProtos(sw);
+typedef std::map<std::string, LinkConfig> LinkConfigMap;
 
-    // Basic configurations
-    // sw->SetEcmpSeed (m_ecmpSeed);
-    return {.type = DcTopology::TopoNode::NodeType::SWITCH, .nodePtr = sw};
-}
-
-void
-ConfigureSwitch(boost::json::object& configObj, Ptr<Node> sw)
+static std::unique_ptr<LinkConfigMap>
+ConstructLinkConfig(const boost::json::array& linkConfigArray)
 {
-    // Get switch config from config json object
-    boost::json::object switchConfigObj =
-        configObj["topologyConfig"].get_object().find("switch")->value().get_object();
-    // Configure the port and its queues according to the config object
-    boost::json::object switchPortConfigObj =
-        configObj["topologyConfig"].get_object().find("switchPort")->value().get_object();
-    boost::json::object switchPortQueueConfigObj =
-        configObj["topologyConfig"].get_object().find("switchPortQueue")->value().get_object();
-
-    // check pfc enbale
-    bool pfcEnabled = false;
-    if (switchPortConfigObj.contains("pfcEnabled"))
+    std::unique_ptr<LinkConfigMap> linkConfigMap = std::make_unique<LinkConfigMap>();
+    for (auto linkConfig : linkConfigArray)
     {
-        pfcEnabled = switchPortConfigObj.find("pfcEnabled")->value().as_bool();
+        std::string linkName =
+            JsonGetStringOrRaise(linkConfig.as_object(), "links", "links is not found");
+        std::string rate =
+            JsonGetStringOrRaise(linkConfig.as_object(), "rate", "rate is not found");
+        std::string delay =
+            JsonGetStringOrRaise(linkConfig.as_object(), "delay", "delay is not found");
+        linkConfigMap->insert({linkName, {DataRate(rate), Time(delay)}});
     }
-    // Add protocol to each port, must be called after
-    // 1. all ports has been added to switch
-    // 2. the switch protocols have been installed
-    DcbSwitchStackHelper switchStack;
-
-    // read bufferSize, which is optional
-    bool hasBufferSize = switchConfigObj.find("bufferSize") != switchConfigObj.end();
-    QueueSize bufferSize;
-    if (hasBufferSize)
-    {
-        bufferSize =
-            QueueSize(std::string(switchConfigObj.find("bufferSize")->value().as_string().c_str()));
-    }
-    else
-    {
-        // FIXME default buffer size is 0.625MB + 1.5*6(priorities that should not have headroom)=9
-        // BDP per port
-
-        // default headroom is 1.5BDP, according to HPCC
-        boost::json::object linkConfigObj =
-            configObj["topologyConfig"].get_object().find("link")->value().get_object();
-
-        std::string rate = linkConfigObj.find("rate")->value().as_string().c_str();
-        std::string delay = linkConfigObj.find("delay")->value().as_string().c_str();
-        uint32_t headroom = DataRate(rate).GetBitRate() * Time(delay).GetSeconds() * 3 / 8;
-
-        uint32_t portsCnt = sw->GetNDevices() - 1;
-        uint32_t bufferSizeBytes = static_cast<uint32_t>((0.625 * 1e6 + 6 * headroom) * portsCnt);
-        bufferSize = QueueSize(QueueSizeUnit::BYTES, bufferSizeBytes);
-    }
-    switchStack.SetBufferSize(bufferSize);
-    switchStack.SetFCEnabled(pfcEnabled);
-    switchStack.InstallPortsProtos(sw);
-
-    // Configure all ports one by one
-    // Note that the first device is the loopback device install by Ipv4L3Protocol
-    for (uint32_t portIdx = 1; portIdx < sw->GetNDevices(); portIdx++)
-    {
-        // Assign IPv4 Address to this port
-        AssignAddress(sw, sw->GetDevice(portIdx));
-
-        // Configure PFC
-        uint32_t nPortQueues = 0;
-        if (switchPortConfigObj.contains("queues"))
-        {
-            nPortQueues = switchPortConfigObj.find("queues")->value().as_int64();
-        }
-        if (pfcEnabled && nPortQueues != 0 &&
-            nPortQueues != 8) // liuchang: only in pfc mode to check queueNum == 8
-        {
-            NS_FATAL_ERROR("The port configuration should have 8 queues or 0 queue, not "
-                           << nPortQueues);
-        }
-        if (pfcEnabled)
-        {
-            // read reserve
-            std::string sPfcReserve(
-                switchPortQueueConfigObj.find("pfcReserve")->value().as_string().c_str());
-            const uint32_t reserve = QueueSize(sPfcReserve).GetValue();
-
-            // read resumeOffset, which is optional
-            bool hasPfcResumeOffset =
-                switchPortQueueConfigObj.find("pfcResumeOffset") != switchPortQueueConfigObj.end();
-            uint32_t resumeOffset = 0;
-            if (hasPfcResumeOffset)
-            {
-                std::string sPfcResumeOffset(
-                    switchPortQueueConfigObj.find("pfcResumeOffset")->value().as_string().c_str());
-                resumeOffset = QueueSize(sPfcResumeOffset).GetValue();
-            }
-
-            // read headroom, which is optional
-            bool hasPfcHeadroom =
-                switchPortQueueConfigObj.find("pfcHeadroom") != switchPortQueueConfigObj.end();
-            uint32_t headroom = 0;
-            if (hasPfcHeadroom)
-            {
-                std::string sPfcHeadroom(
-                    switchPortQueueConfigObj.find("pfcHeadroom")->value().as_string().c_str());
-                headroom = QueueSize(sPfcHeadroom).GetValue();
-            }
-            else
-            {
-                // default headroom is 1.5BDP, according to HPCC
-                boost::json::object linkConfigObj =
-                    configObj["topologyConfig"].get_object().find("link")->value().get_object();
-
-                std::string rate = linkConfigObj.find("rate")->value().as_string().c_str();
-                std::string delay = linkConfigObj.find("delay")->value().as_string().c_str();
-                headroom = DataRate(rate).GetBitRate() * Time(delay).GetSeconds() * 3 / 8;
-            }
-
-            // read isDynamicThreshold and dtShift, which is optional
-            bool hasPfcDynamicThreshold = switchPortQueueConfigObj.find("pfcDynamicThreshold") !=
-                                          switchPortQueueConfigObj.end();
-            bool isDynamicThreshold = false;
-            uint32_t dtShift = 2;
-            if (hasPfcDynamicThreshold)
-            {
-                isDynamicThreshold =
-                    switchPortQueueConfigObj.find("pfcDynamicThreshold")->value().as_bool();
-                if (isDynamicThreshold)
-                {
-                    // read dtShift, which is optional
-                    bool hasPfcDtShift = switchPortQueueConfigObj.find("pfcDtShift") !=
-                                         switchPortQueueConfigObj.end();
-                    if (hasPfcDtShift)
-                        dtShift = switchPortQueueConfigObj.find("pfcDtShift")->value().as_int64();
-                }
-            }
-
-            DcbPfcPortConfig pfcConfig;
-            for (uint32_t qi = 0; qi < nPortQueues; qi++)
-            {
-                pfcConfig.AddQueueConfig(qi,
-                                         reserve,
-                                         resumeOffset,
-                                         headroom,
-                                         isDynamicThreshold,
-                                         dtShift);
-            }
-
-            // PFC based Port Protocol
-            bool pfcBased = false;
-            // Check if has HPCC
-            const auto& hpccIterator = switchPortConfigObj.find("hpccEnabled");
-            if (hpccIterator != switchPortConfigObj.end())
-            {
-                bool hpccEnabled = hpccIterator->value().as_bool();
-                if (hpccEnabled)
-                {
-                    pfcBased = true;
-                    DcbFcHelper::InstallHpccPFCtoNodePort(sw, portIdx, pfcConfig);
-                }
-            }
-            // Other PFC based Port Protocol here
-            // const auto& xxxIterator = switchPortConfigObj.find("xxxEnabled");
-
-            if (!pfcBased)
-            {
-                DcbFcHelper::InstallPFCtoNodePort(sw, portIdx, pfcConfig);
-            }
-        }
-
-        // Configure ECN
-        bool ecnEnabled = switchPortConfigObj.find("ecnEnabled")->value().as_bool();
-        if (ecnEnabled)
-        {
-            std::string sEcnKMin(
-                switchPortQueueConfigObj.find("ecnKMin")->value().as_string().c_str());
-            std::string sEcnKMax(
-                switchPortQueueConfigObj.find("ecnKMax")->value().as_string().c_str());
-            double ecnPMax = switchPortQueueConfigObj.find("ecnPMax")->value().as_double();
-
-            ObjectFactory factory;
-            factory.SetTypeId("ns3::FifoQueueDiscEcn");
-            Ptr<QueueDisc> dev = DynamicCast<DcbNetDevice>(sw->GetDevice(portIdx))->GetQueueDisc();
-
-            for (uint32_t qi = 0; qi < nPortQueues; qi++)
-            {
-                uint32_t ecnKMin = QueueSize(sEcnKMin).GetValue();
-                uint32_t ecnKMax = QueueSize(sEcnKMax).GetValue();
-                // ecnConfig.AddQueueConfig (qi, ecnKMin, ecnKMax, ecnPMax);
-
-                Ptr<FifoQueueDiscEcn> qd = factory.Create<FifoQueueDiscEcn>();
-                qd->Initialize();
-                qd->ConfigECN(ecnKMin, ecnKMax, ecnPMax);
-                // TODO Why this value?
-                qd->SetMaxSize(bufferSize);
-                Ptr<PausableQueueDiscClass> c = CreateObject<PausableQueueDiscClass>();
-                c->SetQueueDisc(qd);
-                dev->AddQueueDiscClass(c);
-            }
-        }
-    }
-}
-
-void
-ConfigureHost(boost::json::object& configObj, Ptr<Node> h)
-{
-    // check PFC enable
-    boost::json::object hostConfigObj =
-        configObj["topologyConfig"].get_object().find("hostPort")->value().get_object();
-    bool pfcEnabled = hostConfigObj.find("pfcEnabled")->value().as_bool();
-
-    // set fc enbale in host stack
-    DcbHostStackHelper hostStack;
-    hostStack.SetFCEnabled(pfcEnabled);
-
-    // Install pausable queue disc
-    hostStack.InstallPortsProtos(h);
-
-    uint8_t enableVec = hostConfigObj.find("enableVec")->value().as_int64();
-    for (uint32_t portIdx = 1; portIdx < h->GetNDevices(); portIdx++)
-    {
-        if (pfcEnabled)
-        {
-            DcbFcHelper::InstallPFCtoHostPort(h, portIdx, enableVec);
-        }
-    }
+    return linkConfigMap;
 }
 
 static void
-InstallLink(boost::json::object& configObj, Ptr<DcbNetDevice> dev1, Ptr<DcbNetDevice> dev2)
+InstallLink(const LinkConfig& linkConfig, Ptr<DcbNetDevice> dev1, Ptr<DcbNetDevice> dev2)
 {
-    boost::json::object linkConfigObj =
-        configObj["topologyConfig"].get_object().find("link")->value().get_object();
-    std::string rate = linkConfigObj.find("rate")->value().as_string().c_str();
-    std::string delay = linkConfigObj.find("delay")->value().as_string().c_str();
-    dev1->SetAttribute("DataRate", DataRateValue(DataRate(rate)));
-    dev2->SetAttribute("DataRate", DataRateValue(DataRate(rate)));
+    dev1->SetAttribute("DataRate", DataRateValue(linkConfig.rate));
+    dev2->SetAttribute("DataRate", DataRateValue(linkConfig.rate));
 
     Ptr<DcbChannel> channel = CreateObject<DcbChannel>();
-    channel->SetAttribute("Delay", TimeValue(Time(delay)));
+    channel->SetAttribute("Delay", TimeValue(linkConfig.delay));
 
     dev1->Attach(channel);
     dev2->Attach(channel);
@@ -485,11 +394,16 @@ BuildTopology(boost::json::object& configObj)
 
     // Explicitly create the channels required by the topology.
     // NS_LOG_INFO ("Create channels.");
+    boost::json::object topoObj =
+        JsonGetObjectOrRaise(configObj, "topologyConfig", "topologyConfig is not found");
+    boost::json::array linkConfigObj =
+        JsonGetArrayOrRaise(topoObj, "linkConfig", "linkConfig is not found");
+    std::unique_ptr<LinkConfigMap> linkConfigMap = ConstructLinkConfig(linkConfigObj);
     for (uint32_t i = 0; i < link_num; i++)
     {
-        // type is not used for now
-        // which can be used to build heterogeneous topology if needed
-        uint32_t src, dst, type;
+        // type is used to build heterogeneous topology
+        uint32_t src, dst;
+        std::string type;
         topof >> src >> dst >> type;
 
         Ptr<Node> srcNode = topology->GetNode(src).nodePtr;
@@ -509,30 +423,25 @@ BuildTopology(boost::json::object& configObj)
         {
             if (topology->IsHost(node->GetId()))
             {
-                Ptr<DcbNetDevice> dev = AddPortToHost(node);
+                Ptr<DcbNetDevice> dev = AddPortToNode(node);
                 vDevs.push_back(dev);
             }
             else
             {
-                Ptr<DcbNetDevice> dev = AddPortToSwitch(node);
+                Ptr<DcbNetDevice> dev = AddPortToNode(node);
                 vDevs.push_back(dev);
             }
         }
         // Install link
-        InstallLink(configObj, vDevs[0], vDevs[1]);
+        InstallLink(linkConfigMap->find(type)->second, vDevs[0], vDevs[1]);
     }
 
-    // After building topology, configure switches
-    for (uint32_t nodeIdx = 0; nodeIdx < node_num; nodeIdx++)
+    // Install flow control protocols after building the topology
+    boost::json::array fcArray =
+        JsonGetArrayOrRaise(topoObj, "flowControlConfig", "flowControlConfig is not found");
+    for (auto fcConfig : fcArray)
     {
-        if (topology->IsSwitch(nodeIdx))
-        {
-            ConfigureSwitch(configObj, topology->GetNode(nodeIdx).nodePtr);
-        }
-        else if (topology->IsHost(nodeIdx))
-        {
-            ConfigureHost(configObj, topology->GetNode(nodeIdx).nodePtr);
-        }
+        InstallFlowControl(fcConfig.as_object(), topology);
     }
 
     // Calculate routing tables

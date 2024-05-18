@@ -67,6 +67,8 @@ void SetRandomSeed(boost::json::object& configJsonObj);
 
 void SetRandomSeed(uint32_t seed);
 
+void SetRuntime(boost::json::object& configJsonObj);
+
 void SetStopTime(boost::json::object& configJsonObj);
 
 } // namespace json_util

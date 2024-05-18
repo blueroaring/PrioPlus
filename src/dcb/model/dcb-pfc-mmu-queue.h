@@ -21,6 +21,7 @@
 #define DCB_PFC_MMU_QUEUE_H
 
 #include "dcb-flow-control-mmu-queue.h"
+#include "ns3/queue-size.h"
 
 namespace ns3
 {
@@ -93,6 +94,10 @@ class DcbPfcMmuQueue : public DcbFlowControlMmuQueue
         uint32_t threshold = (m_totalSharedBufferSize() - m_totalSharedBufferUsed()) >> m_dtShift;
         return threshold;
     }
+
+    void SetReserveSize(QueueSize reserveSize);
+    void SetHeadroomSize(QueueSize headroomSize);
+    void SetResumeOffset(QueueSize resumeOffset);
 
   private:
     uint32_t m_reserveSize;
