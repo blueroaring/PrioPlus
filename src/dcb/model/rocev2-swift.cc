@@ -92,7 +92,6 @@ RoCEv2Swift::SetReady()
 {
     NS_LOG_FUNCTION(this);
     // Reload any config before starting
-    SetLimiting(true);
     SetRateRatio(1.);
     m_gamma =
         1. / (1. / std::sqrt(m_sockState->GetMinRateRatio()) - 1.); // Used in GetTargetDelay()
@@ -125,9 +124,19 @@ RoCEv2Swift::UpdateStateWithRcvACK(Ptr<Packet> ack,
     if (delay < targetDelay)
     {
         // Do AI, cwndPackets is cwnd in packets
-        double cwndPackets =
-            ((static_cast<double>(m_sockState->GetCwnd()) + totalPacketSize - 1.0) /
-             totalPacketSize);
+
+        double cwndPackets;
+        if (m_isLimiting)
+        {
+            cwndPackets = ((static_cast<double>(m_sockState->GetCwnd()) + totalPacketSize - 1.0) /
+                           totalPacketSize);
+        }
+        else
+        {
+            cwndPackets = (m_sockState->GetRateRatioPercent() * m_sockState->GetBaseBdp() +
+                           totalPacketSize - 1.0) /
+                          totalPacketSize;
+        }
         if (cwndPackets < 1)
         {
             cwndPackets = 1.0;
@@ -192,6 +201,7 @@ RoCEv2Swift::Init()
     m_canDecreaseTimer = Timer();
     m_canDecreaseTimer.SetFunction(&RoCEv2Swift::SetCanDecrease, this);
     m_canDecrease = true;
+    SetLimiting(true);
 
     RegisterCongestionType(GetTypeId());
 
