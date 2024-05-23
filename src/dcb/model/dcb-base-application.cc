@@ -39,7 +39,9 @@
 #include "ns3/simulator.h"
 #include "ns3/socket.h"
 #include "ns3/string.h"
+#include "ns3/tcp-socket-base.h"
 #include "ns3/tcp-socket-factory.h"
+#include "ns3/tcp-tx-buffer.h"
 #include "ns3/tracer-extension.h"
 #include "ns3/type-id.h"
 #include "ns3/udp-l4-protocol.h"
@@ -99,17 +101,7 @@ DcbBaseApplication::DcbBaseApplication()
 {
     NS_LOG_FUNCTION(this);
 
-    m_stats = std::make_shared<Stats>();
-}
-
-void
-DcbBaseApplication::SetTopologyAndNode(Ptr<DcTopology> topology, uint32_t nodeIndex)
-{
-    m_topology = topology;
-    m_nodeIndex = nodeIndex;
-    m_node = topology->GetNode(nodeIndex).nodePtr;
-
-    InitSocketLineRate();
+    m_stats = std::make_shared<Stats>(this);
 }
 
 DcbBaseApplication::DcbBaseApplication(Ptr<DcTopology> topology, uint32_t nodeIndex)
@@ -123,7 +115,7 @@ DcbBaseApplication::DcbBaseApplication(Ptr<DcTopology> topology, uint32_t nodeIn
 {
     NS_LOG_FUNCTION(this);
 
-    m_stats = std::make_shared<Stats>();
+    m_stats = std::make_shared<Stats>(this);
     InitSocketLineRate();
 }
 
@@ -132,6 +124,15 @@ DcbBaseApplication::~DcbBaseApplication()
     NS_LOG_FUNCTION(this);
 }
 
+void
+DcbBaseApplication::SetTopologyAndNode(Ptr<DcTopology> topology, uint32_t nodeIndex)
+{
+    m_topology = topology;
+    m_nodeIndex = nodeIndex;
+    m_node = topology->GetNode(nodeIndex).nodePtr;
+
+    InitSocketLineRate();
+}
 // int64_t
 // DcbBaseApplication::AssignStreams (int64_t stream)
 // {
@@ -329,13 +330,23 @@ DcbBaseApplication::CreateNewSocket(InetSocketAddress destAddr)
         NS_FATAL_ERROR("Failed to bind socket");
     }
     uint32_t srcPort = 0;
-    uint32_t dstPort = 0;
+    uint32_t dstPort = destAddr.GetPort();
     if (m_protoGroup == ProtocolGroup::RoCEv2)
     {
         Ptr<RoCEv2Socket> roceV2Socket = DynamicCast<RoCEv2Socket>(socket);
         NS_ASSERT(roceV2Socket);
         srcPort = roceV2Socket->GetSrcPort();
         dstPort = roceV2Socket->GetDstPort();
+    }
+    else if (m_protoGroup == ProtocolGroup::TCP)
+    {
+        Ptr<TcpSocketBase> tcpSocket = DynamicCast<TcpSocketBase>(socket);
+        NS_ASSERT(tcpSocket);
+        Address address;
+        tcpSocket->GetSockName(address);
+        srcPort = InetSocketAddress::ConvertFrom(address).GetPort();
+        // tcpSocket->GetPeerName(address);
+        // dstPort = InetSocketAddress::ConvertFrom(address).GetPort();
     }
     uint32_t outDevIdx = m_topology->GetOutDevIdx(GetNode(), destAddr.GetIpv4(), srcPort, dstPort);
     Ptr<NetDevice> outDev = GetNode()->GetDevice(outDevIdx);
@@ -551,6 +562,15 @@ DcbBaseApplication::FlowCompletes(Ptr<UdpBasedSocket> socket)
 }
 
 void
+DcbBaseApplication::TcpFlowEnds(Flow* flow, SequenceNumber32 oldValue, SequenceNumber32 newValue)
+{
+    if (newValue.GetValue() >= flow->totalBytes)
+    {
+        flow->finishTime = Simulator::Now();
+    }
+}
+
+void
 DcbBaseApplication::SetSendEnabled(bool enabled)
 {
     m_enableSend = enabled;
@@ -573,6 +593,9 @@ DcbBaseApplication::SetSocketAttributes(
 void
 DcbBaseApplication::HandleTcpAccept(Ptr<Socket> socket, const Address& from)
 {
+    NS_LOG_FUNCTION(this << socket << from);
+    socket->SetRecvCallback(MakeCallback(&DcbTrafficGenApplication::HandleRead, this));
+    m_acceptedSocketList.push_back(socket);
 }
 
 void
@@ -618,6 +641,19 @@ DcbBaseApplication::SetFlowIdentifier(Flow* flow, Ptr<Socket> socket)
             NS_FATAL_ERROR("Socket is not a RoCEv2 socket");
         }
     }
+    else if (m_protoGroup == ProtocolGroup::TCP)
+    {
+        Ptr<TcpSocketBase> tcpSocket = DynamicCast<TcpSocketBase>(socket);
+        NS_ASSERT(tcpSocket);
+        Address address;
+        tcpSocket->GetSockName(address);
+        Ipv4Address srcAddr = InetSocketAddress::ConvertFrom(address).GetIpv4();
+        uint32_t srcPort = InetSocketAddress::ConvertFrom(address).GetPort();
+        tcpSocket->GetPeerName(address);
+        Ipv4Address dstAddr = InetSocketAddress::ConvertFrom(address).GetIpv4();
+        uint32_t dstPort = InetSocketAddress::ConvertFrom(address).GetPort();
+        flow->flowIdentifier = FlowIdentifier(srcAddr, dstAddr, srcPort, dstPort);
+    }
     else
     {
         NS_LOG_WARN("Flow identifier is not supported for this protocol group");
@@ -630,8 +666,9 @@ DcbBaseApplication::SetCongestionTypeId(TypeId congestionTypeId)
     m_congestionTypeId = congestionTypeId;
 }
 
-DcbBaseApplication::Stats::Stats()
-    : isCollected(false),
+DcbBaseApplication::Stats::Stats(Ptr<DcbBaseApplication> app)
+    : m_app(app),
+      isCollected(false),
       nTotalSizePkts(0),
       nTotalSizeBytes(0),
       nTotalSentPkts(0),
@@ -668,19 +705,42 @@ DcbBaseApplication::Stats::CollectAndCheck(std::map<Ptr<Socket>, Flow*> flows)
     // Collect the statistics
     for (auto [socket, flow] : flows)
     {
-        Ptr<RoCEv2Socket> roceSocket = DynamicCast<RoCEv2Socket>(socket);
-        if (roceSocket != nullptr)
+        if (m_app->GetProtoGroup() == ProtocolGroup::RoCEv2)
         {
-            auto roceStats = roceSocket->GetStats();
-            nTotalSizePkts += roceStats->nTotalSizePkts;
-            nTotalSizeBytes += roceStats->nTotalSizeBytes;
-            nTotalSentPkts += roceStats->nTotalSentPkts;
-            nTotalSentBytes += roceStats->nTotalSentBytes;
-            nTotalDeliverPkts += roceStats->nTotalDeliverPkts;
-            nTotalDeliverBytes += roceStats->nTotalDeliverBytes;
-            nRetxCount += roceStats->nRetxCount;
-            tStart = std::min(tStart, roceStats->tStart);
-            tFinish = std::max(tFinish, roceStats->tFinish);
+            Ptr<RoCEv2Socket> roceSocket = DynamicCast<RoCEv2Socket>(socket);
+            if (roceSocket != nullptr)
+            {
+                auto roceStats = roceSocket->GetStats();
+                nTotalSizePkts += roceStats->nTotalSizePkts;
+                nTotalSizeBytes += roceStats->nTotalSizeBytes;
+                nTotalSentPkts += roceStats->nTotalSentPkts;
+                nTotalSentBytes += roceStats->nTotalSentBytes;
+                nTotalDeliverPkts += roceStats->nTotalDeliverPkts;
+                nTotalDeliverBytes += roceStats->nTotalDeliverBytes;
+                nRetxCount += roceStats->nRetxCount;
+                tStart = std::min(tStart, roceStats->tStart);
+                tFinish = std::max(tFinish, roceStats->tFinish);
+
+                mFlowStats[flow->flowIdentifier] = roceStats;
+                vFlowStats.push_back(roceStats);
+            }
+        }
+        else if (m_app->GetProtoGroup() == ProtocolGroup::TCP)
+        {
+            nTotalSizePkts += (flow->totalBytes + MSS - 1) / MSS;
+            nTotalSizeBytes += flow->totalBytes;
+            tStart = std::min(tStart, flow->startTime);
+            tFinish = std::max(tFinish, flow->finishTime);
+
+            std::shared_ptr<RoCEv2Socket::Stats> roceStats =
+                std::make_shared<RoCEv2Socket::Stats>();
+            roceStats->nTotalSizePkts = (flow->totalBytes + MSS - 1) / MSS;
+            roceStats->nTotalSizeBytes = flow->totalBytes;
+            roceStats->tStart = flow->startTime;
+            roceStats->tFinish = flow->finishTime;
+            roceStats->tFct = flow->finishTime - flow->startTime;
+            roceStats->overallFlowRate =
+                DataRate(roceStats->nTotalSizeBytes * 8.0 / roceStats->tFct.GetSeconds());
 
             mFlowStats[flow->flowIdentifier] = roceStats;
             vFlowStats.push_back(roceStats);

@@ -99,7 +99,8 @@ class DcbTrafficGenApplication : public DcbBaseApplication
     {
       public:
         // constructor
-        Stats();
+        Stats(Ptr<DcbTrafficGenApplication> app);
+        Ptr<DcbTrafficGenApplication> m_app;
 
         virtual ~Stats()
         {

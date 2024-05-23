@@ -25,6 +25,7 @@
 #include "rocev2-socket.h"
 #include "udp-based-socket.h"
 
+#include "ns3/address.h"
 #include "ns3/boolean.h"
 #include "ns3/double.h"
 #include "ns3/enum.h"
@@ -41,7 +42,9 @@
 #include "ns3/simulator.h"
 #include "ns3/socket.h"
 #include "ns3/string.h"
+#include "ns3/tcp-socket-base.h"
 #include "ns3/tcp-socket-factory.h"
+#include "ns3/tcp-tx-buffer.h"
 #include "ns3/tracer-extension.h"
 #include "ns3/type-id.h"
 #include "ns3/udp-l4-protocol.h"
@@ -175,7 +178,7 @@ DcbTrafficGenApplication::DcbTrafficGenApplication()
 {
     NS_LOG_FUNCTION(this);
 
-    m_stats = std::make_shared<Stats>();
+    m_stats = std::make_shared<Stats>(this);
 }
 
 DcbTrafficGenApplication::DcbTrafficGenApplication(Ptr<DcTopology> topology, uint32_t nodeIndex)
@@ -184,7 +187,7 @@ DcbTrafficGenApplication::DcbTrafficGenApplication(Ptr<DcTopology> topology, uin
 {
     NS_LOG_FUNCTION(this);
 
-    m_stats = std::make_shared<Stats>();
+    m_stats = std::make_shared<Stats>(this);
 }
 
 void
@@ -409,6 +412,14 @@ DcbTrafficGenApplication::ScheduleNextFlow(const Time& startTime)
                         &DcbTrafficGenApplication::SendNextPacket,
                         this,
                         flow);
+    // If socket is TCP, trace the unack sequence to check if the flow ends
+    if (m_protoGroup == ProtocolGroup::TCP)
+    {
+        Ptr<TcpTxBuffer> tcpTxBuffer = DynamicCast<TcpSocketBase>(socket)->GetTxBuffer();
+        tcpTxBuffer->TraceConnectWithoutContext(
+            "UnackSequence",
+            MakeBoundCallback(&DcbBaseApplication::TcpFlowEnds, flow));
+    }
 
     // If the trafficType is BACKGROUND, we need to add a false to m_bgFlowFinished
     if (m_trafficType == TrafficType::BACKGROUND)
@@ -633,8 +644,9 @@ DcbTrafficGenApplication::FlowCompletes(Ptr<UdpBasedSocket> socket)
     }
 }
 
-DcbTrafficGenApplication::Stats::Stats()
-    : DcbBaseApplication::Stats(),
+DcbTrafficGenApplication::Stats::Stats(Ptr<DcbTrafficGenApplication> app)
+    : DcbBaseApplication::Stats(app),
+      m_app(app),
       isCollected(false)
 {
 }
