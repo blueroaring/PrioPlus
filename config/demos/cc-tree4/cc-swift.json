@@ -127,7 +127,8 @@
                 "RateAIRatio": 0.0012,
                 "Beta": 0.8,
                 "MaxMdf": 0.5,
-                "BaseTarget": "15us"
+                "BaseTarget": "15us",
+                "IsLimiting": true
             },
             "startTime": "0.1s",
             "flowInterval": "0.00002s"

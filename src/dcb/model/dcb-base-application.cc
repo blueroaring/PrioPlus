@@ -145,7 +145,6 @@ DcbBaseApplication::SetProtocolGroup(ProtocolGroup protoGroup)
     m_protoGroup = protoGroup;
     if (protoGroup == ProtocolGroup::TCP)
     {
-        NS_LOG_WARN("TCP not fully supported.");
         m_socketTid = TcpSocketFactory::GetTypeId();
         m_headerSize = 20 + 20 + 14 + 2;
     }

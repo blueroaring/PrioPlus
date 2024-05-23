@@ -1682,9 +1682,9 @@ TcpSocketBase::EnterRecovery(uint32_t currentDelivered)
     if (!m_congestionControl->HasCongControl())
     {
         m_recoveryOps->EnterRecovery(m_tcb, m_dupAckCount, UnAckDataCount(), currentDelivered);
-        NS_LOG_INFO(m_dupAckCount << " dupack. Enter fast recovery mode."
-                                  << "Reset cwnd to " << m_tcb->m_cWnd << ", ssthresh to "
-                                  << m_tcb->m_ssThresh << " at fast recovery seqnum " << m_recover
+        NS_LOG_INFO(m_dupAckCount << " dupack. Enter fast recovery mode." << "Reset cwnd to "
+                                  << m_tcb->m_cWnd << ", ssthresh to " << m_tcb->m_ssThresh
+                                  << " at fast recovery seqnum " << m_recover
                                   << " calculated in flight: " << bytesInFlight);
     }
 
@@ -2208,9 +2208,9 @@ TcpSocketBase::ProcessAck(const SequenceNumber32& ackNumber,
 
                 m_tcb->m_cWndInfl = m_tcb->m_cWnd;
 
-                NS_LOG_LOGIC("Congestion control called: "
-                             << " cWnd: " << m_tcb->m_cWnd << " ssTh: " << m_tcb->m_ssThresh
-                             << " segsAcked: " << segsAcked);
+                NS_LOG_LOGIC("Congestion control called: " << " cWnd: " << m_tcb->m_cWnd
+                                                           << " ssTh: " << m_tcb->m_ssThresh
+                                                           << " segsAcked: " << segsAcked);
 
                 NewAck(ackNumber, true);
             }
@@ -3511,8 +3511,11 @@ TcpSocketBase::AdvertisedWindowSize(bool scale) const
     if (w > m_maxWinSize)
     {
         w = m_maxWinSize;
-        NS_LOG_WARN("Adv window size truncated to "
-                    << m_maxWinSize << "; possibly to avoid overflow of the 16-bit integer");
+        if (m_state != CLOSED && m_state != SYN_RCVD)
+        {
+            NS_LOG_WARN("Adv window size truncated to "
+                        << m_maxWinSize << "; possibly to avoid overflow of the 16-bit integer");
+        }
     }
     NS_LOG_LOGIC("Returning AdvertisedWindowSize of " << static_cast<uint16_t>(w));
     return static_cast<uint16_t>(w);
