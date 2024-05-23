@@ -173,19 +173,22 @@ DcbPfcPort::DoPacketOutCallbackProcess(uint32_t priority, Ptr<Packet> packet)
 {
     NS_LOG_FUNCTION(this);
 
-    if (CheckShouldSendResume(priority))
+    if (CheckEnableVec(priority))
     {
-        NS_LOG_DEBUG("PFC: Send resume frame from node " << Simulator::GetContext() << " port "
-                                                         << m_dev->GetIfIndex());
-        Ptr<Packet> pfcFrame = PfcFrame::GeneratePauseFrame(priority, (uint16_t)0);
-        m_dev->Send(pfcFrame, Address(), PfcFrame::PROT_NUMBER);
-        SetUpstreamPaused(priority, false);
-        m_tracePfcSent(GetNodeAndPortId(), priority, false);
+        if (CheckShouldSendResume(priority))
+        {
+            NS_LOG_DEBUG("PFC: Send resume frame from node " << Simulator::GetContext() << " port "
+                                                             << m_dev->GetIfIndex());
+            Ptr<Packet> pfcFrame = PfcFrame::GeneratePauseFrame(priority, (uint16_t)0);
+            m_dev->Send(pfcFrame, Address(), PfcFrame::PROT_NUMBER);
+            SetUpstreamPaused(priority, false);
+            m_tracePfcSent(GetNodeAndPortId(), priority, false);
 
-        // Cancel the pause recheck event
-        IngressPortInfo::IngressQueueInfo& q = m_port.getQueue(priority);
-        if (q.pauseEvent.IsRunning())
-            q.pauseEvent.Cancel();
+            // Cancel the pause recheck event
+            IngressPortInfo::IngressQueueInfo& q = m_port.getQueue(priority);
+            if (q.pauseEvent.IsRunning())
+                q.pauseEvent.Cancel();
+        }
     }
 }
 
