@@ -6,7 +6,7 @@
         "resultFile": "output/*.json"
     },
     "runtimeConfig": {
-        "seed": 15,
+        "seed": 8259,
         "runningTime": "1s",
         "stopTime": "10s"
     },
@@ -107,56 +107,35 @@
     },
     "applicationConfig": [
         {
-            "NOTE": "Foreground traffic",
+            "NOTE": "Primary traffic",
             "appType": "ns3::DcbTrafficGenApplication",
-            "nodes": "all",
+            "nodes": "[0:4]",
             "protocolGroup": "RoCEv2",
-            "applicationConfig":{
+            "applicationConfig": {
                 "CongestionType": "ns3::RoCEv2Dcqcn",
                 "SendEnabled": true,
-                "TrafficPattern": "CDF",
-                "TrafficLoad": 0.1,
-                "TrafficType": "Foreground"
-            },
-            "cdf": {
-                "cdfFile": "config/trace/WebSearch_distribution.txt",
-                "avgSize": 0,
-                "scaleFactor": 0
+                "TrafficPattern": "SendOnce",
+                "TrafficSizeBytes": 10000000,
+                "TrafficLoad": 0.0,
+                "DestFixed": true,
+                "DestinationNode": 4
             },
             "socketConfig": {
                 "InnerPriority": 0
             },
-            "startTime": "0.100s",
-            "stopTime": "0.11s",
-            "flowInterval": "0.0000s"
-        },
-        {
-            "NOTE": "Background traffic",
-            "appType": "ns3::DcbTrafficGenApplication",
-            "nodes": "all",
-            "protocolGroup": "RoCEv2",
-            "applicationConfig":{
-                "CongestionType": "ns3::RoCEv2Dcqcn",
-                "SendEnabled": true,
-                "TrafficPattern": "FileRequest",
-                "FileRequestNodesNum":3,
-                "TrafficSizeBytes": 100000,
-                "TrafficLoad": 0.5,
-                "TrafficType": "Background"
+            "congestionConfig": {
+                "RateAIRatio": 0.0012,
+                "G": 0.00390625
             },
-            "socketConfig": {
-                "InnerPriority": 0
-            },
-            "startTime": "0.10s",
-            "stopTime": "0.105s",
-            "flowInterval": "0.0000s"
+            "startTime": "0.1s",
+            "flowInterval": "0.00002s"
         },
         {
             "NOTE": "Recevier side applciation",
             "appType": "ns3::DcbTrafficGenApplication",
             "nodes": "[4:]",
             "protocolGroup": "RoCEv2",
-            "applicationConfig":{
+            "applicationConfig": {
                 "SendEnabled": false
             },
             "startTime": "0.1s"

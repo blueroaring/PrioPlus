@@ -30,6 +30,7 @@ class DcbHpccPort : public DcbPfcPort
   public:
     static TypeId GetTypeId();
 
+    DcbHpccPort();  
     DcbHpccPort(Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc);
     virtual ~DcbHpccPort();
 

@@ -101,6 +101,7 @@ RoCEv2Socket::RoCEv2Socket()
       m_senderNextPSN(0),
       m_psnEnd(0),
       m_waitingForSchedule(false),
+      m_lastRto(Time(0)),
       m_flowState(FlowState::PENDING)
 {
     NS_LOG_FUNCTION(this);
@@ -255,7 +256,9 @@ RoCEv2Socket::SendPendingPacket()
     if (m_flowState == PENDING)
     {
         m_flowState = RUNNING;
-        m_rtoEvent = Simulator::Schedule(m_rto, &RoCEv2Socket::RetransmissionTimeout, this);
+        Time rtoTime = GetRTOTime();
+        m_rtoEvent = Simulator::Schedule(rtoTime, &RoCEv2Socket::RetransmissionTimeout, this);
+        m_lastRto = rtoTime;
     }
 }
 
@@ -380,10 +383,10 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
             m_ccOps->SetStopTime(Simulator::Now());
             NS_LOG_DEBUG("Finish a flow at time " << Simulator::Now().GetNanoSeconds() << "ns.");
         }
-        else if (m_retxMode == IRN)
-        {
-            IrnReactToAck(roce.GetPSN());
-        }
+        // else if (m_retxMode == IRN)
+        // {
+        //     IrnReactToAck(roce.GetPSN());
+        // }
         break;
     }
     case AETHeader::SyndromeType::NACK: {
@@ -410,7 +413,9 @@ RoCEv2Socket::HandleACK(Ptr<Packet> packet, const RoCEv2Header& roce)
         m_rtoEvent.Cancel();
         // Place the schedule in the judgement as the rtoEvent should be running all the flow's life
         // If the rtoEvent is not running, the flow is finished, no need to schedule the next
-        m_rtoEvent = Simulator::Schedule(m_rto, &RoCEv2Socket::RetransmissionTimeout, this);
+        Time rtoTime = GetRTOTime();
+        m_rtoEvent = Simulator::Schedule(rtoTime, &RoCEv2Socket::RetransmissionTimeout, this);
+        m_lastRto = rtoTime;
     }
 }
 
@@ -497,13 +502,21 @@ RoCEv2Socket::HandleDataPacket(Ptr<Packet> packet,
         NS_LOG_DEBUG("Send ACK with PSN " << flowInfoIter->second.GetExpectedPsn() << " at time "
                                           << Simulator::Now().GetNanoSeconds() << "ns.");
     }
-    else if (psn > expectedPSN && flowInfoIter->second.m_ePsnAdvancedAfterNack)
+    else if (psn > expectedPSN)
     {
-        // packet out-of-order and have not send NACK for this epsn, send NACK
-        flowInfoIter->second.m_ePsnAdvancedAfterNack = false;
         NS_LOG_LOGIC("RoCEv2 receiver " << Simulator::GetContext() << "send NACK of flow " << srcQP
                                         << "->" << dstQP);
-
+        if(m_retxMode == RoCEv2RetxMode::GBN && flowInfoIter->second.m_ePsnAdvancedAfterNack == false)
+        {
+            // already send nack for this epsn
+            return;
+        }
+        else if(m_retxMode == RoCEv2RetxMode::GBN && flowInfoIter->second.m_ePsnAdvancedAfterNack)
+        {
+             // packet out-of-order and have not send NACK for this epsn, send NACK
+            flowInfoIter->second.m_ePsnAdvancedAfterNack = false;
+        }
+        
         // TODO No check of whether queue disc avaliable, as don't know how to hold the NACK packet
         // at l4
 
@@ -554,40 +567,36 @@ RoCEv2Socket::IrnReactToNack(uint32_t expectedPsn, IrnHeader irnH)
 {
     NS_LOG_FUNCTION(this);
     uint32_t ackedPsn = irnH.GetAckedPsn();
-    if(expectedPsn != 0)
+    if (expectedPsn != 0)
     {
         m_txBuffer.AcknowledgeTo(expectedPsn - 1);
-    } 
+    }
     m_txBuffer.Acknowledge(ackedPsn);
-    m_txBuffer.Retransmit(expectedPsn);
+    m_txBuffer.RetransmitRange(expectedPsn, ackedPsn);
 
     // Record the acked PSN
     m_stats->RecordAckedPsn(ackedPsn);
     // Record the retx count
-    m_stats->nRetxCount++;
+    m_stats->nRetxCount += (ackedPsn - expectedPsn);
 
     NS_LOG_DEBUG("IRN expected PSN " << expectedPsn << " ackedPsn " << ackedPsn << " at time "
                                      << Simulator::Now().GetNanoSeconds() << "ns.");
 }
 
-void
-RoCEv2Socket::IrnReactToAck(uint32_t expectedPsn)
-{
-    NS_LOG_FUNCTION(this);
+// void
+// RoCEv2Socket::IrnReactToAck(uint32_t expectedPsn)
+// {
+//     NS_LOG_FUNCTION(this);
 
-    // For IRN, the expected packet should be retxed if it is not acked and there is a gap
-    if (!m_txBuffer.HasGap())
-    {
-        return;
-    }
-    m_txBuffer.Retransmit(expectedPsn);
+//     // For IRN, the expected packet should be retxed if it is not acked and there is a gap
+//     m_txBuffer.Retransmit(expectedPsn);
 
-    // Record the retx count
-    m_stats->nRetxCount++;
+//     // Record the retx count
+//     m_stats->nRetxCount++;
 
-    NS_LOG_DEBUG("IRN expected PSN " << expectedPsn << " at time "
-                                     << Simulator::Now().GetNanoSeconds() << "ns.");
-}
+//     NS_LOG_DEBUG("IRN expected PSN " << expectedPsn << " at time "
+//                                      << Simulator::Now().GetNanoSeconds() << "ns.");
+// }
 
 void
 RoCEv2Socket::ScheduleNextCNP(std::map<FlowIdentifier, FlowInfo>::iterator flowInfoIter,
@@ -725,8 +734,8 @@ RoCEv2Socket::SetBaseRttNOneWayDelay(uint32_t hop,
                                      uint32_t packetSize,
                                      uint32_t ackSize)
 {
-    Time transDelayPacket = Time(uint64_t(packetSize * 8e9 / m_deviceRate.GetBitRate()));
-    Time transDelayAck = Time(uint64_t(ackSize * 8e9 / m_deviceRate.GetBitRate()));
+    Time transDelayPacket = NanoSeconds(uint64_t(packetSize * 8e9 / m_deviceRate.GetBitRate()));
+    Time transDelayAck = NanoSeconds(uint64_t(ackSize * 8e9 / m_deviceRate.GetBitRate()));
     m_sockState->SetBaseRtt(delay * 2 + (transDelayPacket + transDelayAck) * hop);
     m_sockState->SetBaseOneWayDelay(delay + transDelayPacket * hop);
     // log the propogation delay, the hops, and the basertt
@@ -842,24 +851,66 @@ RoCEv2Socket::RetransmissionTimeout()
 {
     NS_LOG_FUNCTION(this);
 
+    if (m_retxMode == RoCEv2RetxMode::IRN && m_txBuffer.GetOnTheFly() > m_irnPktThresh)
+    {
+        // last time schedule retx use rto_low
+        if (m_lastRto == m_irnRtoLow)
+        {
+            m_rtoEvent = Simulator::Schedule(m_rto - m_irnRtoLow,
+                                             &RoCEv2Socket::RetransmissionTimeout,
+                                             this);
+            m_lastRto = m_rto;
+            return;
+        }
+    }
+
     if (m_retxMode == RoCEv2RetxMode::GBN)
     {
         // Retransmit from the first unacked packet
         m_txBuffer.RetransmitFrom(m_txBuffer.GetFrontPsn());
     }
-    else if (m_retxMode == RoCEv2RetxMode::IRN)
+    else if (m_retxMode == RoCEv2RetxMode::IRN) // liuchangtodo
     {
         // Retransmit the first unacked packet
-        m_txBuffer.Retransmit(m_txBuffer.GetFrontPsn());
+        // m_txBuffer.RetransmitRange(m_txBuffer.GetFrontPsn(), m_txBuffer.GetMaxAckedPsn()-1);
+        m_txBuffer.RetransmitFrom(m_txBuffer.GetFrontPsn());
     }
 
     // Reschedule the retransmission timer
-    m_rtoEvent = Simulator::Schedule(m_rto, &RoCEv2Socket::RetransmissionTimeout, this);
+    Time rtoTime = GetRTOTime();
+    m_rtoEvent.Cancel();
+    m_rtoEvent = Simulator::Schedule(rtoTime, &RoCEv2Socket::RetransmissionTimeout, this);
+    m_lastRto = rtoTime;
 
     NS_LOG_DEBUG("Retransmission timeout at time " << Simulator::Now().GetNanoSeconds() << "ns.");
 
     // Record the retx count
     m_stats->nRetxCount++;
+}
+
+Time
+RoCEv2Socket::GetRTOTime()
+{
+    NS_LOG_FUNCTION(this);
+    if (m_retxMode == GBN)
+    {
+        return m_rto;
+    }
+    else if (m_retxMode == IRN)
+    {
+        if (m_txBuffer.GetOnTheFly() > m_irnPktThresh)
+        {
+            return m_rto;
+        }
+        else
+        {
+            return m_irnRtoLow;
+        }
+    }
+    else
+    {
+        NS_ASSERT_MSG(false, "wrong rtx mode");
+    }
 }
 
 NS_OBJECT_ENSURE_REGISTERED(DcbTxBuffer);
@@ -876,8 +927,7 @@ DcbTxBuffer::DcbTxBuffer(Callback<void> sendCb, Callback<RoCEv2Header> createRoc
       m_createRocev2HeaderCb(createRocev2HeaderCb),
       m_frontPsn(0),
       m_maxAckedPsn(0),
-      m_tos(0),
-      m_priority(0)
+      m_maxSentPsn(0)
 {
 }
 
@@ -902,20 +952,10 @@ DcbTxBuffer::RecvPayload(Ptr<Packet> payload, Ipv4Address daddr, Ptr<Ipv4Route> 
     for (uint32_t i = 0; i < TotalSize(); i++)
     {
         m_acked.push_back(false);
+        m_pktState.push_back(TxPacketState::UNDEF);
     }
 
-    SocketIpTosTag ipTosTag;
-    payload->PeekPacketTag(ipTosTag);
-    SocketPriorityTag priorityTag;
-    payload->PeekPacketTag(priorityTag);
-    if (ipTosTag.GetTos())
-    {
-        m_tos = ipTosTag.GetTos();
-    }
-    if (priorityTag.GetPriority())
-    {
-        m_priority = priorityTag.GetPriority();
-    }
+    m_payload = payload;
 
     m_sendCb();
 }
@@ -936,6 +976,7 @@ DcbTxBuffer::AcknowledgeTo(uint32_t psn)
     for (uint32_t i = m_frontPsn; i <= psn; i++)
     {
         m_acked[i] = true;
+        m_pktState[i] = TxPacketState::ACK;
     }
     m_maxAckedPsn = std::max(m_maxAckedPsn, psn);
 
@@ -949,6 +990,7 @@ DcbTxBuffer::Acknowledge(uint32_t psn)
     NS_ASSERT_MSG(psn >= m_frontPsn, "PSN to be acknowledged is smaller than the front PSN.");
     NS_ASSERT_MSG(psn < TotalSize(), "PSN to be acknowledged is larger than the total size.");
     m_acked[psn] = true;
+    m_pktState[psn] = TxPacketState::ACK;
     m_maxAckedPsn = std::max(m_maxAckedPsn, psn);
 
     CheckRelease();
@@ -959,13 +1001,14 @@ void
 DcbTxBuffer::CheckRelease()
 {
     // Try to release the packets form m_frontPsn to the first unacked packet
-    while (m_frontPsn < TotalSize() && m_acked[m_frontPsn])
+    // while (m_frontPsn < TotalSize() && m_acked[m_frontPsn])
+    while (m_frontPsn < TotalSize() && m_pktState[m_frontPsn] == TxPacketState::ACK)
     {
         m_buffer.pop_front();
         m_frontPsn++;
     }
     // Remove the released packets from the txQueue
-    while (m_txQueue.top() < m_frontPsn && m_txQueue.size() != 0)
+    while (m_txQueue.size() != 0 && m_txQueue.top() < m_frontPsn)
     {
         m_txQueue.pop();
     }
@@ -978,26 +1021,12 @@ void
 DcbTxBuffer::CreatePacket(RoCEv2Header roceHeader)
 {
     uint32_t pktSize = std::min(m_remainSize, m_mss);
-    Ptr<Packet> payload = Create<Packet>(pktSize);
-
-    int priority = m_priority;
-    if (m_tos)
-    {
-        // This tag will be used to set IP TOS field in L3
-        SocketIpTosTag ipTosTag;
-        ipTosTag.SetTos(m_tos);
-        // This packet may already have a SocketIpTosTag (see BUG 2440)
-        payload->ReplacePacketTag(ipTosTag);
-        priority = UdpBasedSocket::IpTos2Priority(m_tos);
-    }
-
-    if (priority)
-    {
-        SocketPriorityTag priorityTag;
-        priorityTag.SetPriority(priority);
-        payload->ReplacePacketTag(priorityTag);
-    }
+    // Ptr<Packet> payload = Create<Packet>(pktSize);
+    Ptr<Packet> payload = m_payload->CreateFragment(0, pktSize);
+    m_payload->RemoveAtStart(pktSize);
     m_remainSize -= pktSize;
+
+    NS_ASSERT_MSG(m_remainSize == m_payload->GetSize(), "The payload size is not correct.");
 
     // Push(roceHeader.GetPSN(), std::move(roceHeader), payload, m_daddr, m_route);
     // Directly push the packet to the buffer, no need to call the Push function
@@ -1035,7 +1064,8 @@ DcbTxBuffer::NextSendPsn()
     if (!m_txQueue.empty())
     {
         uint32_t nextSendPsn = m_txQueue.top();
-        while (m_acked[nextSendPsn] && m_txQueue.size() != 0)
+        // while (m_acked[nextSendPsn] && m_txQueue.size() != 0)
+        while (m_pktState[nextSendPsn] == TxPacketState::ACK && m_txQueue.size() != 0)
         {
             m_txQueue.pop();
             nextSendPsn = m_txQueue.top();
@@ -1083,6 +1113,17 @@ DcbTxBuffer::PopNextShouldSend()
     {
         m_txQueue.pop();
     }
+    uint32_t sendPsn = item.m_psn;
+    NS_ASSERT(m_pktState[sendPsn] != TxPacketState::ACK);
+    if(m_pktState[sendPsn] == TxPacketState::UNDEF)
+    {
+        m_pktState[sendPsn] = TxPacketState::UNACK;
+    }
+    
+    if(sendPsn > m_maxSentPsn)
+    {
+        m_maxSentPsn = item.m_psn;
+    }
     return item;
 }
 
@@ -1112,8 +1153,9 @@ DcbTxBuffer::TotalSize() const
 }
 
 uint32_t
-DcbTxBuffer::GetSizeToBeSent() const
+DcbTxBuffer::GetSizeToBeSent()
 {
+    CheckRelease();
     return m_txQueue.size() + RemainSizeInPacket();
 }
 
@@ -1160,6 +1202,51 @@ DcbTxBuffer::Retransmit(uint32_t psn)
 
     // Call the send callback to notify the socket to send the packet
     m_sendCb();
+}
+
+void
+DcbTxBuffer::RetransmitRange(uint32_t from, uint32_t to)
+{
+    NS_ASSERT_MSG(from < TotalSize() && to < TotalSize(),
+                  "PSN to be retransmitted is larger than the total size.");
+    NS_ASSERT_MSG(from >= m_frontPsn && to >= m_frontPsn,
+                  "PSN to be retransmitted not in the buffer.");
+    for (uint32_t psn = from; psn < to; psn++)
+    {
+        NS_ASSERT(m_pktState[psn] != TxPacketState::UNDEF);
+        if(m_pktState[psn] == TxPacketState::UNACK)
+        {
+            m_txQueue.push(psn);
+            m_pktState[psn] = TxPacketState::NACK;
+        }
+    }
+    // Call the send callback to notify the socket to send the packet
+    m_sendCb();
+}
+
+uint32_t
+DcbTxBuffer::GetOnTheFly()
+{
+    NS_ASSERT(m_maxSentPsn >= m_maxAckedPsn);
+    return m_maxSentPsn - m_frontPsn;
+}
+
+uint32_t
+DcbTxBuffer::GetMaxAckedPsn()
+{
+    return m_maxAckedPsn;
+}
+
+void DcbTxBuffer::SetPktState(uint32_t from, uint32_t to, uint8_t state)
+{
+    for(uint32_t psn = from; psn < to; psn++)
+    {
+        NS_ASSERT(m_pktState[psn] != TxPacketState::UNDEF);
+        if(m_pktState[psn] != TxPacketState::ACK)
+        {
+            m_pktState[psn] = state;
+        }
+    }
 }
 
 void

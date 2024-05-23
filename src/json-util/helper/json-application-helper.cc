@@ -66,62 +66,23 @@ InstallApplications(const boost::json::object& conf, Ptr<DcTopology> topology)
     // This fucntion can be extended to install more sets of applications using this for loop
     for (const auto& appConfig : appConfigs)
     {
-        // PrettyPrint(std::cout, appConfig, nullptr);
-        auto it = appInstallMapper.find(
-            appConfig.as_object().find("appName")->value().as_string().c_str());
-        if (it == appInstallMapper.end())
-        {
-            NS_FATAL_ERROR("App \""
-                           << appConfig.as_object().find("appName")->value().as_string().c_str()
-                           << "\" installation logic has not been implemented");
-        }
-        AppInstallFunc appInstallLogic = it->second;
-        apps.Add(appInstallLogic(appConfig.as_object(), topology));
+        apps.Add(InstallDcbTrafficGenApplication(appConfig.as_object(), topology));
     }
     return apps;
 }
 
 /***** Utilities about DcbTrafficGenApplication *****/
 
-std::unique_ptr<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>>
-ConstructConfigVector(const boost::json::object& configObj)
-{
-    std::unique_ptr<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>> configVector =
-        std::make_unique<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>>();
-    for (auto kvPair : configObj)
-    {
-        std::string name = kvPair.key();
-        boost::json::value value = kvPair.value();
-        switch (value.kind())
-        {
-        case boost::json::kind::string:
-            configVector->push_back(
-                std::make_pair(name, StringValue(value.get_string().c_str()).Copy()));
-            break;
-        case boost::json::kind::uint64:
-            configVector->push_back(std::make_pair(name, UintegerValue(value.get_uint64()).Copy()));
-            break;
-        case boost::json::kind::int64:
-            configVector->push_back(std::make_pair(name, UintegerValue(value.get_int64()).Copy()));
-            break;
-        case boost::json::kind::bool_:
-            configVector->push_back(std::make_pair(name, BooleanValue(value.get_bool()).Copy()));
-            break;
-        case boost::json::kind::double_:
-            configVector->push_back(std::make_pair(name, DoubleValue(value.get_double()).Copy()));
-            break;
-        default:;
-        }
-    }
-
-    return configVector;
-}
-
 std::shared_ptr<DcbTrafficGenApplicationHelper>
 ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> topology)
 {
     std::shared_ptr<DcbTrafficGenApplicationHelper> appHelper =
         std::make_shared<DcbTrafficGenApplicationHelper>(topology);
+    
+    // Application type
+    std::string appType =
+        JsonGetStringOrRaise(appConfig, "appType", "Need to specify \"appType\"");
+    appHelper->SetApplicationTypeId(TypeId::LookupByName(appType));
 
     // Set protocol group
     std::string sProtocolGroup =

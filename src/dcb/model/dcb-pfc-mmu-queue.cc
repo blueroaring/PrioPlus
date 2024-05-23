@@ -19,6 +19,9 @@
 
 #include "dcb-pfc-mmu-queue.h"
 
+#include "ns3/boolean.h"
+#include "ns3/uinteger.h"
+
 namespace ns3
 {
 
@@ -29,10 +32,35 @@ NS_OBJECT_ENSURE_REGISTERED(DcbPfcMmuQueue);
 TypeId
 DcbPfcMmuQueue::GetTypeId()
 {
-    static TypeId tid = TypeId("ns3::DcbPfcMmuQueue")
-                            .SetParent<DcbFlowControlMmuQueue>()
-                            .AddConstructor<DcbPfcMmuQueue>();
-
+    static TypeId tid =
+        TypeId("ns3::DcbPfcMmuQueue")
+            .SetParent<DcbFlowControlMmuQueue>()
+            .AddConstructor<DcbPfcMmuQueue>()
+            .AddAttribute("ReserveSize",
+                          "The size of the reserve buffer",
+                          QueueSizeValue(QueueSize("0B")),
+                          MakeQueueSizeAccessor(&DcbPfcMmuQueue::SetReserveSize),
+                          MakeQueueSizeChecker())
+            .AddAttribute("HeadroomSize",
+                          "The size of the headroom buffer",
+                          QueueSizeValue(QueueSize("0B")),
+                          MakeQueueSizeAccessor(&DcbPfcMmuQueue::SetHeadroomSize),
+                          MakeQueueSizeChecker())
+            .AddAttribute("ResumeOffset",
+                          "The size of the resume offset",
+                          QueueSizeValue(QueueSize("0B")),
+                          MakeQueueSizeAccessor(&DcbPfcMmuQueue::SetResumeOffset),
+                          MakeQueueSizeChecker())
+            .AddAttribute("IsDynamicThreshold",
+                          "Whether the threshold is dynamic",
+                          BooleanValue(false),
+                          MakeBooleanAccessor(&DcbPfcMmuQueue::m_isDynamicThreshold),
+                          MakeBooleanChecker())
+            .AddAttribute("DtShift",
+                          "The shift of the dynamic threshold",
+                          UintegerValue(2),
+                          MakeUintegerAccessor(&DcbPfcMmuQueue::m_dtShift),
+                          MakeUintegerChecker<uint32_t>());
     return tid;
 }
 
@@ -195,6 +223,36 @@ DcbPfcMmuQueue::CheckShouldSendResume()
         }
     }
     return false;
+}
+
+void
+DcbPfcMmuQueue::SetReserveSize(QueueSize reserveSize)
+{
+    if (reserveSize.GetUnit() != QueueSizeUnit::BYTES)
+    {
+        NS_FATAL_ERROR("Reserve size must be in bytes");
+    }
+    m_reserveSize = reserveSize.GetValue();
+}
+
+void
+DcbPfcMmuQueue::SetHeadroomSize(QueueSize headroomSize)
+{
+    if (headroomSize.GetUnit() != QueueSizeUnit::BYTES)
+    {
+        NS_FATAL_ERROR("Headroom size must be in bytes");
+    }
+    m_headroomSize = headroomSize.GetValue();
+}
+
+void
+DcbPfcMmuQueue::SetResumeOffset(QueueSize resumeOffset)
+{
+    if (resumeOffset.GetUnit() != QueueSizeUnit::BYTES)
+    {
+        NS_FATAL_ERROR("Resume offset must be in bytes");
+    }
+    m_resumeOffset = resumeOffset.GetValue();
 }
 
 } // namespace ns3

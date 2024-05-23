@@ -26,6 +26,8 @@
 #include "ns3/timer.h"
 #include "ns3/traced-value.h"
 
+#include <map>
+
 namespace ns3
 {
 

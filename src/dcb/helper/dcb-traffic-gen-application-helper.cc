@@ -35,13 +35,6 @@ namespace ns3
 DcbTrafficGenApplicationHelper::DcbTrafficGenApplicationHelper(Ptr<DcTopology> topo)
     : m_topology(topo),
       m_cdf(nullptr),
-      m_flowMeanInterval(0.),
-      m_destNode(-1),
-      m_destAddr(InetSocketAddress("0.0.0.0", 0)),
-      m_sendEnabled(true),
-      m_load(0),
-      m_staticFlowInterval(false),
-      m_sendOnce(false),
       m_startTime(Time(0)),
       m_stopTime(Time(0)),
       m_realTimeApp(false)
@@ -58,72 +51,6 @@ void
 DcbTrafficGenApplicationHelper::SetCdf(std::unique_ptr<DcbTrafficGenApplication::TraceCdf> cdf)
 {
     m_cdf = std::move(cdf);
-}
-
-void
-DcbTrafficGenApplicationHelper::SetLoad(Ptr<const DcbNetDevice> dev, double load)
-{
-    SetLoad(dev->GetDataRate(), load);
-}
-
-void
-DcbTrafficGenApplicationHelper::SetLoad(DataRate rate, double load)
-{
-    m_load = load;
-    CalcLoad(rate);
-}
-
-void
-DcbTrafficGenApplicationHelper::SetLoad(double load)
-{
-    m_load = load;
-}
-
-void
-DcbTrafficGenApplicationHelper::CalcLoad(DataRate rate)
-{
-    NS_ASSERT_MSG(m_cdf, "Must set CDF to DcbTrafficGenApplicationHelper before setting load.");
-    NS_ASSERT_MSG(m_load >= 0. && m_load <= 1., "Load shoud be between 0 and 1.");
-    double mean = CalculateCdfMeanSize(m_cdf.get());
-    if (m_load <= 1e-6)
-    {
-        m_sendEnabled = false;
-    }
-    else
-    {
-        m_sendEnabled = true;
-        m_flowMeanInterval = mean * 8 / (rate.GetBitRate() * m_load) * 1e6; // us
-    }
-}
-
-void
-DcbTrafficGenApplicationHelper::SetSendEnabled(bool enabled)
-{
-    m_sendEnabled = enabled;
-}
-
-void
-DcbTrafficGenApplicationHelper::SetDestination(int32_t dest)
-{
-    m_destNode = dest;
-}
-
-void
-DcbTrafficGenApplicationHelper::SetDestination(InetSocketAddress dest)
-{
-    m_destAddr = dest;
-}
-
-void
-DcbTrafficGenApplicationHelper::SetStaticFlowInterval(bool staticFlowInterval)
-{
-    m_staticFlowInterval = staticFlowInterval;
-}
-
-void
-DcbTrafficGenApplicationHelper::SetSendOnce(bool sendOnce)
-{
-    m_sendOnce = sendOnce;
 }
 
 void
@@ -145,10 +72,9 @@ DcbTrafficGenApplicationHelper::SetRealTimeApp(bool realTimeApp)
     m_realTimeApp = realTimeApp;
 }
 
-void
-DcbTrafficGenApplicationHelper::SetCongestionType(StringValue congestionType)
+void DcbTrafficGenApplicationHelper::SetApplicationTypeId(TypeId typeId)
 {
-    m_congestionType = congestionType;
+    m_applicationTypeId = typeId;
 }
 
 void
@@ -212,7 +138,7 @@ DcbTrafficGenApplicationHelper::Install(Ptr<Node> node)
 Ptr<Application>
 DcbTrafficGenApplicationHelper::InstallPriv(Ptr<Node> node)
 {
-    Ptr<DcbTrafficGenApplication> app = CreateApplication(node);
+    Ptr<DcbBaseApplication> app = CreateApplication(node);
 
     // Set app attributes in m_appAttributes
     for (const auto& [name, value] : m_appAttributes)
@@ -226,7 +152,7 @@ DcbTrafficGenApplicationHelper::InstallPriv(Ptr<Node> node)
     // Set cdf and average size of CDF as traffic size
     if (m_cdf)
     {
-        app->SetFlowCdf(*m_cdf);
+        DynamicCast<DcbTrafficGenApplication>(app)->SetFlowCdf(*m_cdf);
         // app->SetAttribute("TrafficSizeBytes", UintegerValue(CalculateCdfMeanSize(m_cdf.get())));
     }
 
@@ -246,19 +172,25 @@ DcbTrafficGenApplicationHelper::InstallPriv(Ptr<Node> node)
     return app;
 }
 
-Ptr<DcbTrafficGenApplication>
+Ptr<DcbBaseApplication>
 DcbTrafficGenApplicationHelper::CreateApplication(Ptr<Node> node)
 {
-    Ptr<DcbTrafficGenApplication> app;
+    Ptr<DcbBaseApplication> app;
 
-    if (m_realTimeApp)
-    {
-        app = CreateObject<RealTimeApplication>(m_topology, node->GetId());
-    }
-    else
-    {
-        app = CreateObject<DcbTrafficGenApplication>(m_topology, node->GetId());
-    }
+    // if (m_realTimeApp)
+    // {
+    //     app = CreateObject<RealTimeApplication>(m_topology, node->GetId());
+    // }
+    // else
+    // {
+    //     app = CreateObject<DcbTrafficGenApplication>(m_topology, node->GetId());
+    // }
+
+    // Create application according to the typeid
+    ObjectFactory factory;
+    factory.SetTypeId(m_applicationTypeId);
+    app = factory.Create<DcbBaseApplication>();
+    app->SetTopologyAndNode(m_topology, node->GetId());
 
     return app;
 }

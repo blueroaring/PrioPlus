@@ -48,6 +48,7 @@ class RealTimeApplication : public DcbTrafficGenApplication
      * * If the destIndex is negative, the application will randomly choose a node as the
      * destination.
      */
+    RealTimeApplication();
     RealTimeApplication(Ptr<DcTopology> topology, uint32_t nodeIndex);
     virtual ~RealTimeApplication();
 
@@ -59,7 +60,8 @@ class RealTimeApplication : public DcbTrafficGenApplication
     {
       public:
         // constructor
-        Stats();
+        Stats(Ptr<RealTimeApplication> app);
+        Ptr<RealTimeApplication> m_app;
 
         bool isCollected; //<! Whether the stats is collected
 
@@ -100,7 +102,9 @@ class RealTimeApplication : public DcbTrafficGenApplication
         // No getter for simplicity
     };
 
-    virtual std::shared_ptr<DcbTrafficGenApplication::Stats> GetStats() const;
+    virtual std::shared_ptr<DcbBaseApplication::Stats> GetStats() const;
+
+    constexpr static inline const uint64_t MSS = 1500; // 1500 bytes in TCP
 
   private:
     /**

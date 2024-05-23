@@ -204,7 +204,7 @@ class LedbatHeader : public Header
     // Ledbat Header with only one Timestamp
   public:
     LedbatHeader()
-        : m_ts(Simulator::Now().GetTimeStep())
+        : m_ts(Simulator::Now().GetNanoSeconds())
     {
     }
 
@@ -242,12 +242,12 @@ class LedbatHeader : public Header
 
     void Print(std::ostream& os) const override
     {
-        os << "time=" << TimeStep(m_ts).As(Time::S) << "";
+        os << "time=" << NanoSeconds(m_ts).As(Time::S) << "";
     }
 
     Time GetTs() const
     {
-        return TimeStep(m_ts);
+        return NanoSeconds(m_ts);
     }
 
     uint64_t m_ts; //!< Timestamp

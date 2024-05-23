@@ -40,6 +40,7 @@ class DcbFlowControlPort : public Object
      */
     static TypeId GetTypeId(void);
 
+    DcbFlowControlPort();
     DcbFlowControlPort(Ptr<NetDevice> dev, Ptr<DcbTrafficControl> tc);
     virtual ~DcbFlowControlPort();
 
@@ -57,6 +58,9 @@ class DcbFlowControlPort : public Object
      * \brief Process when a packet come out of this port.
      */
     void EgressProcess(Ptr<Packet> packet);
+
+    virtual void SetDevice(Ptr<NetDevice> dev);
+    void SetDcbTrafficControl(Ptr<DcbTrafficControl> tc);
 
     void SetFcIngressEnabled(bool enable);
     void SetFcEgressEnabled(bool enable);

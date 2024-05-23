@@ -96,6 +96,8 @@ class DcTopology : public Object
 
     const Ipv4InterfaceAddress GetInterfaceOfNode(const uint32_t nodei, uint32_t intfi) const;
 
+    uint32_t GetNodeIdxFormIp(const Ipv4Address ip) const;
+
     bool IsHost(const uint32_t index) const;
     bool IsSwitch(const uint32_t index) const;
 

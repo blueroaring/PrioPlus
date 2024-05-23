@@ -152,10 +152,9 @@ ConstructAppStatsObj(ApplicationContainer& apps)
 
     for (uint32_t i = 0; i < apps.GetN(); ++i)
     {
-        Ptr<DcbTrafficGenApplication> app = DynamicCast<DcbTrafficGenApplication>(apps.Get(i));
-        if (app == nullptr) {
+        Ptr<DcbBaseApplication> app = DynamicCast<DcbBaseApplication>(apps.Get(i));
+        if (app == nullptr)
             continue;
-        }
         auto appStats = app->GetStats();
 
         // Get variables of the overall statistics
@@ -163,8 +162,20 @@ ConstructAppStatsObj(ApplicationContainer& apps)
         finishTime = std::max(finishTime, appStats->tFinish);
         totalPkts += appStats->nTotalSizePkts;
         totalBytes += appStats->nTotalSizeBytes;
-        totalSentPkts += appStats->nTotalSentPkts;
-        totalSentBytes += appStats->nTotalSentBytes;
+
+        if (app->GetProtoGroup() == DcbTrafficGenApplication::ProtocolGroup::RoCEv2)
+        {
+            totalSentPkts += appStats->nTotalSentPkts;
+            totalSentBytes += appStats->nTotalSentBytes;
+            retxCount += appStats->nRetxCount;
+        }
+        else if (app->GetProtoGroup() == DcbTrafficGenApplication::ProtocolGroup::TCP)
+        {
+            // TCP does not support totalSent and retxCount, o we use the totalSizePkts and
+            // totalSizeBytes to calculate the retx rate, which will be zero.
+            totalSentPkts += appStats->nTotalSizePkts;
+            totalSentBytes += appStats->nTotalSizeBytes;
+        }
 
         // Per flow statistics
         auto mFlowStats = appStats->mFlowStats;
@@ -203,7 +214,7 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
 {
     for (uint32_t i = 0; i < apps.GetN(); ++i)
     {
-        Ptr<DcbTrafficGenApplication> app = DynamicCast<DcbTrafficGenApplication>(apps.Get(i));
+        Ptr<DcbBaseApplication> app = DynamicCast<DcbBaseApplication>(apps.Get(i));
         if (app == nullptr)
             continue;
         auto appStats = app->GetStats();
@@ -229,7 +240,10 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
             (*flowStatsObj)["flowType"] = appStats->appFlowType;
             (*flowStatsObj)["totalSizePkts"] = flowStats->nTotalSizePkts;
             (*flowStatsObj)["totalSizeBytes"] = flowStats->nTotalSizeBytes;
-            (*flowStatsObj)["retxCount"] = flowStats->nRetxCount;
+            if (app->GetProtoGroup() == DcbTrafficGenApplication::ProtocolGroup::RoCEv2)
+            {
+                (*flowStatsObj)["retxCount"] = flowStats->nRetxCount;
+            }
             (*flowStatsObj)["fctNs"] = flowStats->tFct.GetNanoSeconds();
             (*flowStatsObj)["startNs"] = flowStats->tStart.GetNanoSeconds();
             (*flowStatsObj)["finishNs"] = flowStats->tFinish.GetNanoSeconds();
@@ -376,8 +390,9 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                 boost::json::array recvAckArray;
                 // vExpectedPsn must has stats, but vAckedPsn may not
                 bool bHasAckedPsn = flowStats->vAckedPsn.size() > 0;
-                // vAckedPsn's number of elements must be leq than vExpectedPsn's as a ack may carry
-                // acked psn, but must carry expected psn. Thus we use a index to iterate vAckedPsn.
+                // vAckedPsn's number of elements must be leq than vExpectedPsn's as a ack may
+                // carry acked psn, but must carry expected psn. Thus we use a index to iterate
+                // vAckedPsn.
                 uint32_t ackedPsnIndex = 0;
                 for (auto expectedPsn : flowStats->vExpectedPsn)
                 {
@@ -555,7 +570,8 @@ ConstructSwitchStats(Ptr<DcTopology> topology,
                     }
                     queueStatsObj.emplace("qLength", qLengthArray);
 
-                    // If background congestion control type is set, add the backgroundCongestion
+                    // If background congestion control type is set, add the
+                    // backgroundCongestion
                     if (qStats->backgroundCongestionTypeId != TypeId())
                     {
                         boost::json::array bgQlengthArray;

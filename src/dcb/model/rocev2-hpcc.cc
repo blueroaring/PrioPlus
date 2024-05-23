@@ -162,7 +162,7 @@ RoCEv2Hpcc::MeasureInflight(const HpccHeader& hpccHeader)
     Time baseRtt = m_sockState->GetBaseRtt();
     for (uint32_t i = 0; i < hpccHeader.m_nHop; i++) // Algorithm Line 3
     {
-        Time tauPrime = Time(hpccHeader.m_intHops[i].GetTimeDelta(m_hops[i]));
+        Time tauPrime = NanoSeconds(hpccHeader.m_intHops[i].GetTimeDelta(m_hops[i]));
         double txRate = (hpccHeader.m_intHops[i].GetBytesDelta(m_hops[i]) * 8.0) /
                         tauPrime.GetSeconds(); // Algorithm Line 4
         double uPrime = txRate / hpccHeader.m_intHops[i].GetLineRate().GetBitRate();

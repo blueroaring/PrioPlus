@@ -59,6 +59,14 @@ class DcbTxBuffer : public Object
 
     }; // class DcbTxBufferItem
 
+    enum TxPacketState : uint8_t
+    {
+        UNACK, // already been sent but not been acked
+        NACK, // already been retransmitted
+        ACK, // acked
+        UNDEF // out of range
+    };
+
     /**
      * \brief Get the type ID.
      * \return the object TypeId
@@ -125,12 +133,37 @@ class DcbTxBuffer : public Object
     /**
      * \brief Number of packets left to be sent
      */
-    uint32_t GetSizeToBeSent() const;
+    uint32_t GetSizeToBeSent();
     /**
      * \brief Add a PSN to the txQueue.
      * Called when a packet with the PSN is desired to be retransmit.
      */
     void Retransmit(uint32_t psn);
+    /**
+     * \brief Add a range of PSN to the txQueue.
+     * Called when a range of packets with the PSNs is desired to be retransmit.
+     */
+    void RetransmitRange(uint32_t from, uint32_t to);
+    /**
+     * @brief Get the number of On The Fly packets.
+     *
+     * @return uint32_t the number of On The Fly packets.
+     */
+    uint32_t GetOnTheFly();
+    /**
+     * @brief Get the Max Acked Psn.
+     * 
+     * @return uint32_t 
+     */
+    uint32_t GetMaxAckedPsn();
+    /**
+     * @brief Set the Pkt State of all pkt in range of [from, to)
+     * 
+     * @param from 
+     * @param to 
+     * @param state 
+     */
+    void SetPktState(uint32_t from, uint32_t to, uint8_t state);
     /**
      * \brief Retansmit all packets from the given PSN, i.e., go back N.
      * \return the number of packets to be retransmitted.
@@ -197,17 +230,17 @@ class DcbTxBuffer : public Object
         m_txQueue;             // PSN of the items to be sent
     std::vector<bool> m_acked; // Whether the packet with the PSN is acked, serve as a bitmap in
                                // retx mode IRN. The index is the PSN.
+    std::vector<uint8_t> m_pktState; // the state of a packet(ack, unack, lost, undef)
     uint32_t m_maxAckedPsn;    // The max PSN which has been acknowledged, used to detect gap.
 
     uint32_t m_remainSize;  // The size of data to be sent
-    // uint32_t m_nextGenPsn;  // The next PSN to be generated
+    uint32_t m_maxSentPsn;  // The max PSN has been sent
     Ipv4Address m_daddr;    // The destination address to send the packet
     Ptr<Ipv4Route> m_route; // The route to send the packet
     uint32_t m_mss;
-
-    uint8_t m_tos;
-    uint8_t m_priority;
-}; // class DcbTxBuffer
+    
+    Ptr<Packet> m_payload; // The payload to be sent
+};                                // class DcbTxBuffer
 
 class DcbRxBuffer : public Object
 {
@@ -387,8 +420,8 @@ class RoCEv2SocketState : public Object
     uint64_t m_cwnd; //!< unit: bytes
     DcbTxBuffer* m_txBuffer;
     DataRate* m_deviceRate;
-    Time m_baseRtt; //!< Base RTT. Note that this is auto set by DcbDcbTrafficGenApplication. If not, it
-                    //!< should be set manually.
+    Time m_baseRtt; //!< Base RTT. Note that this is auto set by DcbDcbTrafficGenApplication. If
+                    //!< not, it should be set manually.
     Time m_baseOneWayDelay; //!< Base one way delay. Note that this is auto set by
                             //!< DcbDcbTrafficGenApplication. If not, it should be set manually.
     uint32_t m_packetSize;  //!< MSS + headersize
@@ -583,7 +616,7 @@ class RoCEv2Socket : public UdpBasedSocket
     /**
      * \brief React to the ACK packet in IRN mode.
      */
-    void IrnReactToAck(uint32_t expectedPSN);
+    // void IrnReactToAck(uint32_t expectedPSN);
     /**
      * \brief React to the NACK packet in IRN mode.
      */
@@ -661,8 +694,17 @@ class RoCEv2Socket : public UdpBasedSocket
      * first unacked packet. For IRN, retransmit the first unacked packet.
      */
     void RetransmissionTimeout();
+    /**
+     * @brief Get the RTO time for IRN Timer.
+     * GBN return m_rto, in IRN when the number of on-the-fly pakcts less than m_irnPktThresh return
+     * m_irnRtoLow.
+     *
+     * @return Time
+     */
+    Time GetRTOTime();
     Time m_rto;         //!< Retransmission timeout (RTOhigh when IRN is used)
     EventId m_rtoEvent; //!< Event id of the next RTO event
+    Time m_lastRto; //!< The time of schedule a rto event
 
     Time m_irnRtoLow;        //!< Low retransmission timeout for IRN
     uint32_t m_irnPktThresh; //!< The threshold of the number of packets to trigger low RTO for IRN
@@ -673,6 +715,7 @@ class RoCEv2Socket : public UdpBasedSocket
         RUNNING,
         FINISHED
     };
+
     FlowState m_flowState;
 
 }; // class RoCEv2Socket

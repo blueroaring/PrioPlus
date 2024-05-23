@@ -42,23 +42,14 @@ class DcbTrafficGenApplicationHelper
 
     void SetProtocolGroup(DcbTrafficGenApplication::ProtocolGroup protoGroup);
     void SetCdf(std::unique_ptr<DcbTrafficGenApplication::TraceCdf> cdf);
-    void SetLoad(Ptr<const DcbNetDevice> dev, double load);
-    void SetLoad(DataRate rate, double load);
     /**
      * Set the load without calculating the flow interval, which will be
      * calculated at install to node
      */
-    void SetLoad(double load);
-    void CalcLoad(DataRate rate);
-    void SetDestination(int32_t dest);
-    void SetDestination(InetSocketAddress dest);
-    void SetSendEnabled(bool enabled);
-    void SetStaticFlowInterval(bool staticFlowInterval);
-    void SetSendOnce(bool sendOnce);
     void SetStartAndStopTime(Time start, Time stop);
     void SetStartTime(Time start);
     void SetRealTimeApp(bool realTimeApp);
-    void SetCongestionType(StringValue congestionType);
+    void SetApplicationTypeId(TypeId typeId);
     // Use move semantics to avoid copying the vector
     typedef std::pair<std::string, Ptr<AttributeValue>> ConfigEntry_t;
     void SetCcAttributes(std::vector<ConfigEntry_t>&& ccAttributes);
@@ -69,7 +60,7 @@ class DcbTrafficGenApplicationHelper
     /**
      * \brief Create an application according to the configuration.
      */
-    Ptr<DcbTrafficGenApplication> CreateApplication(Ptr<Node> node);
+    Ptr<DcbBaseApplication> CreateApplication(Ptr<Node> node);
 
     /**
      * Record an attribute to be set in each Application after it is is created.
@@ -132,18 +123,11 @@ class DcbTrafficGenApplicationHelper
     Ptr<DcTopology> m_topology;
     DcbTrafficGenApplication::ProtocolGroup m_protoGroup;
     std::unique_ptr<DcbTrafficGenApplication::TraceCdf> m_cdf;
-    double m_flowMeanInterval;
-    int32_t m_destNode;
-    InetSocketAddress m_destAddr;
-    bool m_sendEnabled;
-    double m_load;
-    bool m_staticFlowInterval;
-    bool m_sendOnce;
     Time m_startTime;
     Time m_stopTime;
     bool m_realTimeApp;
-    StringValue m_congestionType;
     
+    TypeId m_applicationTypeId;
     // The attributes to be set to the ccOps
     std::vector<ConfigEntry_t> m_ccAttributes;
     // The attributes to be set to the application
