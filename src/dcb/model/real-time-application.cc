@@ -20,6 +20,7 @@
 #include "real-time-application.h"
 
 #include "ns3/global-value.h"
+#include "ns3/tcp-socket-base.h"
 
 namespace ns3
 {
@@ -30,8 +31,10 @@ NS_OBJECT_ENSURE_REGISTERED(RealTimeApplication);
 TypeId
 RealTimeApplication::GetTypeId()
 {
-    static TypeId tid =
-        TypeId("ns3::RealTimeApplication").SetParent<DcbTrafficGenApplication>().SetGroupName("Dcb");
+    static TypeId tid = TypeId("ns3::RealTimeApplication")
+                            .SetParent<DcbTrafficGenApplication>()
+                            .SetGroupName("Dcb")
+                            .AddConstructor<RealTimeApplication>();
     return tid;
 }
 
@@ -43,9 +46,18 @@ RealTimeApplication::RealTimeApplication(Ptr<DcTopology> topology,
     NS_LOG_FUNCTION(this);
 
     // This will replace the base class's m_stats
-    m_stats = std::make_shared<Stats>();
+    m_stats = std::make_shared<Stats>(this);
 }
 
+RealTimeApplication::RealTimeApplication()
+    : DcbTrafficGenApplication(),
+      m_pktSeq(0)
+{
+    NS_LOG_FUNCTION(this);
+
+    // This will replace the base class's m_stats
+    m_stats = std::make_shared<Stats>(this);
+}
 
 RealTimeApplication::~RealTimeApplication()
 {
@@ -62,7 +74,8 @@ RealTimeApplication::SendNextPacket(Flow* flow)
     // Calculate the pktSeq from the flow's totalBytes and remainBytes
     // uint32_t pktSeq = (flow->totalBytes - flow->remainBytes) / MSS;
     RealTimeStatsTag tag(m_pktSeq++, Simulator::Now().GetNanoSeconds());
-    packet->AddPacketTag(tag);
+    // packet->AddPacketTag(tag);
+    packet->AddByteTag(tag);
 
     int actual = flow->socket->Send(packet);
     if (actual == static_cast<int>(packetSize))
@@ -133,16 +146,36 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
 
         // Real time statistics, record them from RealTimeStatsTag
         RealTimeStatsTag tag;
-        if (packet->PeekPacketTag(tag))
+        if (packet->FindFirstMatchingByteTag(tag))
         {
             // Construct the flow identifier
             InetSocketAddress inetFrom = InetSocketAddress::ConvertFrom(from);
-            Ipv4Address srcAddr = inetFrom.GetIpv4();
-            uint32_t srcPort = inetFrom.GetPort();
-            Ptr<RoCEv2Socket> roceSocket =
-                DynamicCast<RoCEv2Socket>(m_receiverSocket); // XXX Not a good way
-            Ipv4Address dstAddr = roceSocket->GetLocalAddress();
-            uint32_t dstPort = 100; // XXX Static for now
+            Ipv4Address srcAddr = inetFrom.GetIpv4(), dstAddr;
+            uint32_t srcPort = inetFrom.GetPort(), dstPort = 0;
+            if (m_protoGroup == ProtocolGroup::RoCEv2)
+            {
+                Ptr<RoCEv2Socket> roceSocket =
+                    DynamicCast<RoCEv2Socket>(m_receiverSocket); // XXX Not a good way
+                dstAddr = roceSocket->GetLocalAddress();
+                dstPort = 100; // XXX Static for now
+            }
+            else if (m_protoGroup == ProtocolGroup::TCP)
+            {
+                Ptr<TcpSocketBase> tcpSocket =
+                    DynamicCast<TcpSocketBase>(m_receiverSocket); // XXX Not a good way
+                Address local;
+                tcpSocket->GetSockName(local);
+
+                // Get the address the socket is bound to
+                Ptr<Ipv4> ipv4 = GetNode()->GetObject<Ipv4>();
+                Ipv4Address addr =
+                    ipv4->GetAddress(ipv4->GetInterfaceForDevice(GetOutboundNetDevice()), 0)
+                        .GetLocal();
+                NS_LOG_INFO("Receiver is bound to " << addr);
+
+                dstAddr = addr;
+                dstPort = InetSocketAddress::ConvertFrom(local).GetPort();
+            }
             FlowIdentifier flowId(srcAddr, dstAddr, srcPort, dstPort);
 
             // Get the flow stats, if not exist, create one
@@ -161,12 +194,13 @@ RealTimeApplication::HandleRead(Ptr<Socket> socket)
             uint32_t pktSeq = tag.GetPktSeq();
             flowStats->nMaxRecvSeq = std::max(flowStats->nMaxRecvSeq, pktSeq);
 
-            flowStats->vArriveDelay.push_back(Simulator::Now() -NanoSeconds(tag.GetTArriveNs()));
-            flowStats->vTxDelay.push_back(Simulator::Now() -NanoSeconds(tag.GetTTxNs()));
+            flowStats->vArriveDelay.push_back(Simulator::Now() - NanoSeconds(tag.GetTArriveNs()));
+            flowStats->vTxDelay.push_back(Simulator::Now() - NanoSeconds(tag.GetTTxNs()));
 
             flowStats->nTotalRecvBytes += packet->GetSize();
             flowStats->nTotalRecvPkts++;
-            flowStats->tFirstPktArrive = std::min(flowStats->tFirstPktArrive,NanoSeconds(tag.GetTArriveNs()));
+            flowStats->tFirstPktArrive =
+                std::min(flowStats->tFirstPktArrive, NanoSeconds(tag.GetTArriveNs()));
             flowStats->tFirstPktRecv = std::min(flowStats->tFirstPktRecv, Simulator::Now());
             flowStats->tLastPktRecv = std::max(flowStats->tLastPktRecv, Simulator::Now());
 
@@ -185,8 +219,10 @@ RealTimeApplication::GetStats() const
     return m_stats;
 }
 
-RealTimeApplication::Stats::Stats()
-    : isCollected(false)
+RealTimeApplication::Stats::Stats(Ptr<RealTimeApplication> app)
+    : DcbTrafficGenApplication::Stats(app),
+      m_app(app),
+      isCollected(false)
 {
 }
 

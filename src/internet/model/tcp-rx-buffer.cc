@@ -388,7 +388,7 @@ TcpRxBuffer::Extract(uint32_t maxSize)
         return nullptr; // No contiguous block to return
     }
     NS_ASSERT(!m_data.empty());            // At least we have something to extract
-    Ptr<Packet> outPkt = Create<Packet>(); // The packet that contains all the data to return
+    Ptr<Packet> outPkt = nullptr;          // The packet that contains all the data to return
     BufIterator i;
     while (extractSize)
     { // Check the buffered data for delivery
@@ -398,7 +398,10 @@ TcpRxBuffer::Extract(uint32_t maxSize)
         uint32_t pktSize = i->second->GetSize();
         if (pktSize <= extractSize)
         { // Whole packet is extracted
-            outPkt->AddAtEnd(i->second);
+            if (outPkt == nullptr)
+                outPkt = i->second;
+            else
+                outPkt->AddAtEnd(i->second);
             m_data.erase(i);
             m_size -= pktSize;
             m_availBytes -= pktSize;
@@ -406,7 +409,10 @@ TcpRxBuffer::Extract(uint32_t maxSize)
         }
         else
         { // Partial is extracted and done
-            outPkt->AddAtEnd(i->second->CreateFragment(0, extractSize));
+            if (outPkt == nullptr)
+                outPkt = i->second->CreateFragment(0, extractSize);
+            else
+                outPkt->AddAtEnd(i->second->CreateFragment(0, extractSize));
             m_data[i->first + SequenceNumber32(extractSize)] =
                 i->second->CreateFragment(extractSize, pktSize - extractSize);
             m_data.erase(i);

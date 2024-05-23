@@ -163,9 +163,19 @@ ConstructAppStatsObj(ApplicationContainer& apps)
         finishTime = std::max(finishTime, appStats->tFinish);
         totalPkts += appStats->nTotalSizePkts;
         totalBytes += appStats->nTotalSizeBytes;
-        totalSentPkts += appStats->nTotalSentPkts;
-        totalSentBytes += appStats->nTotalSentBytes;
-        retxCount += appStats->nRetxCount;
+        if (app->GetProtoGroup() == DcbTrafficGenApplication::ProtocolGroup::RoCEv2)
+        {
+            totalSentPkts += appStats->nTotalSentPkts;
+            totalSentBytes += appStats->nTotalSentBytes;
+            retxCount += appStats->nRetxCount;
+        }
+        else if (app->GetProtoGroup() == DcbTrafficGenApplication::ProtocolGroup::TCP)
+        {
+            // TCP does not support totalSent and retxCount, o we use the totalSizePkts and
+            // totalSizeBytes to calculate the retx rate, which will be zero.
+            totalSentPkts += appStats->nTotalSizePkts;
+            totalSentBytes += appStats->nTotalSizeBytes;
+        }
 
         // Per flow statistics
         auto mFlowStats = appStats->mFlowStats;
@@ -230,7 +240,10 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
             (*flowStatsObj)["flowType"] = appStats->appFlowType;
             (*flowStatsObj)["totalSizePkts"] = flowStats->nTotalSizePkts;
             (*flowStatsObj)["totalSizeBytes"] = flowStats->nTotalSizeBytes;
-            (*flowStatsObj)["retxCount"] = flowStats->nRetxCount;
+            if (app->GetProtoGroup() == DcbTrafficGenApplication::ProtocolGroup::RoCEv2)
+            {
+                (*flowStatsObj)["retxCount"] = flowStats->nRetxCount;
+            }
             (*flowStatsObj)["fctNs"] = flowStats->tFct.GetNanoSeconds();
             (*flowStatsObj)["startNs"] = flowStats->tStart.GetNanoSeconds();
             (*flowStatsObj)["finishNs"] = flowStats->tFinish.GetNanoSeconds();

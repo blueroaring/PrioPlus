@@ -131,13 +131,29 @@ class DcbBaseApplication : public Application
     void SetCcOpsAttributes(const std::vector<ConfigEntry_t>& configs);
     void SetSocketAttributes(const std::vector<ConfigEntry_t>& configs);
 
+    inline const ProtocolGroup GetProtoGroup() const
+    {
+        return m_protoGroup;
+    }
+
+    inline const bool GetSendAbility() const
+    {
+        return m_enableSend;
+    }
+
+    inline const Ptr<Node> GetNode() const
+    {
+        return m_node;
+    }
+
     constexpr static inline const uint64_t MSS = 1000; // bytes
 
     class Stats
     {
       public:
         // constructor
-        Stats();
+        Stats(Ptr<DcbBaseApplication> app);
+        Ptr<DcbBaseApplication> m_app;
 
         virtual ~Stats()
         {
@@ -221,8 +237,9 @@ class DcbBaseApplication : public Application
     Ptr<DcTopology> m_topology; //!< The topology
     uint32_t m_nodeIndex;
     ProtocolGroup m_protoGroup; //!< Protocol group
+    std::list<Ptr<Socket>> m_acceptedSocketList; //!< the accepted sockets
 
-  // private:
+    // private:
     /**
      * \brief Init fields, e.g., RNGs and m_socketLinkRate.
      */
