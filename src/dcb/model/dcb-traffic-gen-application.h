@@ -33,7 +33,6 @@
 #include "ns3/random-variable-stream.h"
 #include "ns3/rocev2-header.h"
 #include "ns3/seq-ts-size-header.h"
-#include "ns3/sequence-number.h"
 #include "ns3/traced-callback.h"
 
 #include <map>
@@ -167,13 +166,6 @@ class DcbTrafficGenApplication : public DcbBaseApplication
      * \brief Calculate parameters of traffic.
      */
     virtual void CalcTrafficParameters() override;
-
-    /**
-     * \brief Callback for UnackSequence in TcpTxBuffer, in order to record the flow end time.
-     * \param oldValue The old value of UnackSequence
-     * \param newValue The new value of UnackSequence
-     */
-    static void TcpFlowEnds(Flow* flow, SequenceNumber32 oldValue, SequenceNumber32 newValue);
 
     std::shared_ptr<Stats> m_stats;
 

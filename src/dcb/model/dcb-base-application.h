@@ -30,6 +30,7 @@
 #include "ns3/random-variable-stream.h"
 #include "ns3/rocev2-header.h"
 #include "ns3/seq-ts-size-header.h"
+#include "ns3/sequence-number.h"
 #include "ns3/traced-callback.h"
 
 #include <map>
@@ -126,6 +127,13 @@ class DcbBaseApplication : public Application
     void SetReceiveEnabled(bool enabled);
 
     virtual void FlowCompletes(Ptr<UdpBasedSocket> socket);
+
+    /**
+     * \brief Callback for UnackSequence in TcpTxBuffer, in order to record the flow end time.
+     * \param oldValue The old value of UnackSequence
+     * \param newValue The new value of UnackSequence
+     */
+    static void TcpFlowEnds(Flow* flow, SequenceNumber32 oldValue, SequenceNumber32 newValue);
 
     typedef std::pair<std::string, Ptr<AttributeValue>> ConfigEntry_t;
     void SetCcOpsAttributes(const std::vector<ConfigEntry_t>& configs);

@@ -562,6 +562,15 @@ DcbBaseApplication::FlowCompletes(Ptr<UdpBasedSocket> socket)
 }
 
 void
+DcbBaseApplication::TcpFlowEnds(Flow* flow, SequenceNumber32 oldValue, SequenceNumber32 newValue)
+{
+    if (newValue.GetValue() >= flow->totalBytes)
+    {
+        flow->finishTime = Simulator::Now();
+    }
+}
+
+void
 DcbBaseApplication::SetSendEnabled(bool enabled)
 {
     m_enableSend = enabled;

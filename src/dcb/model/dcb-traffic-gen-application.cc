@@ -394,17 +394,6 @@ DcbTrafficGenApplication::GetDestinationNode() const
 }
 
 void
-DcbTrafficGenApplication::TcpFlowEnds(Flow* flow,
-                                      SequenceNumber32 oldValue,
-                                      SequenceNumber32 newValue)
-{
-    if (newValue.GetValue() >= flow->totalBytes)
-    {
-        flow->finishTime = Simulator::Now();
-    }
-}
-
-void
 DcbTrafficGenApplication::ScheduleNextFlow(const Time& startTime)
 {
     uint32_t destNode = 0;
@@ -429,7 +418,7 @@ DcbTrafficGenApplication::ScheduleNextFlow(const Time& startTime)
         Ptr<TcpTxBuffer> tcpTxBuffer = DynamicCast<TcpSocketBase>(socket)->GetTxBuffer();
         tcpTxBuffer->TraceConnectWithoutContext(
             "UnackSequence",
-            MakeBoundCallback(&DcbTrafficGenApplication::TcpFlowEnds, flow));
+            MakeBoundCallback(&DcbBaseApplication::TcpFlowEnds, flow));
     }
 
     // If the trafficType is BACKGROUND, we need to add a false to m_bgFlowFinished
