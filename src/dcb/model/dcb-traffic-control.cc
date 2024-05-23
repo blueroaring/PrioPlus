@@ -317,7 +317,7 @@ DcbTrafficControl::Buffer::InPacketProcess(uint32_t inPortIndex,
     Ptr<DcbFlowControlMmuQueue> inQueue = m_ports[inPortIndex].GetFCMmuQueue(inQueuePriority);
     Ptr<DcbFlowControlMmuQueue> outQueue = m_ports[outPortIndex].GetFCMmuQueue(outQueuePriority);
     bool success =
-        inQueue->CheckIngressAdmission(packetSize) & outQueue->CheckEgressAdmission(packetSize);
+        inQueue->CheckIngressAdmission(packetSize) && outQueue->CheckEgressAdmission(packetSize);
     if (success)
     {
         inQueue->IngressIncrement(packetSize);

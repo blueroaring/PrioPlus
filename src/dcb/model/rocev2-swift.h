@@ -45,11 +45,11 @@ class RoCEv2Swift : public RoCEv2CongestionOps
      * \brief Get the type ID.
      * \return the object TypeId
      */
-    static TypeId GetTypeId(void);
+    static TypeId GetTypeId();
 
     RoCEv2Swift();
     RoCEv2Swift(Ptr<RoCEv2SocketState> sockState);
-    ~RoCEv2Swift();
+    ~RoCEv2Swift() override;
 
     // void SetRateAIRatio(double ratio);
     // void SetRateHyperAIRatio(double ratio);
@@ -93,7 +93,7 @@ class RoCEv2Swift : public RoCEv2CongestionOps
         // No getter for simplicity
     };
 
-    inline std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const
+    inline std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const override
     {
         return m_stats;
     }

@@ -50,11 +50,11 @@ class RoCEv2Ledbat : public RoCEv2CongestionOps
      * \brief Get the type ID.
      * \return the object TypeId
      */
-    static TypeId GetTypeId(void);
+    static TypeId GetTypeId();
 
     RoCEv2Ledbat();
     RoCEv2Ledbat(Ptr<RoCEv2SocketState> sockState);
-    ~RoCEv2Ledbat();
+    ~RoCEv2Ledbat() override;
 
     // void SetRateAIRatio(double ratio);
     // void SetRateHyperAIRatio(double ratio);
@@ -101,7 +101,7 @@ class RoCEv2Ledbat : public RoCEv2CongestionOps
         // No getter for simplicity
     };
 
-    std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const;
+    std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const override;
 
   private:
     /**

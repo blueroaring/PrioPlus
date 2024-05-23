@@ -147,7 +147,6 @@ ConstructAppStatsObj(ApplicationContainer& apps)
     uint64_t totalBytes = 0;
     uint32_t totalSentPkts = 0;
     uint64_t totalSentBytes = 0;
-    uint32_t retxCount = 0;
     // FCT of all flows, used to calculate the average and percentile FCT
     std::vector<Time> vFct;
 
@@ -163,6 +162,7 @@ ConstructAppStatsObj(ApplicationContainer& apps)
         finishTime = std::max(finishTime, appStats->tFinish);
         totalPkts += appStats->nTotalSizePkts;
         totalBytes += appStats->nTotalSizeBytes;
+
         if (app->GetProtoGroup() == DcbTrafficGenApplication::ProtocolGroup::RoCEv2)
         {
             totalSentPkts += appStats->nTotalSentPkts;
@@ -179,7 +179,7 @@ ConstructAppStatsObj(ApplicationContainer& apps)
 
         // Per flow statistics
         auto mFlowStats = appStats->mFlowStats;
-        for (auto pFlowStats : mFlowStats)
+        for (const auto &pFlowStats : mFlowStats)
         {
             vFct.push_back(pFlowStats.second->tFct);
         }
