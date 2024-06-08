@@ -22,6 +22,7 @@
 #include "dcb-flow-control-port.h"
 #include "dcb-pfc-port.h"
 #include "pausable-queue-disc.h"
+#include "rocev2-socket.h"
 
 #include "ns3/address.h"
 #include "ns3/boolean.h"
@@ -249,8 +250,7 @@ DcbTrafficControl::PeekPriorityOfPacket(const Ptr<const Packet> packet)
 {
     Ipv4Header ipv4Header;
     packet->PeekHeader(ipv4Header);
-    return Socket::IpTos2Priority(ipv4Header.GetTos());
-    // return ipv4Header.GetDscp () >> 3;
+    return RoCEv2Socket::IpTos2Priority(ipv4Header.GetTos());
 }
 
 DcbTrafficControl::PortInfo::PortInfo()

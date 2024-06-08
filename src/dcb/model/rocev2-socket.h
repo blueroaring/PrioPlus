@@ -540,6 +540,12 @@ class RoCEv2Socket : public UdpBasedSocket
 
     std::shared_ptr<Stats> GetStats() const;
 
+    /**
+     * \param ipTos the TOS value (in the range 0..255)
+     * \return The priority value corresponding to the given TOS value
+    */
+    static uint8_t IpTos2Priority(uint8_t ipTos);
+
   protected:
     void DoSendTo(Ptr<Packet> p, Ipv4Address daddr, Ptr<Ipv4Route> route) override;
 
