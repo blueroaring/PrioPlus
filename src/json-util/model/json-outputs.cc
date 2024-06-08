@@ -535,7 +535,7 @@ ConstructSwitchStats(Ptr<DcTopology> topology,
                     // switchRecordInterval
                     StringValue sv;
                     Time recordInterval = Time(0); // Must be set, otherwise fatal error before
-                    if (GlobalValue::GetValueByNameFailSafe("switchRecordInterval", sv))
+                    if (GlobalValue::GetValueByNameFailSafe("qlengthRecordInterval", sv))
                         recordInterval = Time(sv.Get());
                     uint32_t nPoints =
                         ((double)finishTime.GetNanoSeconds() - (double)startTime.GetNanoSeconds()) /

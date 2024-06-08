@@ -198,7 +198,7 @@ RoCEv2Socket::SendPendingPacket()
     //     return;
     // }
     Ptr<RoCEv2L4Protocol> rocev2Proto = DynamicCast<RoCEv2L4Protocol>(m_innerProto);
-    uint32_t outPortPriority = GetPriority();
+    uint32_t outPortPriority = IpTos2Priority(GetIpTos());
     if (rocev2Proto->CheckCouldSend(m_boundnetdevice->GetIfIndex(), outPortPriority) == false)
     {
         // The queue disc is unavaliable, register a callback to RoCEv2L4Proto and wait for the
@@ -911,6 +911,12 @@ RoCEv2Socket::GetRTOTime()
     {
         NS_ASSERT_MSG(false, "wrong rtx mode");
     }
+}
+
+uint8_t
+RoCEv2Socket::IpTos2Priority(uint8_t ipTos)
+{
+    return ipTos >> 2;
 }
 
 NS_OBJECT_ENSURE_REGISTERED(DcbTxBuffer);

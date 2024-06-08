@@ -21,6 +21,7 @@
 
 #include "dcb-traffic-control.h"
 #include "fifo-queue-disc-ecn.h"
+#include "rocev2-socket.h"
 
 #include "ns3/assert.h"
 #include "ns3/boolean.h"
@@ -228,7 +229,7 @@ PausableQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
     if (item->GetPacket()->PeekPacketTag(
             cosTag)) // costag should be removed in DcbTrafficControl::EgressProcess
     {
-        priority = cosTag.GetCoS() & 0x0f;
+        priority = cosTag.GetCoS() & 0x3f;
     }
     else
     {
@@ -240,7 +241,7 @@ PausableQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
             NS_LOG_ERROR("PausableQueueDisc: could not find the packet's priority");
             return false;
         }
-        priority = Socket::IpTos2Priority(ipv4Qdi->GetHeader().GetTos());
+        priority = RoCEv2Socket::IpTos2Priority(ipv4Qdi->GetHeader().GetTos());
     }
     NS_ASSERT_MSG(priority < 8, "Priority should be 0~7 but here we have " << priority);
 
