@@ -44,8 +44,21 @@ class PausableQueueDiscClass : public QueueDiscClass
 
     void SetPaused(bool paused);
 
+    void SetWdrrParameters(uint32_t quantum, uint32_t maxCredit);
+
+    void IncrementCredit();
+
+    void DecrementCredit(uint32_t size);
+
+    bool HasCredit() const;
+
   private:
     bool m_isPaused;
+
+    /***** Members for WDRR *****/
+    int32_t m_quantum;  // The quantum for WDRR, in bytes
+    int32_t m_credit;    // The credit for WDRR, in bytes, can be negative
+    int32_t m_maxCredit; // The maximum credit for WDRR, in bytes
 }; // PausableQueueDiscClass
 
 class PausableQueueDisc : public QueueDisc
@@ -97,6 +110,13 @@ class PausableQueueDisc : public QueueDisc
      */
     void RegisterSendDataCallback(Callback<void, uint32_t, uint32_t> cb);
 
+    /**
+     * \brief Called to set ECN threshold for all inner queues manually.
+     * \param kmin the minimum threshold
+     * \param kmax the maximum threshold
+     */
+    void SetEcnThres(std::string kmin, std::string kmax);
+
     class Stats
     {
       public:
@@ -133,6 +153,17 @@ class PausableQueueDisc : public QueueDisc
      */
     void SetDetailedSwitchStats(bool bDetailedQlengthStats);
 
+    /**
+     * \brief Set the WDRR parameters for the queue disc.
+     */
+    void SetWdrrParameters(std::vector<uint32_t> priorities,
+                           std::vector<uint32_t> quantum,
+                           uint32_t maxCredit);
+    /**
+     * \brief Default configuration, construct a strict priority m_priorityToInnerQueue.
+     */
+    void SetDefaultStrictPriority();
+
   protected:
     Ptr<Node> m_node; //!< Node owning this NetDevice
 
@@ -162,6 +193,10 @@ class PausableQueueDisc : public QueueDisc
     virtual void InitializeParams(void) override;
 
     std::shared_ptr<Stats> m_stats;
+
+    /***** Members for WDRR *****/
+    std::map<uint32_t, std::vector<uint32_t>>
+        m_priorityToInnerQueue; //<! Map from priority to inner queue index
 }; // class PausableQueueDisc
 
 } // namespace ns3

@@ -62,14 +62,16 @@ RoCEv2Ledbat::GetTypeId()
 }
 
 RoCEv2Ledbat::RoCEv2Ledbat()
-    : RoCEv2CongestionOps()
+    : RoCEv2CongestionOps(std::make_shared<Stats>()),
+      m_stats(std::dynamic_pointer_cast<Stats>(RoCEv2CongestionOps::m_stats))
 {
     NS_LOG_FUNCTION(this);
     Init();
 }
 
 RoCEv2Ledbat::RoCEv2Ledbat(Ptr<RoCEv2SocketState> sockState)
-    : RoCEv2CongestionOps(sockState)
+    : RoCEv2CongestionOps(sockState, std::make_shared<Stats>()),
+      m_stats(std::dynamic_pointer_cast<Stats>(RoCEv2CongestionOps::m_stats))
 {
     NS_LOG_FUNCTION(this);
     Init();
@@ -92,14 +94,7 @@ RoCEv2Ledbat::Init()
 
     InitCircBuf(m_noiseFilter);
 
-    // m_stats = std::make_shared<Stats>();
     RegisterCongestionType(GetTypeId());
-}
-
-std::shared_ptr<RoCEv2CongestionOps::Stats>
-RoCEv2Ledbat::GetStats() const
-{
-    return m_stats;
 }
 
 void
@@ -140,7 +135,7 @@ RoCEv2Ledbat::UpdateStateWithGenACK(Ptr<Packet> packet, Ptr<Packet> ack)
 {
     NS_LOG_FUNCTION(this << packet << ack);
     // Add a LedbatHeader into ack, which record the ts of recv the data packet.
-    // Note that the ACK has RoCEv2Header and AETHeader. And we should add HarvestHeader between
+    // Note that the ACK has RoCEv2Header and AETHeader. And we should add PrioplusHeader between
     // them.
     RoCEv2Header roceHeader;
     LedbatHeader ledbatHeader;

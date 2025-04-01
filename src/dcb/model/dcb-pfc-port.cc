@@ -52,9 +52,9 @@ DcbPfcPort::GetTypeId()
                                           "RESET_UPSTREAM_PAUSED"))
             .AddAttribute("EnableVec",
                           "The enable vector of the PFC",
-                          UintegerValue(0xff),
+                          UintegerValue(UINT64_MAX),
                           MakeUintegerAccessor(&DcbPfcPort::SetEnableVec),
-                          MakeUintegerChecker<uint8_t>())
+                          MakeUintegerChecker<uint64_t>())
             .AddTraceSource("PfcSent",
                             "PFC pause frame sent",
                             MakeTraceSourceAccessor(&DcbPfcPort::m_tracePfcSent),
@@ -111,7 +111,7 @@ DcbPfcPort::DoSendPause(uint8_t priority, const Address& from)
 {
     NS_LOG_DEBUG("PFC: Send pause frame from node " << Simulator::GetContext() << " port "
                                                     << m_dev->GetIfIndex());
-    Ptr<Packet> pfcFrame = PfcFrame::GeneratePauseFrame(priority);
+    Ptr<Packet> pfcFrame = ExtraGeneratePauseFrame(priority, 65535);
     // pause frames are sent directly to device without queueing in egress QueueDisc
     m_dev->Send(pfcFrame, from, PfcFrame::PROT_NUMBER);
     SetUpstreamPaused(priority, true); // mark this ingress queue as paused
@@ -173,13 +173,14 @@ DcbPfcPort::DoPacketOutCallbackProcess(uint32_t priority, Ptr<Packet> packet)
 {
     NS_LOG_FUNCTION(this);
 
+    priority &= 0x3f; // at most 64 priorities
     if (CheckEnableVec(priority))
     {
         if (CheckShouldSendResume(priority))
         {
             NS_LOG_DEBUG("PFC: Send resume frame from node " << Simulator::GetContext() << " port "
                                                              << m_dev->GetIfIndex());
-            Ptr<Packet> pfcFrame = PfcFrame::GeneratePauseFrame(priority, (uint16_t)0);
+            Ptr<Packet> pfcFrame = ExtraGeneratePauseFrame(priority, (uint16_t)0);
             m_dev->Send(pfcFrame, Address(), PfcFrame::PROT_NUMBER);
             SetUpstreamPaused(priority, false);
             m_tracePfcSent(GetNodeAndPortId(), priority, false);
@@ -208,68 +209,44 @@ DcbPfcPort::ReceivePfc(Ptr<NetDevice> dev,
     NS_LOG_FUNCTION(this << dev << protocol << from << to);
 
     Ptr<DcbNetDevice> device = DynamicCast<DcbNetDevice>(dev);
-    const uint32_t index = device->GetIfIndex();
     PfcFrame pfcFrame;
     packet->PeekHeader(pfcFrame);
-    uint8_t enableVec = pfcFrame.GetEnableClassField();
-    for (uint8_t priority = 0; enableVec > 0; enableVec >>= 1, priority++)
+    if (pfcFrame.GetOpcode() == PfcFrame::EXTRA_OPCODE)
     {
-        if (enableVec & 1)
+        CoSTag cosTag;
+        packet->PeekPacketTag(cosTag); // It's OK not removing the tag
+        uint8_t priority = cosTag.GetCoS();
+        uint16_t quanta = pfcFrame.GetQuanta(0);
+        HandlePfc(device, priority, quanta);
+    }
+    else if (pfcFrame.GetOpcode() == PfcFrame::DEFAULT_OPCODE)
+    {
+        uint8_t enableVec = pfcFrame.GetEnableClassField();
+        for (uint8_t priority = 0; enableVec > 0; enableVec >>= 1, priority++)
         {
-            uint16_t quanta = pfcFrame.GetQuanta(priority);
-            Ptr<PausableQueueDisc> qDisc = device->GetQueueDisc();
-
-            if (quanta > 0)
+            if (enableVec & 1)
             {
-                qDisc->SetPaused(priority, true);
-
-                if (m_reactionType != NEVER_EXPIRE)
-                {
-                    Time pauseTime = PauseDuration(quanta, device->GetDataRate());
-                    EventId event =
-                        Simulator::Schedule(pauseTime,
-                                            &PausableQueueDisc::SetPaused,
-                                            qDisc,
-                                            priority,
-                                            false); // resume the queue after the pause time.
-                    // Update egress resume event
-                    if (m_egressResumeEvents[priority].IsRunning())
-                        m_egressResumeEvents[priority].Cancel();
-                    m_egressResumeEvents[priority] = event;
-                }
-
-                m_tracePfcReceived(GetNodeAndPortId(), priority, true);
-                NS_LOG_DEBUG("PFC: node " << Simulator::GetContext() << " port " << index
-                                          << " priority " << (uint32_t)priority << " is paused");
-            }
-            else
-            {
-                qDisc->SetPaused(priority, false);
-
-                if (m_reactionType != NEVER_EXPIRE)
-                {
-                    // Cancel egress resume event
-                    if (m_egressResumeEvents[priority].IsRunning())
-                        m_egressResumeEvents[priority].Cancel();
-                    // CancelPauseEvent(priority);
-                }
-
-                m_tracePfcReceived(GetNodeAndPortId(), priority, false);
-                NS_LOG_DEBUG("PFC: node " << Simulator::GetContext() << " port " << index
-                                          << " priority " << (uint32_t)priority << " is resumed");
+                uint16_t quanta = pfcFrame.GetQuanta(priority);
+                HandlePfc(device, priority, quanta);
             }
         }
+    }
+    else
+    {
+        NS_FATAL_ERROR("PFC: node "
+                       << Simulator::GetContext() << " port " << device->GetIfIndex()
+                       << " received an unknown PFC frame with opcode=" << pfcFrame.GetOpcode());
     }
 }
 
 inline bool
 DcbPfcPort::CheckEnableVec(uint8_t cls)
 {
-    return (m_port.m_enableVec & (1 << cls));
+    return (m_port.m_enableVec & (1UL << cls));
 }
 
 void
-DcbPfcPort::SetEnableVec(uint8_t enableVec)
+DcbPfcPort::SetEnableVec(uint64_t enableVec)
 {
     NS_LOG_FUNCTION(this << enableVec);
     m_port.m_enableVec = enableVec;
@@ -313,6 +290,75 @@ DcbPfcPort::PauseDuration(uint16_t quanta, DataRate lineRate) const
     return NanoSeconds(1e9 * quanta * PfcFrame::QUANTUM_BIT / lineRate.GetBitRate());
 }
 
+Ptr<Packet>
+DcbPfcPort::ExtraGeneratePauseFrame(uint8_t priority, uint16_t quanta)
+{
+    if (priority <= 7)
+    {
+        return PfcFrame::GeneratePauseFrame(priority, quanta);
+    }
+    else
+    {
+        PfcFrame pfcFrame;
+        pfcFrame.SetOpcode(PfcFrame::EXTRA_OPCODE);
+        pfcFrame.EnableClass(0);
+        pfcFrame.SetQuanta(0, quanta);
+
+        CoSTag cosTag;
+        cosTag.SetCoS(priority);
+
+        Ptr<Packet> packet = Create<Packet>(0);
+        packet->AddHeader(pfcFrame);
+        packet->AddPacketTag(cosTag);
+        return packet;
+    }
+}
+
+void
+DcbPfcPort::HandlePfc(Ptr<DcbNetDevice> device, uint8_t priority, uint16_t quanta)
+{
+    Ptr<PausableQueueDisc> qDisc = device->GetQueueDisc();
+
+    if (quanta > 0)
+    {
+        qDisc->SetPaused(priority, true);
+
+        if (m_reactionType != NEVER_EXPIRE)
+        {
+            Time pauseTime = PauseDuration(quanta, device->GetDataRate());
+            EventId event = Simulator::Schedule(pauseTime,
+                                                &PausableQueueDisc::SetPaused,
+                                                qDisc,
+                                                priority,
+                                                false); // resume the queue after the pause time.
+            // Update egress resume event
+            if (m_egressResumeEvents[priority].IsRunning())
+                m_egressResumeEvents[priority].Cancel();
+            m_egressResumeEvents[priority] = event;
+        }
+
+        m_tracePfcReceived(GetNodeAndPortId(), priority, true);
+        NS_LOG_DEBUG("PFC: node " << Simulator::GetContext() << " port " << device->GetIfIndex()
+                                  << " priority " << (uint32_t)priority << " is paused");
+    }
+    else
+    {
+        qDisc->SetPaused(priority, false);
+
+        if (m_reactionType != NEVER_EXPIRE)
+        {
+            // Cancel egress resume event
+            if (m_egressResumeEvents[priority].IsRunning())
+                m_egressResumeEvents[priority].Cancel();
+            // CancelPauseEvent(priority);
+        }
+
+        m_tracePfcReceived(GetNodeAndPortId(), priority, false);
+        NS_LOG_DEBUG("PFC: node " << Simulator::GetContext() << " port " << device->GetIfIndex()
+                                  << " priority " << (uint32_t)priority << " is resumed");
+    }
+}
+
 std::pair<uint32_t, uint32_t>
 DcbPfcPort::GetNodeAndPortId() const
 {
@@ -325,12 +371,12 @@ DcbPfcPort::GetNodeAndPortId() const
 
 DcbPfcPort::IngressPortInfo::IngressPortInfo(uint32_t index)
     : m_index(index),
-      m_enableVec(0xff)
+      m_enableVec(UINT64_MAX)
 {
     m_ingressQueues.resize(DcbTrafficControl::PRIORITY_NUMBER);
 }
 
-DcbPfcPort::IngressPortInfo::IngressPortInfo(uint32_t index, uint8_t enableVec)
+DcbPfcPort::IngressPortInfo::IngressPortInfo(uint32_t index, uint64_t enableVec)
     : m_index(index),
       m_enableVec(enableVec)
 {

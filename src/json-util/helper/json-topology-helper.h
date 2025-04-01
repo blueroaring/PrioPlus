@@ -26,9 +26,9 @@
 #include "ns3/dc-topology.h"
 #include "ns3/dcb-channel.h"
 #include "ns3/dcb-fc-helper.h"
-#include "ns3/dcb-stack-helper.h"
 #include "ns3/dcb-net-device.h"
 #include "ns3/dcb-pfc-port.h"
+#include "ns3/dcb-stack-helper.h"
 #include "ns3/dcb-traffic-gen-application-helper.h"
 #include "ns3/global-router-interface.h"
 #include "ns3/inet-socket-address.h"
@@ -45,6 +45,7 @@
 #include "ns3/queue-disc.h"
 #include "ns3/queue-size.h"
 #include "ns3/socket.h"
+#include "ns3/switch-node.h"
 #include "ns3/traced-value.h"
 
 #include <boost/json.hpp>

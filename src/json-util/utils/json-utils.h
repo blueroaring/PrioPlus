@@ -68,8 +68,8 @@ typedef std::pair<std::string, Ptr<AttributeValue>> ConfigEntry_t;
  * \param configObj The json object.
  * \return A vector of ConfigEntry_t.
  */
-std::unique_ptr<std::vector<ConfigEntry_t>>
-ConstructConfigVector(const boost::json::object& configObj);
+std::unique_ptr<std::vector<ConfigEntry_t>> ConstructConfigVector(
+    const boost::json::object& configObj);
 
 /*****************************************************
  * A series of functions to extract field from json.
@@ -187,6 +187,22 @@ JsonCallIfExistsInt(const boost::json::object& obj,
         return false;
     }
     callback(static_cast<U>(subobj->value().as_int64()));
+    return true;
+}
+
+template <typename U>
+bool
+JsonCallIfExistsFloat(const boost::json::object& obj,
+                      std::string field,
+                      std::function<void(U)> callback)
+{
+    static_assert(std::is_floating_point<U>::value, "Floating point type required.");
+    boost::json::object::const_iterator subobj = obj.find(field);
+    if (subobj == obj.end())
+    {
+        return false;
+    }
+    callback(static_cast<U>(subobj->value().as_double()));
     return true;
 }
 

@@ -45,6 +45,11 @@ RoCEv2Swift::GetTypeId()
                           DoubleValue(0.005),
                           MakeDoubleAccessor(&RoCEv2Swift::m_raiRatio),
                           MakeDoubleChecker<double>())
+            .AddAttribute("TargetScaling",
+                          "Whether to scale the target delay.",
+                          BooleanValue(true),
+                          MakeBooleanAccessor(&RoCEv2Swift::m_targetScaling),
+                          MakeBooleanChecker())
             .AddAttribute("Beta",
                           "Swift's beta, the multiplicative decrement factor",
                           DoubleValue(0.8),
@@ -60,6 +65,11 @@ RoCEv2Swift::GetTypeId()
                           DoubleValue(4.0),
                           MakeDoubleAccessor(&RoCEv2Swift::m_range),
                           MakeDoubleChecker<double>())
+            .AddAttribute("ScalingMin",
+                          "Swift's fs_min_cwnd, set in pkts",
+                          DoubleValue(0.1),
+                          MakeDoubleAccessor(&RoCEv2Swift::m_fsMin),
+                          MakeDoubleChecker<double>())
             .AddAttribute("BaseTarget",
                           "Swift's base target delay",
                           TimeValue(MicroSeconds(25)),
@@ -69,14 +79,16 @@ RoCEv2Swift::GetTypeId()
 }
 
 RoCEv2Swift::RoCEv2Swift()
-    : RoCEv2CongestionOps()
+    : RoCEv2CongestionOps(std::make_shared<Stats>()),
+      m_stats(std::dynamic_pointer_cast<Stats>(RoCEv2CongestionOps::m_stats))
 {
     NS_LOG_FUNCTION(this);
     Init();
 }
 
 RoCEv2Swift::RoCEv2Swift(Ptr<RoCEv2SocketState> sockState)
-    : RoCEv2CongestionOps(sockState)
+    : RoCEv2CongestionOps(sockState, std::make_shared<Stats>()),
+      m_stats(std::dynamic_pointer_cast<Stats>(RoCEv2CongestionOps::m_stats))
 {
     NS_LOG_FUNCTION(this);
     Init();
@@ -92,9 +104,8 @@ RoCEv2Swift::SetReady()
 {
     NS_LOG_FUNCTION(this);
     // Reload any config before starting
-    SetRateRatio(1.);
-    m_gamma =
-        1. / (1. / std::sqrt(m_sockState->GetMinRateRatio()) - 1.); // Used in GetTargetDelay()
+    SetRateRatio(m_startRateRatio);
+    m_gamma = 1. / (1. / std::sqrt(m_fsMin) - 1.); // Used in GetTargetDelay()
 }
 
 void
@@ -141,7 +152,7 @@ RoCEv2Swift::UpdateStateWithRcvACK(Ptr<Packet> ack,
         {
             cwndPackets = 1.0;
         }
-        SetRateRatio(m_sockState->GetRateRatioPercent() + m_raiRatio / cwndPackets);
+        SetCwnd(m_sockState->GetCwnd() + m_raiRatio * m_sockState->GetBaseBdp() / cwndPackets);
 
         m_stats->RecordCcRateChange(true);
     }
@@ -152,7 +163,11 @@ RoCEv2Swift::UpdateStateWithRcvACK(Ptr<Packet> ack,
             std::min(m_mdFactor * (delay.GetNanoSeconds() - targetDelay.GetNanoSeconds()) /
                          delay.GetNanoSeconds(),
                      m_maxMdFactor);
-        SetRateRatio(m_sockState->GetRateRatioPercent() * (1.0 - factor));
+        // SetRateRatio(m_sockState->GetRateRatioPercent() * (1.0 - factor));
+        uint64_t cwnd = m_sockState->GetCwnd()* (1.0 - factor);
+        // XXX Hardcode the min limit to 0.01% of base BDP
+        cwnd = std::max(cwnd, (uint64_t)(1e-4 * m_sockState->GetBaseBdp())); 
+        SetCwnd(cwnd);
         // Schedule a timer to set m_canDecrease to true.
         m_canDecrease = false;
         m_canDecreaseTimer.SetDelay(delay);
@@ -165,6 +180,11 @@ RoCEv2Swift::UpdateStateWithRcvACK(Ptr<Packet> ack,
 Time
 RoCEv2Swift::GetTargetDelay()
 {
+    if (!m_targetScaling)
+    {
+        return m_baseTarget + m_sockState->GetBaseRtt();
+    }
+
     /**
      * The formula in paper's **Overall Scaling** section can be simplified as:
      * t = base_target + base_rtt + max(0, min(range, range * x))
@@ -175,15 +195,17 @@ RoCEv2Swift::GetTargetDelay()
      * We use γ = 1/(1/√min - 1/√max) to simplify the formula as x = γ * (1/√cur - 1/√max).
      */
     Time t = m_baseTarget + m_sockState->GetBaseRtt();
+    double rateRatio = std::min(1.0, (double)m_sockState->GetCwnd() / m_sockState->GetBaseBdp());
     double range = std::max(
         0.0,
         std::min(m_range,
-                 m_range * m_gamma * (1.0 / std::sqrt(m_sockState->GetRateRatioPercent()) - 1.0)));
+                //  m_range * m_gamma * (1.0 / std::sqrt(m_sockState->GetRateRatioPercent()) - 1.0)));
+                 m_range * m_gamma * (1.0 / std::sqrt(rateRatio) - 1.0)));
     t += range * m_baseTarget;
     // LOG TargetDelay and RateRatio and range
     NS_LOG_DEBUG("TargetDelay: " << t << ", RateRatio: " << m_sockState->GetRateRatioPercent()
                                  << ", range: " << range);
-
+    m_stats->RecordTargetDelay(t);
     return t;
 }
 
@@ -191,6 +213,13 @@ std::string
 RoCEv2Swift::GetName() const
 {
     return "Swift";
+}
+
+void
+RoCEv2Swift::SetFsMin(double fsMin)
+{
+    // Convert fsMin from pkts to percentage of base BDP
+    m_fsMin = fsMin * m_sockState->GetPacketSize() / m_sockState->GetBaseBdp();
 }
 
 void
@@ -204,8 +233,6 @@ RoCEv2Swift::Init()
     SetLimiting(true);
 
     RegisterCongestionType(GetTypeId());
-
-    m_stats = std::make_shared<Stats>();
 }
 
 RoCEv2Swift::Stats::Stats()
@@ -224,6 +251,15 @@ RoCEv2Swift::Stats::RecordCcRateChange(bool increase)
     if (bDetailedSenderStats)
     {
         vCcRateChange.push_back(std::make_pair(Simulator::Now(), increase));
+    }
+}
+
+void
+RoCEv2Swift::Stats::RecordTargetDelay(Time delay)
+{
+    if (bDetailedSenderStats)
+    {
+        vTargetDelay.push_back(std::make_pair(Simulator::Now(), delay));
     }
 }
 } // namespace ns3

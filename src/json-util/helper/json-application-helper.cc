@@ -20,6 +20,7 @@
 
 #include "ns3/fifo-queue-disc-ecn.h"
 #include "ns3/json-utils.h"
+#include "ns3/rng-stream.h"
 #include "ns3/rocev2-hpcc.h"
 #include "ns3/rocev2-swift.h"
 #include "ns3/rocev2-timely.h"
@@ -43,7 +44,7 @@ namespace json_util
 typedef std::function<ApplicationContainer(const boost::json::object&, Ptr<DcTopology>)>
     AppInstallFunc;
 static ApplicationContainer InstallDcbTrafficGenApplication(const boost::json::object& appConfig,
-                                                    Ptr<DcTopology> topology);
+                                                            Ptr<DcTopology> topology);
 
 static std::map<std::string, AppInstallFunc> appInstallMapper = {
     {"DcbTrafficGenApplication", InstallDcbTrafficGenApplication},
@@ -78,10 +79,9 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
 {
     std::shared_ptr<DcbTrafficGenApplicationHelper> appHelper =
         std::make_shared<DcbTrafficGenApplicationHelper>(topology);
-    
+
     // Application type
-    std::string appType =
-        JsonGetStringOrRaise(appConfig, "appType", "Need to specify \"appType\"");
+    std::string appType = JsonGetStringOrRaise(appConfig, "appType", "Need to specify \"appType\"");
     appHelper->SetApplicationTypeId(TypeId::LookupByName(appType));
 
     // Set protocol group
@@ -117,16 +117,16 @@ ConstructTraceAppHelper(const boost::json::object& appConfig, Ptr<DcTopology> to
     {
         boost::json::object localAppConfig =
             appConfig.find("applicationConfig")->value().as_object();
-        std::unique_ptr<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>> appConfigVector =
-            ConstructConfigVector(localAppConfig);
+        std::unique_ptr<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>>
+            appConfigVector = ConstructConfigVector(localAppConfig);
         appHelper->SetAppAttributes(std::move(*appConfigVector));
     }
 
     if (appConfig.find("socketConfig") != appConfig.end())
     {
         boost::json::object socketConfigObj = appConfig.find("socketConfig")->value().as_object();
-        std::unique_ptr<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>> socketConfigVector =
-            ConstructConfigVector(socketConfigObj);
+        std::unique_ptr<std::vector<DcbTrafficGenApplicationHelper::ConfigEntry_t>>
+            socketConfigVector = ConstructConfigVector(socketConfigObj);
         appHelper->SetSocketAttributes(std::move(*socketConfigVector));
     }
 
@@ -172,16 +172,40 @@ InstallDcbTrafficGenApplication(const boost::json::object& appConfig, Ptr<DcTopo
     boost::json::string nodes = appConfig.find("nodes")->value().get_string().c_str();
     if (nodes == "all")
     {
-        for (auto hostIter = topology->hosts_begin(); hostIter != topology->hosts_end(); hostIter++)
+        // TODO so ugly, need to be refactored
+        // if has groupCongestionConfig, set the attributes accordingly
+        // if nodes is "all", each node will be installed with multiple applications
+        if (appConfig.find("groupCongestionConfig") != appConfig.end())
         {
-            if (hostIter->type != DcTopology::TopoNode::NodeType::HOST)
+            uint32_t nApp = 1;
+            boost::json::object gConf =
+                appConfig.find("groupCongestionConfig")->value().as_object();
+            JsonCallIfExistsInt<uint32_t>(gConf, "applicationNumber", [&nApp](int n) { nApp = n; });
+            for (uint32_t i = 0; i < nApp; ++i)
             {
-                NS_FATAL_ERROR("Node "
-                               << topology->GetNodeIndex(hostIter->nodePtr)
-                               << " is not a host and thus could not install an application.");
+                SetGroupAttributes(gConf, appHelper, nApp, i);
+                for (auto hostIter = topology->hosts_begin(); hostIter != topology->hosts_end();
+                     hostIter++)
+                {
+                    Ptr<Node> node = hostIter->nodePtr;
+                    apps.Add(appHelper->Install(node));
+                }
             }
-            Ptr<Node> node = hostIter->nodePtr;
-            apps.Add(appHelper->Install(node));
+        }
+        else
+        {
+            for (auto hostIter = topology->hosts_begin(); hostIter != topology->hosts_end();
+                 hostIter++)
+            {
+                if (hostIter->type != DcTopology::TopoNode::NodeType::HOST)
+                {
+                    NS_FATAL_ERROR("Node "
+                                   << topology->GetNodeIndex(hostIter->nodePtr)
+                                   << " is not a host and thus could not install an application.");
+                }
+                Ptr<Node> node = hostIter->nodePtr;
+                apps.Add(appHelper->Install(node));
+            }
         }
     }
     // if nodes start with "random [num]"
@@ -223,25 +247,41 @@ InstallDcbTrafficGenApplication(const boost::json::object& appConfig, Ptr<DcTopo
         {
             flowInterval = Time(appConfig.find("flowInterval")->value().as_string().c_str());
         }
+        // If the intervalGroupSize is set, the interval between the groups will be added with a
+        // interval
+        uint32_t intervalGroupSize = 1;
+        JsonCallIfExistsInt<uint32_t>(appConfig,
+                                      "intervalGroupSize",
+                                      [&intervalGroupSize](int size) { intervalGroupSize = size; });
         Time duration = Time(0);
         // If the duration is not set, this will have no effect
         if (appConfig.find("duration") != appConfig.end())
         {
             duration = Time(appConfig.find("duration")->value().as_string().c_str());
         }
+        // If the randomRange is set, the start time will be added with a unified random value in
+        // the range, if not set, the random value will be 0
+        Time randomRange = Time(0);
+        JsonCallIfExistsString(appConfig, "randomRange", [&randomRange](const std::string& str) {
+            randomRange = Time(str);
+        });
+        Ptr<UniformRandomVariable> rand = CreateObject<UniformRandomVariable>();
+        rand->SetAttribute("Min", DoubleValue(0));
+        rand->SetAttribute("Max", DoubleValue(randomRange.GetNanoSeconds()));
 
         for (uint32_t i = 0; i < vNodes.size(); ++i)
         {
             Ptr<Node> node = topology->GetNode(vNodes[i]).nodePtr;
 
+            Time flowStartTime = startTime + (i / intervalGroupSize) * flowInterval +
+                                 Time::FromDouble(rand->GetValue(), Time::NS);
             if (duration != Time(0))
             {
-                appHelper->SetStartAndStopTime(startTime + i * flowInterval,
-                                               startTime + i * flowInterval + duration);
+                appHelper->SetStartAndStopTime(flowStartTime, flowStartTime + duration);
             }
             else
             {
-                appHelper->SetStartTime(startTime + i * flowInterval);
+                appHelper->SetStartTime(flowStartTime);
             }
 
             // if has groupCongestionConfig, set the attributes according to the index
@@ -265,10 +305,18 @@ SetGroupAttributes(const boost::json::object& gConf,
                    uint32_t groupSize,
                    uint32_t idx)
 {
+    // Get the per group size, default is 1
+    uint32_t gSize = 1;
+    JsonCallIfExistsInt<uint32_t>(gConf, "groupSize", [&gSize](int size) { gSize = size; });
+    groupSize /= gSize;
     // Iterate over the attributes in the group
     for (auto kvPair : gConf)
     {
         std::string name = kvPair.key();
+        if (name == "groupSize" || name == "applicationNumber")
+        {
+            continue;
+        }
         // Check if name is in format of "Congestion::xxx"
         // Split the name into two parts
         std::vector<std::string> vName;
@@ -282,66 +330,182 @@ SetGroupAttributes(const boost::json::object& gConf,
         }
         std::string className = vName[0];
         std::string attributeName = vName[1];
-
-        // The value of the attribute is a object with two fields: "Begin" and "End"
-        // Calculate the value of the attribute according to the index
-        boost::json::object valueObj = kvPair.value().as_object();
-        boost::json::value beginValue = valueObj.find("begin")->value();
-        boost::json::value endValue = valueObj.find("end")->value();
-        // Now assume the value is a sting with number and unit with space, like "50 KB"
-        std::string beginStr = beginValue.as_string().c_str();
-        std::string endStr = endValue.as_string().c_str();
-        // Convert the string into two parts, number and unit
-        std::vector<std::string> vBegin;
-        boost::split(vBegin, beginStr, boost::is_any_of(" "), boost::token_compress_on);
-        std::vector<std::string> vEnd;
-        boost::split(vEnd, endStr, boost::is_any_of(" "), boost::token_compress_on);
-        // If have unit check the unit is the same
-        NS_ASSERT_MSG((vBegin.size() == 1 && vEnd.size() == 1) ||
-                          (vBegin.size() == 2 && vEnd.size() == 2 && vBegin[1] == vEnd[1]),
-                      "The unit of begin and end should be the same");
-
-        bool isFloat = false;
-        if (valueObj.find("isFloat") != valueObj.end())
-        {
-            isFloat = valueObj.find("isFloat")->value().get_bool();
-        }
-
         Ptr<AttributeValue> attrValue;
-        if (isFloat)
+
+        // If the value of the attribute is a object, it will have two fields: "Begin" and "End"
+        if (kvPair.value().is_object())
         {
-            double begin = std::stod(vBegin[0]);
-            double end = std::stod(vEnd[0]);
-            double value = begin + (double)idx * (double)(end - begin) / (double)(groupSize - 1);
-            if (vBegin.size() == 2)
+            // Calculate the value of the attribute according to the index
+            boost::json::object valueObj = kvPair.value().as_object();
+            boost::json::value beginValue = valueObj.find("begin")->value();
+            boost::json::value endValue = valueObj.find("end")->value();
+
+            // The value can be int or string, check if it is a string
+            bool isString = beginValue.is_string();
+
+            if (isString)
             {
-                // Add the unit to the value and make it a string if have unit
-                std::string valueStr = std::to_string(value) + vBegin[1];
-                attrValue = StringValue(valueStr.c_str()).Copy();
+                // Now assume the value is a sting with number and unit with space, like "50 KB"
+                std::string beginStr = beginValue.as_string().c_str();
+                std::string endStr = endValue.as_string().c_str();
+                // Convert the string into two parts, number and unit
+                std::vector<std::string> vBegin;
+                boost::split(vBegin, beginStr, boost::is_any_of(" "), boost::token_compress_on);
+                std::vector<std::string> vEnd;
+                boost::split(vEnd, endStr, boost::is_any_of(" "), boost::token_compress_on);
+                // If have unit check the unit is the same
+                NS_ASSERT_MSG((vBegin.size() == 1 && vEnd.size() == 1) ||
+                                  (vBegin.size() == 2 && vEnd.size() == 2 && vBegin[1] == vEnd[1]),
+                              "The unit of begin and end should be the same");
+
+                bool isFloat = false;
+                if (valueObj.find("isFloat") != valueObj.end())
+                {
+                    isFloat = valueObj.find("isFloat")->value().get_bool();
+                }
+
+                if (isFloat)
+                {
+                    double begin = std::stod(vBegin[0]);
+                    double end = std::stod(vEnd[0]);
+                    double value =
+                        begin + (idx / gSize) * (double)(end - begin) / (double)(groupSize - 1);
+                    if (vBegin.size() == 2)
+                    {
+                        // Add the unit to the value and make it a string if have unit
+                        std::string valueStr = std::to_string(value) + vBegin[1];
+                        attrValue = StringValue(valueStr.c_str()).Copy();
+                        std::cout << "Set " << className << "::" << attributeName << " to "
+                                  << valueStr << std::endl;
+                    }
+                    else
+                    {
+                        attrValue = DoubleValue(value).Copy();
+                    }
+                }
+                else
+                {
+                    uint32_t begin = std::stoi(vBegin[0]);
+                    uint32_t end = std::stoi(vEnd[0]);
+                    uint32_t value = begin + (idx / gSize) * ((double)end - (double)begin) /
+                                                 (double)(groupSize - 1);
+                    // Add the unit to the value and make it a string if have unit
+                    std::string valueStr = std::to_string(value) + vBegin[1];
+                    if (vBegin.size() == 2)
+                    {
+                        // Add the unit to the value and make it a string if have unit
+                        std::string valueStr = std::to_string(value) + vBegin[1];
+                        attrValue = StringValue(valueStr.c_str()).Copy();
+                        // std::cout << "Set " << className << "::" << attributeName << " to "
+                        //           << valueStr << std::endl;
+                    }
+                    else
+                    {
+                        attrValue = UintegerValue(value).Copy();
+                    }
+                }
             }
             else
             {
-                attrValue = DoubleValue(value).Copy();
+                // bool isFloat = false;
+                // if (valueObj.find("isFloat") != valueObj.end())
+                // {
+                //     isFloat = valueObj.find("isFloat")->value().get_bool();
+                // }
+                bool isFloat = beginValue.is_double();
+                // std::clog << "isFloat: " << isFloat << std::endl;
+
+                if (isFloat)
+                {
+                    double begin = beginValue.get_double();
+                    double end = endValue.get_double();
+                    double value =
+                        begin + (idx / gSize) * (double)(end - begin) / (double)(groupSize - 1);
+                    std::cout << "Set " << className << "::" << attributeName << " to " << value
+                              << std::endl;
+                    attrValue = DoubleValue(value).Copy();
+                }
+                else
+                {
+                    uint32_t begin =
+                        beginValue.is_uint64() ? beginValue.get_uint64() : beginValue.get_int64();
+                    uint32_t end =
+                        endValue.is_uint64() ? endValue.get_uint64() : endValue.get_int64();
+                    uint32_t value = begin + (idx / gSize) * ((double)end - (double)begin) /
+                                                 (double)(groupSize - 1);
+                    std::cout << "Set " << className << "::" << attributeName << " to " << value
+                              << std::endl;
+                    attrValue = UintegerValue(value).Copy();
+                }
             }
         }
-        else
+        // If the value of the attribute is an array, direct get the value from idx
+        else if (kvPair.value().is_array())
         {
-            uint32_t begin = std::stoi(vBegin[0]);
-            uint32_t end = std::stoi(vEnd[0]);
-            uint32_t value = begin + (double)idx * (double)(end - begin) / (double)(groupSize - 1);
-            // Add the unit to the value and make it a string if have unit
-            std::string valueStr = std::to_string(value) + vBegin[1];
-            if (vBegin.size() == 2)
+            boost::json::array valueArray = kvPair.value().as_array();
+            // Get the value according to the index
+            boost::json::value value = valueArray[idx / gSize];
+            // The value may be bool, double, int or string
+            switch (value.kind())
             {
-                // Add the unit to the value and make it a string if have unit
-                std::string valueStr = std::to_string(value) + vBegin[1];
-                attrValue = StringValue(valueStr.c_str()).Copy();
-                std::cout << "Set " << className << "::" << attributeName << " to " << valueStr
-                          << std::endl;
-            }
-            else
-            {
-                attrValue = UintegerValue(value).Copy();
+            case boost::json::kind::string:
+                if (value.get_string().find("CoflowCDF ") != std::string::npos)
+                {
+                    std::string cdfFile = value.get_string().c_str() + 10;
+                    std::unique_ptr<DcbTrafficGenApplication::TraceCdf> cdf =
+                        DcbTrafficGenApplicationHelper::ConstructCdfFromFile(cdfFile);
+                    helper->SetCdf(std::move(cdf));
+                    attrValue = StringValue("CoflowCDF").Copy();
+                }
+                // If the value is a string in format "CDF XXX", set the CDF for application
+                else if (value.get_string().find("CDF ") != std::string::npos)
+                {
+                    std::string cdfFile = value.get_string().c_str() + 4;
+                    std::unique_ptr<DcbTrafficGenApplication::TraceCdf> cdf =
+                        DcbTrafficGenApplicationHelper::ConstructCdfFromFile(cdfFile);
+                    helper->SetCdf(std::move(cdf));
+                    attrValue = StringValue("CDF").Copy();
+                }
+                // Otherwise if the string has a " ", treat the latter part as metadata group name
+                else if (value.get_string().find(" ") != std::string::npos)
+                {
+                    std::string valueStr = value.get_string().c_str();
+                    std::vector<std::string> vValue;
+                    boost::split(vValue, valueStr, boost::is_any_of(" "), boost::token_compress_on);
+                    helper->SetAppAttribute(
+                        std::make_pair("MetadataGroupName", StringValue(vValue[1].c_str()).Copy()));
+                    attrValue = StringValue(vValue[0].c_str()).Copy();
+                }
+                else
+                {
+                    attrValue = StringValue(value.get_string().c_str()).Copy();
+                }
+                std::cout << "Set " << className << "::" << attributeName << " to "
+                          << value.get_string().c_str() << std::endl;
+                break;
+            case boost::json::kind::uint64:
+                attrValue = UintegerValue(value.get_uint64()).Copy();
+                std::cout << "Set " << className << "::" << attributeName << " to "
+                          << value.get_uint64() << std::endl;
+                break;
+            case boost::json::kind::int64:
+                attrValue = UintegerValue(value.get_int64()).Copy();
+                std::cout << "Set " << className << "::" << attributeName << " to "
+                          << value.get_int64() << std::endl;
+                break;
+            case boost::json::kind::bool_:
+                attrValue = BooleanValue(value.get_bool()).Copy();
+                std::cout << "Set " << className << "::" << attributeName << " to "
+                          << value.get_bool() << std::endl;
+                break;
+            case boost::json::kind::double_:
+                attrValue = DoubleValue(value.get_double()).Copy();
+                std::cout << "Set " << className << "::" << attributeName << " to "
+                          << value.get_double() << std::endl;
+                break;
+            default:
+                NS_FATAL_ERROR("Cannot recognize the type of value");
+                ;
             }
         }
 
@@ -355,11 +519,10 @@ SetGroupAttributes(const boost::json::object& gConf,
         //     helper->SetSocketAttributes(std::make_pair(attributeName,
         //     StringValue(valueStr.c_str()).Copy()));
         // }
-        // else if (className == "Application")
-        // {
-        //     helper->SetAppAttributes(std::make_pair(attributeName,
-        //     StringValue(valueStr.c_str()).Copy()));
-        // }
+        else if (className == "Application")
+        {
+            helper->SetAppAttribute(std::make_pair(attributeName, attrValue));
+        }
         else
         {
             NS_FATAL_ERROR("Cannot recognize class name \"" << className << "\"");

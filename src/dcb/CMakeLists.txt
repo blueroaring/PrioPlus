@@ -27,11 +27,20 @@ build_lib(
 	  model/rocev2-socket.cc
 	  model/rocev2-congestion-ops.cc
 	  model/rocev2-dcqcn.cc
+	  model/rocev2-dctcp.cc
 	  model/rocev2-hpcc.cc
 	  model/rocev2-timely.cc
+	  model/rocev2-prioplus-swift.cc
+	  model/rocev2-prioplus-ledbat.cc
 	  model/rocev2-swift.cc
 	  model/rocev2-ledbat.cc
+	  model/rocev2-powertcp.cc
+	  model/rocev2-poseidon.cc
+	  model/rocev2-d2tcp.cc
+	  model/rocev2-nocc.cc
+	  model/switch-node.cc
 	  utils/hpcc-header.cc
+	  utils/poseidon-header.cc
 	  utils/pfc-frame.cc
 	  utils/real-time-stats-tag.cc
 	  utils/flow-identifier.cc
@@ -61,11 +70,20 @@ build_lib(
 	  model/rocev2-socket.h
 	  model/rocev2-congestion-ops.h
 	  model/rocev2-dcqcn.h
+	  model/rocev2-dctcp.h
 	  model/rocev2-hpcc.h
 	  model/rocev2-timely.h
+	  model/rocev2-prioplus-swift.h
+	  model/rocev2-prioplus-ledbat.h
 	  model/rocev2-swift.h
 	  model/rocev2-ledbat.h
+	  model/rocev2-powertcp.h
+	  model/rocev2-poseidon.h
+	  model/rocev2-d2tcp.h
+	  model/rocev2-nocc.h
+	  model/switch-node.h
 	  utils/hpcc-header.h
+	  utils/poseidon-header.h
 	  utils/pfc-frame.h
 	  utils/real-time-stats-tag.h
 	  utils/flow-identifier.h

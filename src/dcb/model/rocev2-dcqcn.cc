@@ -21,6 +21,7 @@
 
 #include "rocev2-socket.h"
 
+#include "ns3/global-value.h"
 #include "ns3/rocev2-header.h"
 #include "ns3/simulator.h"
 
@@ -78,19 +79,26 @@ RoCEv2Dcqcn::GetTypeId()
                           "DCQCN's rate timer delay",
                           TimeValue(MicroSeconds(55)),
                           MakeTimeAccessor(&RoCEv2Dcqcn::m_rateTimerDelay),
-                          MakeTimeChecker());
+                          MakeTimeChecker())
+            .AddAttribute("StartTargetRateRatio",
+                          "DCQCN's start target rate ratio",
+                          DoubleValue(1),
+                          MakeDoubleAccessor(&RoCEv2Dcqcn::m_targetRateRatio),
+                          MakeDoubleChecker<double>());
     return tid;
 }
 
 RoCEv2Dcqcn::RoCEv2Dcqcn()
-    : RoCEv2CongestionOps()
+    : RoCEv2CongestionOps(std::make_shared<Stats>()),
+      m_stats(std::dynamic_pointer_cast<Stats>(RoCEv2CongestionOps::m_stats))
 {
     NS_LOG_FUNCTION(this);
     Init();
 }
 
 RoCEv2Dcqcn::RoCEv2Dcqcn(Ptr<RoCEv2SocketState> sockState)
-    : RoCEv2CongestionOps(sockState)
+    : RoCEv2CongestionOps(sockState,std::make_shared<Stats>()),
+      m_stats(std::dynamic_pointer_cast<Stats>(RoCEv2CongestionOps::m_stats))
 {
     NS_LOG_FUNCTION(this);
     Init();
@@ -186,8 +194,9 @@ RoCEv2Dcqcn::UpdateRate()
     double old = curRateRatio;
     if (m_rateUpdateIter > m_F && m_bytesUpdateIter > m_F)
     { // Hyper increase
-        uint32_t i = std::min(m_rateUpdateIter, m_bytesUpdateIter) - m_F + 1;
-        m_targetRateRatio = std::min(m_targetRateRatio + i * m_hraiRatio, 1.);
+        // uint32_t i = std::min(m_rateUpdateIter, m_bytesUpdateIter) - m_F + 1;
+        // m_targetRateRatio = std::min(m_targetRateRatio + i * m_hraiRatio, 1.);
+        m_targetRateRatio = std::min(m_targetRateRatio + m_hraiRatio, 1.);
     }
     else if (m_rateUpdateIter > m_F || m_bytesUpdateIter > m_F)
     { // Additive increase
@@ -217,7 +226,7 @@ RoCEv2Dcqcn::Init()
     m_bytesCounter = 0;
     m_rateUpdateIter = 0;
     m_bytesUpdateIter = 0;
-    m_targetRateRatio = 1.;
+    // m_targetRateRatio = 1.;
     RegisterCongestionType(GetTypeId());
 }
 
@@ -238,4 +247,5 @@ RoCEv2Dcqcn::GetName() const
 {
     return "DCQCN";
 }
+
 } // namespace ns3

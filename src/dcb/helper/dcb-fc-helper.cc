@@ -23,8 +23,8 @@
 #include "ns3/assert.h"
 #include "ns3/dcb-channel.h"
 #include "ns3/ipv4-address-generator.h"
-#include "ns3/string.h"
 #include "ns3/ipv4.h"
+#include "ns3/string.h"
 
 #include <vector>
 
@@ -34,8 +34,10 @@ namespace ns3
 DcbFcHelper::DcbFcHelper()
     : m_bufferSize(QueueSize("0B")),
       m_bufferPerPort(QueueSize("0B")),
+      m_bufferBandwidthRatio(0.0),
       m_numQueuePerPort(8),
-      m_numLosslessQueue(2)
+      m_numLosslessQueue(2),
+      m_maxCredit(0)
 {
 }
 
@@ -66,7 +68,8 @@ DcbFcHelper::InstallPFCtoNodePort(Ptr<Node> node,
     {
         if (qConfig.priority >= DcbTrafficControl::PRIORITY_NUMBER)
         {
-            NS_FATAL_ERROR("PFC priority should be 0~7, your input is " << qConfig.priority);
+            NS_FATAL_ERROR("PFC priority should be 0~" << DcbTrafficControl::PRIORITY_NUMBER - 1
+                                                       << ", your input is " << qConfig.priority);
         }
         if (qConfig.resumeOffset > qConfig.reserve)
         {
@@ -132,7 +135,8 @@ DcbFcHelper::InstallHpccPFCtoNodePort(Ptr<Node> node,
     {
         if (qConfig.priority >= DcbTrafficControl::PRIORITY_NUMBER)
         {
-            NS_FATAL_ERROR("PFC priority should be 0~7, your input is " << qConfig.priority);
+            NS_FATAL_ERROR("PFC priority should be 0~" << DcbTrafficControl::PRIORITY_NUMBER - 1
+                                                       << ", your input is " << qConfig.priority);
         }
         if (qConfig.resumeOffset > qConfig.reserve)
         {
@@ -193,9 +197,26 @@ DcbFcHelper::Install(Ptr<Node> node)
     // Hereafter, dcbTc == nullptr serve as a flag if fc is disabled
     Ptr<DcbTrafficControl> dcbTc = node->GetObject<DcbTrafficControl>();
 
-    // If m_bufferPerPort is set, calculate the buffer size according to the number of ports
-    if (m_bufferPerPort != QueueSize("0B"))
+    // Check the buffer settings, first bufferBandwidthRatio, then bufferPerPort, then bufferSize
+    if (m_bufferBandwidthRatio != 0.0)
     {
+        // Calculate the buffer size according to the bandwidth and the bufferBandwidthRatio
+        // (MB/Tbps)
+        double totalBandwidth = 0.0; // in Tbps
+        for (uint32_t i = 1; i < devN; i++)
+        {
+            Ptr<DcbNetDevice> nodeDev = DynamicCast<DcbNetDevice>(node->GetDevice(i));
+            Ptr<DcbChannel> channel = DynamicCast<DcbChannel>(nodeDev->GetChannel());
+            totalBandwidth += nodeDev->GetDataRate().GetBitRate() / 1e12; // in Tbps
+        }
+        m_bufferSize =
+            QueueSize(QueueSizeUnit::BYTES, m_bufferBandwidthRatio * totalBandwidth * 1e6);
+        std::cout << "Total Bandwidth: " << totalBandwidth
+                  << "Tbps, Buffer size: " << m_bufferSize.GetValue() / 1e6 << "MB" << std::endl;
+    }
+    else if (m_bufferPerPort != QueueSize("0B"))
+    {
+        // If m_bufferPerPort is set, calculate the buffer size according to the number of ports
         m_bufferSize = QueueSize(m_bufferPerPort.GetUnit(),
                                  m_bufferPerPort.GetValue() * (node->GetNDevices() - 1));
     }
@@ -299,6 +320,21 @@ DcbFcHelper::Install(Ptr<Node> node)
             Ptr<PausableQueueDiscClass> c = CreateObject<PausableQueueDiscClass>();
             c->SetQueueDisc(qd);
             qDisc->AddQueueDiscClass(c);
+        }
+
+        // Set priorities and quantum, if have
+        if (m_priorities.size() > 0)
+        {
+            NS_ASSERT_MSG(
+                m_quantum.size() == m_priorities.size() && m_quantum.size() == m_numQueuePerPort,
+                "The number of priorities and quantum should be the same as the number of "
+                "inner queues");
+            NS_ASSERT_MSG(m_maxCredit > 0, "The max credit should be set when WDRR is used");
+            qDisc->SetWdrrParameters(m_priorities, m_quantum, m_maxCredit);
+        }
+        else
+        {
+            qDisc->SetDefaultStrictPriority();
         }
     }
 
@@ -431,6 +467,12 @@ DcbFcHelper::SetNumQueuePerPort(uint32_t numQueuePerPort)
 }
 
 void
+DcbFcHelper::SetBufferBandwidthRatio(double bufferBandwidthRatio)
+{
+    m_bufferBandwidthRatio = bufferBandwidthRatio;
+}
+
+void
 DcbFcHelper::SetNumLosslessQueue(uint32_t numLosslessQueue)
 {
     m_numLosslessQueue = numLosslessQueue;
@@ -454,6 +496,30 @@ DcbFcHelper::SetBufferSize(QueueSize bufferSize)
     {
         NS_FATAL_ERROR("Buffer size should be in bytes");
     }
+}
+
+uint32_t
+DcbFcHelper::GetNumQueuePerPort() const
+{
+    return m_numQueuePerPort;
+}
+
+void
+DcbFcHelper::SetPriorities(std::vector<uint32_t>&& priorities)
+{
+    m_priorities = priorities;
+}
+
+void
+DcbFcHelper::SetQuantum(std::vector<uint32_t>&& quantum)
+{
+    m_quantum = quantum;
+}
+
+void
+DcbFcHelper::SetMaxCredit(uint32_t maxCredit)
+{
+    m_maxCredit = maxCredit;
 }
 
 } // namespace ns3

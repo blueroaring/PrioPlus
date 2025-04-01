@@ -18,8 +18,11 @@
  */
 #include "json-outputs.h"
 
+#include "ns3/dcb-traffic-gen-application.h"
 #include "ns3/fifo-queue-disc-ecn.h"
 #include "ns3/json-utils.h"
+#include "ns3/rocev2-dcqcn.h"
+#include "ns3/rocev2-prioplus-swift.h"
 #include "ns3/rocev2-hpcc.h"
 #include "ns3/rocev2-swift.h"
 #include "ns3/rocev2-timely.h"
@@ -79,7 +82,13 @@ CreateOutputFile(boost::json::object& conf, std::string confFileName)
     if (!outputFolder.empty())
     {
         std::string command = "mkdir -p " + outputFolder;
-        system(command.c_str());
+        // Use the return value to avoid the warning of unused return value
+        int ret = system(command.c_str());
+        // Check if the folder is created successfully
+        if (ret != 0)
+        {
+            NS_FATAL_ERROR("Cannot create folder " << outputFolder);
+        }
     }
 
     std::ofstream ofs(outputFile);
@@ -180,7 +189,7 @@ ConstructAppStatsObj(ApplicationContainer& apps)
 
         // Per flow statistics
         auto mFlowStats = appStats->mFlowStats;
-        for (const auto &pFlowStats : mFlowStats)
+        for (const auto& pFlowStats : mFlowStats)
         {
             vFct.push_back(pFlowStats.second->tFct);
         }
@@ -220,6 +229,15 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
             continue;
         auto appStats = app->GetStats();
 
+        Ptr<DcbTrafficGenApplication> tgApp = DynamicCast<DcbTrafficGenApplication>(apps.Get(i));
+        std::shared_ptr<DcbTrafficGenApplication::Stats> tgAppStats;
+        if (tgApp != nullptr)
+        {
+            // convert to DcbTrafficGenApplication::Stats
+            tgAppStats =
+                std::dynamic_pointer_cast<DcbTrafficGenApplication::Stats>(tgApp->GetStats());
+        }
+
         // Per flow statistics
         auto mFlowStats = appStats->mFlowStats;
         for (auto pFlowStats : mFlowStats)
@@ -239,6 +257,10 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                                     {"dstAddr", flowIdentifier.GetDstAddrString()},
                                     {"dstPort", flowIdentifier.dstPort}};
             (*flowStatsObj)["flowType"] = appStats->appFlowType;
+            if (tgAppStats != nullptr)
+            {
+                (*flowStatsObj)["flowTag"] = tgAppStats->mFlowStats[flowIdentifier]->flowTag;
+            }
             (*flowStatsObj)["totalSizePkts"] = flowStats->nTotalSizePkts;
             (*flowStatsObj)["totalSizeBytes"] = flowStats->nTotalSizeBytes;
             if (app->GetProtoGroup() == DcbTrafficGenApplication::ProtocolGroup::RoCEv2)
@@ -249,6 +271,7 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
             (*flowStatsObj)["startNs"] = flowStats->tStart.GetNanoSeconds();
             (*flowStatsObj)["finishNs"] = flowStats->tFinish.GetNanoSeconds();
             (*flowStatsObj)["overallFlowRate"] = flowStats->overallFlowRate.GetBitRate();
+            (*flowStatsObj)["flowTag"] = flowStats->flowTag;
 
             // Detailed statistics
             if (flowStats->bDetailedSenderStats)
@@ -292,13 +315,67 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                 {
                     boost::json::object ccStatsObj;
 
+                    boost::json::array rateArray;
+
+                    for (auto& [time, rate] : flowStats->ccStats->vCcRate)
+                    {
+                        rateArray.emplace_back(
+                            boost::json::object{{"timeNs", time.GetNanoSeconds()},
+                                                {"rateBitps", rate.GetBitRate()}});
+                    }
+
+                    ccStatsObj["rate"] = rateArray;
+
                     std::shared_ptr<RoCEv2Hpcc::Stats> hpccCcStats =
                         std::dynamic_pointer_cast<RoCEv2Hpcc::Stats>(flowStats->ccStats);
                     std::shared_ptr<RoCEv2Swift::Stats> swiftCcStats =
                         std::dynamic_pointer_cast<RoCEv2Swift::Stats>(flowStats->ccStats);
                     std::shared_ptr<RoCEv2Timely::Stats> timelyCcStats =
                         std::dynamic_pointer_cast<RoCEv2Timely::Stats>(flowStats->ccStats);
+                    std::shared_ptr<RoCEv2PrioplusSwift::Stats> prioplusSwiftCcStats =
+                        std::dynamic_pointer_cast<RoCEv2PrioplusSwift::Stats>(flowStats->ccStats);
                     if (hpccCcStats != nullptr)
+                    {
+                        boost::json::array delayArray;
+                        boost::json::array uArray;
+
+                        for (auto& [sendTime, recvTime, delay] : hpccCcStats->vPacketDelay)
+                        {
+                            delayArray.emplace_back(
+                                boost::json::object{{"sendTimeNs", sendTime.GetNanoSeconds()},
+                                                    {"recvTimeNs", recvTime.GetNanoSeconds()},
+                                                    {"delayNs", delay.GetNanoSeconds()}});
+                        }
+
+                        for (auto& [time, u] : hpccCcStats->vU)
+                        {
+                            uArray.emplace_back(
+                                boost::json::object{{"timeNs", time.GetNanoSeconds()}, {"u", u}});
+                        }
+
+                        ccStatsObj["delay"] = delayArray;
+                        ccStatsObj["u"] = uArray;
+                    }
+                    else if (prioplusSwiftCcStats != nullptr)
+                    {
+                        boost::json::array completeStatsArray;
+
+                        for (RoCEv2PrioplusSwift::Stats::PrioplusSwiftCompleteStats& completeStats :
+                             prioplusSwiftCcStats->vPrioplusCompleteStats)
+                        {
+                            completeStatsArray.emplace_back(boost::json::object{
+                                {"timeNs", completeStats.tNow.GetNanoSeconds()},
+                                {"delayNs", completeStats.tDelay.GetNanoSeconds()},
+                                {"cwnd", completeStats.cwnd},
+                                {"incastAvoidanceRate", completeStats.dIncastAvoidance},
+                                {"aiPart", completeStats.aiPart},
+                                {"miPart", completeStats.miPart},
+                                {"mdPart", completeStats.mdPart}});
+                        }
+
+                        ccStatsObj["completeStats"] = completeStatsArray;
+                    }
+                    else if (hpccCcStats != nullptr)
                     {
                         boost::json::array delayArray;
                         boost::json::array uArray;
@@ -323,6 +400,7 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                     else if (swiftCcStats != nullptr)
                     {
                         boost::json::array ccRateChangeArray;
+                        boost::json::array targetDelayArray;
 
                         for (auto& [time, ccRateChange] : swiftCcStats->vCcRateChange)
                         {
@@ -330,8 +408,15 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                                 {"timeNs", time.GetNanoSeconds()},
                                 {"ccRateChange", ccRateChange ? "increase" : "decrease"}});
                         }
+                        for (auto& [time, targetDelay] : swiftCcStats->vTargetDelay)
+                        {
+                            targetDelayArray.emplace_back(boost::json::object{
+                                {"timeNs", time.GetNanoSeconds()},
+                                {"targetDelayNs", targetDelay.GetNanoSeconds()}});
+                        }
 
                         ccStatsObj["ccRateChange"] = ccRateChangeArray;
+                        ccStatsObj["targetDelay"] = targetDelayArray;
                     }
                     else if (timelyCcStats != nullptr)
                     {
@@ -372,7 +457,8 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                     boost::json::array& sentPktArray = (*flowStatsObj)["sentPkt"].as_array();
                     for (uint32_t i = 0; i < flowStats->vSentPsn.size(); ++i)
                     {
-                        // The sentPktArray is already created, so we just need to add the psn
+                        // The sentPktArray is already created, so we just need to add the
+                        // psn
                         sentPktArray[i].as_object().emplace("psn", flowStats->vSentPsn[i].second);
                     }
                 }
@@ -391,9 +477,9 @@ ConstructSenderFlowStats(ApplicationContainer& apps, FlowStatsObjMap& mFlowStats
                 boost::json::array recvAckArray;
                 // vExpectedPsn must has stats, but vAckedPsn may not
                 bool bHasAckedPsn = flowStats->vAckedPsn.size() > 0;
-                // vAckedPsn's number of elements must be leq than vExpectedPsn's as a ack may
-                // carry acked psn, but must carry expected psn. Thus we use a index to iterate
-                // vAckedPsn.
+                // vAckedPsn's number of elements must be leq than vExpectedPsn's as a ack
+                // may carry acked psn, but must carry expected psn. Thus we use a index to
+                // iterate vAckedPsn.
                 uint32_t ackedPsnIndex = 0;
                 for (auto expectedPsn : flowStats->vExpectedPsn)
                 {
@@ -531,8 +617,8 @@ ConstructSwitchStats(Ptr<DcTopology> topology,
                 }
                 if (!qStats->bDetailedQlengthStats)
                 {
-                    // Complement 0 queue length points according to (finishTime - startTime) /
-                    // switchRecordInterval
+                    // Complement 0 queue length points according to (finishTime -
+                    // startTime) / qlengthRecordInterval
                     StringValue sv;
                     Time recordInterval = Time(0); // Must be set, otherwise fatal error before
                     if (GlobalValue::GetValueByNameFailSafe("qlengthRecordInterval", sv))
@@ -552,9 +638,15 @@ ConstructSwitchStats(Ptr<DcTopology> topology,
                     uint32_t avgQLengthBytes =
                         std::accumulate(vQLengthBytes.begin(), vQLengthBytes.end(), 0) /
                         nQLengthBytes;
+                    uint32_t p25QLengthBytes = vQLengthBytes[0.25 * nQLengthBytes];
+                    uint32_t p50QLengthBytes = vQLengthBytes[0.50 * nQLengthBytes];
+                    uint32_t p75QLengthBytes = vQLengthBytes[0.75 * nQLengthBytes];
                     uint32_t p95QLengthBytes = vQLengthBytes[0.95 * nQLengthBytes];
                     uint32_t p99QLengthBytes = vQLengthBytes[0.99 * nQLengthBytes];
                     queueStatsObj.emplace("avgQLengthBytes", avgQLengthBytes);
+                    queueStatsObj.emplace("p25QLengthBytes", p25QLengthBytes);
+                    queueStatsObj.emplace("p50QLengthBytes", p50QLengthBytes);
+                    queueStatsObj.emplace("p75QLengthBytes", p75QLengthBytes);
                     queueStatsObj.emplace("p95QLengthBytes", p95QLengthBytes);
                     queueStatsObj.emplace("p99QLengthBytes", p99QLengthBytes);
                 }

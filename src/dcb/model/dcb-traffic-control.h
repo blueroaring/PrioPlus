@@ -168,7 +168,7 @@ class DcbTrafficControl : public TrafficControlLayer
      */
     static uint8_t PeekPriorityOfPacket(const Ptr<const Packet> packet);
 
-    constexpr static const uint8_t PRIORITY_NUMBER = 8;
+    constexpr static const uint8_t PRIORITY_NUMBER = 64; // at most 64 priorities
 
     class PortInfo
     {
@@ -210,9 +210,16 @@ class DcbTrafficControl : public TrafficControlLayer
         {
             if (priority > m_fcMmuQueues.size())
             {
-                NS_FATAL_ERROR("Priority is out of range");
+                NS_FATAL_ERROR("Priority is out of range, current priority is "
+                               << priority << ", max priority is " << m_fcMmuQueues.size() - 1
+                               << ".");
             }
             return m_fcMmuQueues[priority];
+        }
+
+        inline uint32_t GetFCMmuQueueSize() const
+        {
+            return m_fcMmuQueues.size();
         }
 
       private:

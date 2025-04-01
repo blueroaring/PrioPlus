@@ -65,7 +65,7 @@ struct DcbPfcPortConfig
     }
 
     uint32_t port;
-    uint8_t enableVec = 0xff;
+    uint64_t enableVec = UINT64_MAX;
     std::vector<QueueConfig> queues;
 
 }; // struct DcbPfcPortConfig
@@ -100,16 +100,16 @@ class DcbPfcPort : public DcbFlowControlPort
 
     /**
      * \brief Set the EnableVec field of PFC to deviceIndex with enableVec.
-     * enableVec should be a 8 bits variable, each bit of it represents whether
+     * enableVec should be a 64 bits variable, each bit of it represents whether
      * PFC is enabled on the corresponding priority.
      */
-    void SetEnableVec(uint8_t enableVec);
+    void SetEnableVec(uint64_t enableVec);
 
     virtual void SetDevice(Ptr<NetDevice> dev) override;
 
   protected:
     /**
-     * A port has 8 priority queues and stores an PFC enableVec
+     * A port has at most 64 priority queues and stores an PFC enableVec
      */
     struct IngressPortInfo
     {
@@ -123,7 +123,7 @@ class DcbPfcPort : public DcbFlowControlPort
         }; // struct IngressQueueInfo
 
         explicit IngressPortInfo(uint32_t index);
-        IngressPortInfo(uint32_t index, uint8_t enableVec);
+        IngressPortInfo(uint32_t index, uint64_t enableVec);
 
         const IngressQueueInfo& getQueue(uint8_t priority) const;
 
@@ -131,7 +131,7 @@ class DcbPfcPort : public DcbFlowControlPort
 
         uint32_t m_index;
         std::vector<IngressQueueInfo> m_ingressQueues;
-        uint8_t m_enableVec;
+        uint64_t m_enableVec;
     }; // struct IngressPortInfo
 
     bool CheckEnableVec(uint8_t cls);
@@ -154,6 +154,17 @@ class DcbPfcPort : public DcbFlowControlPort
      * \brief Calculate the pause duration given the quanta and line rate.
      */
     Time PauseDuration(uint16_t quanta, DataRate lineRate) const;
+
+    /**
+     * \brief Generate a pause frame with the given priority and quanta.
+     * To support priority more than 7, use CosTag if necessary.
+     * \warning 1. If priority is more than 7, only supporting pause 1 priority per frame.
+     * \warning 2. Since CNP uses priority 6, it is not suggested to use extended priority if using
+     CNP as congestion signal.
+     */
+    Ptr<Packet> ExtraGeneratePauseFrame(uint8_t priority, uint16_t quanta);
+
+    void HandlePfc(Ptr<DcbNetDevice> device, uint8_t priority, uint16_t quanta);
 
   private:
     std::pair<uint32_t, uint32_t> GetNodeAndPortId() const;

@@ -20,6 +20,7 @@
 #include "udp-based-l4-protocol.h"
 
 #include "rocev2-l4-protocol.h"
+#include "rocev2-socket.h"
 #include "udp-based-socket.h"
 
 #include "ns3/fatal-error.h"
@@ -141,6 +142,13 @@ UdpBasedL4Protocol::ForwardUp(Ptr<Packet> packet,
         if (RoCEv2L4Protocol::IsCNP(packet))
         {
             NS_LOG_DEBUG("Received a CNP packet for a closed socket.");
+            return;
+        }
+        // Check if the packet is a probe packet
+        ProbePacketTag ppt;
+        if (packet->PeekPacketTag(ppt))
+        {
+            NS_LOG_DEBUG("Received a probe packet for a closed socket.");
             return;
         }
         NS_LOG_WARN("No endPoints matched in UDP-based L4 protocol with inner port "

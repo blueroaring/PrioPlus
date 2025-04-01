@@ -103,6 +103,7 @@ class DcbBaseApplication : public Application
         uint32_t destNode;
         const Ptr<Socket> socket;
         FlowIdentifier flowIdentifier;
+        std::string flowTag;
 
         Flow(uint64_t s, Time t, uint32_t dest, Ptr<Socket> sock)
             : startTime(t),
@@ -205,13 +206,14 @@ class DcbBaseApplication : public Application
      * \return A smart Socket pointer to a RoCEv2Socket
      *
      * \param destNode the destionation Node ID
+     * \param priority the priority of the socket, default is 0
      */
-    Ptr<Socket> CreateNewSocket(uint32_t destNode);
+    Ptr<Socket> CreateNewSocket(uint32_t destNode, uint32_t priority = 0);
 
     /**
      * \brief Create new socket send to the destAddr.
      */
-    Ptr<Socket> CreateNewSocket(InetSocketAddress destAddr);
+    Ptr<Socket> CreateNewSocket(InetSocketAddress destAddr, uint32_t priority);
 
     /**
      * \brief Get the InetSocketAddress of the destNode.
@@ -244,7 +246,7 @@ class DcbBaseApplication : public Application
     Ptr<Socket> m_receiverSocket;
     Ptr<DcTopology> m_topology; //!< The topology
     uint32_t m_nodeIndex;
-    ProtocolGroup m_protoGroup; //!< Protocol group
+    ProtocolGroup m_protoGroup;                  //!< Protocol group
     std::list<Ptr<Socket>> m_acceptedSocketList; //!< the accepted sockets
 
     // private:
@@ -336,6 +338,8 @@ class DcbBaseApplication : public Application
     bool m_enableSend;
     Ptr<Node> m_node; //!< The node the application is installed on, used when dctopo is not set
     bool m_ecnEnabled;
+    uint8_t m_flowPriority; //!< The priority of the flow, 7 is the highest priority
+    uint8_t m_recvPriority; //!< The priority of the receiver, 7 is the highest priority
     // bool                   m_connected;       //!< True if connected
     TypeId m_socketTid;        //!< Type of the socket used
     TypeId m_innerUdpProtocol; //!< inner-UDP protocol type id

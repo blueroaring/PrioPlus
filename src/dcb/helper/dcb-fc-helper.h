@@ -72,7 +72,13 @@ class DcbFcHelper
     void SetBufferSize(QueueSize bufferSize);
     void SetBufferPerPort(QueueSize bufferPerPort);
     void SetNumQueuePerPort(uint32_t numQueuePerPort);
+    void SetBufferBandwidthRatio(double bufferBandwidthRatio);
     void SetNumLosslessQueue(uint32_t numLosslessQueue);
+
+    uint32_t GetNumQueuePerPort() const;
+    void SetPriorities(std::vector<uint32_t>&& priorities);
+    void SetQuantum(std::vector<uint32_t>&& quantum);
+    void SetMaxCredit(uint32_t maxCredit);
 
   private:
     ObjectFactory m_tcFactory;
@@ -83,8 +89,13 @@ class DcbFcHelper
 
     QueueSize m_bufferSize; // The buffer size of the whole node
     QueueSize m_bufferPerPort;
+    double m_bufferBandwidthRatio; // The ratio is in MB / Tbps
     uint32_t m_numQueuePerPort;
     uint32_t m_numLosslessQueue;
+
+    std::vector<uint32_t> m_priorities;
+    std::vector<uint32_t> m_quantum; // in KB
+    uint32_t m_maxCredit; // in KB
 }; // class DcbFcHelper
 
 } // namespace ns3

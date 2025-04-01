@@ -86,7 +86,17 @@ DcbBaseApplication::GetTypeId()
             .AddTraceSource("FlowComplete",
                             "Trace when a flow completes.",
                             MakeTraceSourceAccessor(&DcbBaseApplication::m_flowCompleteTrace),
-                            "ns3::TracerExtension::FlowTracedCallback");
+                            "ns3::TracerExtension::FlowTracedCallback")
+            .AddAttribute("FlowPriority",
+                          "The priority of the flow",
+                          UintegerValue(0),
+                          MakeUintegerAccessor(&DcbTrafficGenApplication::m_flowPriority),
+                          MakeUintegerChecker<uint8_t>())
+            .AddAttribute("RecvPriority",
+                          "The priority of the recv",
+                          UintegerValue(0),
+                          MakeUintegerAccessor(&DcbTrafficGenApplication::m_recvPriority),
+                          MakeUintegerChecker<uint8_t>());
     return tid;
 }
 
@@ -133,6 +143,7 @@ DcbBaseApplication::SetTopologyAndNode(Ptr<DcTopology> topology, uint32_t nodeIn
 
     InitSocketLineRate();
 }
+
 // int64_t
 // DcbBaseApplication::AssignStreams (int64_t stream)
 // {
@@ -180,6 +191,11 @@ DcbBaseApplication::SetInnerUdpProtocol(TypeId innerTid)
         ObjectFactory congestionAlgorithmFactory;
         congestionAlgorithmFactory.SetTypeId(m_congestionTypeId);
         Ptr<RoCEv2CongestionOps> algo = congestionAlgorithmFactory.Create<RoCEv2CongestionOps>();
+        // Set attributes for the congestion control algorithm as attributes may affect header size
+        for (const auto& [name, value] : m_ccAttributes)
+        {
+            algo->SetAttribute(name, *value);
+        }
         m_dataHeaderSize = m_headerSize + algo->GetExtraHeaderSize();
     }
     else
@@ -220,6 +236,7 @@ DcbBaseApplication::SetupReceiverSocket()
         {
             // crate a special socket to act as the receiver
             m_receiverSocket = Socket::CreateSocket(GetNode(), m_socketTid);
+            m_receiverSocket->SetIpTos(m_recvPriority << 2);
             Ptr<RoCEv2Socket> roceSocket = DynamicCast<RoCEv2Socket>(m_receiverSocket);
             roceSocket->SetCcOps(m_congestionTypeId, m_ccAttributes);
             roceSocket->BindToNetDevice(GetOutboundNetDevice());
@@ -307,20 +324,21 @@ DcbBaseApplication::NodeIndexToAddr(uint32_t destNode) const
 }
 
 Ptr<Socket>
-DcbBaseApplication::CreateNewSocket(uint32_t destNode)
+DcbBaseApplication::CreateNewSocket(uint32_t destNode, uint32_t priority)
 {
     NS_LOG_FUNCTION(this);
     InetSocketAddress destAddr = NodeIndexToAddr(destNode);
-    return CreateNewSocket(destAddr);
+    return CreateNewSocket(destAddr, priority);
 }
 
 Ptr<Socket>
-DcbBaseApplication::CreateNewSocket(InetSocketAddress destAddr)
+DcbBaseApplication::CreateNewSocket(InetSocketAddress destAddr, uint32_t priority)
 {
     NS_LOG_FUNCTION(this);
 
     // The InstanceTyoeId of socket is RoCEv2Socket
     Ptr<Socket> socket = Socket::CreateSocket(GetNode(), m_socketTid);
+    socket->SetIpTos(priority << 2);
     // bool isRoce = false;
 
     int ret = socket->Bind();
@@ -355,7 +373,7 @@ DcbBaseApplication::CreateNewSocket(InetSocketAddress destAddr)
     {
         // The low 2-bits of TOS field is ECN field.
         // The Tos of a flow is setted here.
-        destAddr.SetTos(Ipv4Header::EcnType::ECN_ECT1);
+        destAddr.SetTos((socket->GetIpTos() & 0xfc) | Ipv4Header::EcnType::ECN_ECT1);
     }
     ret = socket->Connect(destAddr);
     if (ret == -1)
@@ -464,7 +482,11 @@ DcbBaseApplication::SendNextPacketWithTags(Flow* flow, std::vector<std::shared_p
             {
                 // For UDP socket, pacing the sending at application layer
                 Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_dataHeaderSize);
-                Simulator::Schedule(txTime, &DcbBaseApplication::SendNextPacketWithTags, this, flow, tags);
+                Simulator::Schedule(txTime,
+                                    &DcbBaseApplication::SendNextPacketWithTags,
+                                    this,
+                                    flow,
+                                    tags);
                 return;
             }
         }
@@ -472,7 +494,11 @@ DcbBaseApplication::SendNextPacketWithTags(Flow* flow, std::vector<std::shared_p
         {
             // Typically this is because TCP socket's txBuffer is full, retry later.
             Time txTime = m_socketLinkRate.CalculateBytesTxTime(packetSize + m_dataHeaderSize);
-            Simulator::Schedule(txTime, &DcbBaseApplication::SendNextPacketWithTags, this, flow, tags);
+            Simulator::Schedule(txTime,
+                                &DcbBaseApplication::SendNextPacketWithTags,
+                                this,
+                                flow,
+                                tags);
             return;
         }
     }
@@ -593,7 +619,7 @@ void
 DcbBaseApplication::HandleTcpAccept(Ptr<Socket> socket, const Address& from)
 {
     NS_LOG_FUNCTION(this << socket << from);
-    socket->SetRecvCallback(MakeCallback(&DcbTrafficGenApplication::HandleRead, this));
+    socket->SetRecvCallback(MakeCallback(&DcbBaseApplication::HandleRead, this));
     m_acceptedSocketList.push_back(socket);
 }
 

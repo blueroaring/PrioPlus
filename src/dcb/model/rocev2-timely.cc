@@ -92,14 +92,16 @@ RoCEv2Timely::GetTypeId()
 }
 
 RoCEv2Timely::RoCEv2Timely()
-    : RoCEv2CongestionOps()
+    : RoCEv2CongestionOps(std::make_shared<Stats>()),
+      m_stats(std::dynamic_pointer_cast<Stats>(RoCEv2CongestionOps::m_stats))
 {
     NS_LOG_FUNCTION(this);
     Init();
 }
 
 RoCEv2Timely::RoCEv2Timely(Ptr<RoCEv2SocketState> sockState)
-    : RoCEv2CongestionOps(sockState)
+    : RoCEv2CongestionOps(sockState, std::make_shared<Stats>()),
+      m_stats(std::dynamic_pointer_cast<Stats>(RoCEv2CongestionOps::m_stats))
 {
     NS_LOG_FUNCTION(this);
     Init();
@@ -142,7 +144,7 @@ RoCEv2Timely::UpdateStateWithRcvACK(Ptr<Packet> ack,
 
     // Read the ACK's PSN and get the corresponding timeslot.
     Time newRtt = Simulator::Now() - m_tsMap[roce.GetPSN() - 1];
-    // Record the packet delay for every packet to calculate the orcal gradient 
+    // Record the packet delay for every packet to calculate the orcal gradient
     m_stats->RecordPacketDelay(m_tsMap[roce.GetPSN() - 1], Simulator::Now(), newRtt);
 
     if (ackSeq < m_nextUpdateSeq)
@@ -237,8 +239,6 @@ RoCEv2Timely::Init()
     m_incStage = 1;
 
     RegisterCongestionType(GetTypeId());
-
-    m_stats = std::make_shared<Stats>();
 
     m_nextUpdateSeq = 0;
 }

@@ -22,9 +22,12 @@
 #include "rocev2-congestion-ops.h"
 #include "rocev2-hpcc.h"
 #include "rocev2-l4-protocol.h"
+#include "rocev2-poseidon.h"
+#include "rocev2-powertcp.h"
 
 #include "ns3/ethernet-header.h"
 #include "ns3/hpcc-header.h"
+#include "ns3/poseidon-header.h"
 #include "ns3/rocev2-header.h"
 #include "ns3/simulator.h"
 
@@ -86,9 +89,19 @@ DcbHpccPort::DoEgressProcess(Ptr<Packet> packet)
      * packet's CC algorithm
      */
     CongestionTypeTag ctTag;
+    IntStyle style = HPCC;
     if (packet->PeekPacketTag(ctTag))
     {
-        if (ctTag.GetCongestionTypeId() != RoCEv2Hpcc::GetTypeId())
+        if (ctTag.GetCongestionTypeId() == RoCEv2Hpcc::GetTypeId() ||
+            ctTag.GetCongestionTypeId() == RoCEv2Powertcp::GetTypeId())
+        {
+            style = HPCC;
+        }
+        else if (ctTag.GetCongestionTypeId() == RoCEv2Poseidon::GetTypeId())
+        {
+            style = POSEIDON;
+        }
+        else
         {
             return;
         }
@@ -108,10 +121,6 @@ DcbHpccPort::DoEgressProcess(Ptr<Packet> packet)
         // XXX maybe we should find a better way to check if it's RC_SEND_ONLY
         if (udpRoCEheader.GetRoCE().GetOpcode() == RoCEv2Header::Opcode::RC_SEND_ONLY)
         {
-            // Remove and Modify packet's HPCC header
-            HpccHeader hpccHeader;
-            packet->RemoveHeader(hpccHeader);
-
             // XXX since HPCC doesn't consider multi-priority queue, we simply calculate queue
             // length and txBytes by adding all queues together.
             Ptr<DcbNetDevice> device = DynamicCast<DcbNetDevice>(m_dev);
@@ -123,13 +132,29 @@ DcbHpccPort::DoEgressProcess(Ptr<Packet> packet)
             {
                 qLen += device->GetQueueDisc()->GetQueueDiscClass(i)->GetQueueDisc()->GetNBytes();
             }
+            if (style == HPCC)
+            {
+                // Remove and Modify packet's HPCC header
+                HpccHeader hpccHeader;
+                packet->RemoveHeader(hpccHeader);
 
-            // Push into HpccHeader
-            hpccHeader.PushHop(Simulator::Now().GetNanoSeconds(),
-                               m_txBytes,
-                               qLen,
-                               device->GetDataRate());
-            packet->AddHeader(hpccHeader);
+                // Push into HpccHeader
+                hpccHeader.PushHop(Simulator::Now().GetNanoSeconds(),
+                                   m_txBytes,
+                                   qLen,
+                                   device->GetDataRate());
+                packet->AddHeader(hpccHeader);
+            }
+            else if (style == POSEIDON)
+            {
+                // Remove and Modify packet's Poseidon header
+                PoseidonHeader poseidonHeader;
+                packet->RemoveHeader(poseidonHeader);
+
+                Time queueDelay = device->GetDataRate().CalculateBytesTxTime(qLen);
+                poseidonHeader.UpdateMpd(queueDelay.GetMicroSeconds());
+                packet->AddHeader(poseidonHeader);
+            }
         }
 
         // Rebuild packet's UdpRocev2Header

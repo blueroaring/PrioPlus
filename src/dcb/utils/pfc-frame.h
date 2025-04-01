@@ -63,6 +63,9 @@ class PfcFrame : public Header
      */
     uint16_t GetQuanta(uint8_t cls) const;
 
+    void SetOpcode(uint16_t opcode);
+    uint16_t GetOpcode() const;
+
     static TypeId GetTypeId();
     virtual TypeId GetInstanceTypeId(void) const override;
     virtual uint32_t GetSerializedSize() const override;
@@ -73,9 +76,11 @@ class PfcFrame : public Header
     static Ptr<Packet> GeneratePauseFrame(uint8_t priority, uint16_t quanta = 0xffff);
     static Ptr<Packet> GeneratePauseFrame(uint8_t enableVec, uint16_t quanta[8]);
 
-  private:
     constexpr static const uint32_t DEFAULT_OPCODE = 0x0101;
+    constexpr static const uint32_t EXTRA_OPCODE =
+        0xffff; // used for extend priority to more than 8
 
+  private:
     uint16_t m_opcode;
     uint16_t m_enableVec;
     uint16_t m_quantaVec[8];

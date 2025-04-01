@@ -376,6 +376,7 @@ DcTopology::GetOutDevIdx(const Ptr<Node> srcNode,
     else
     {
         NS_ASSERT_MSG(false, "couldn't find the outPort to dst!");
+        return -1; // Avoid the warning
     }
     // uint32_t minHop = INT32_MAX;
     // std::vector<uint32_t> outDevs;

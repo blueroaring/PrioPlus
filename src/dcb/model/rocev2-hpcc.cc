@@ -21,8 +21,8 @@
 
 #include "rocev2-socket.h"
 
-#include "ns3/simulator.h"
 #include "ns3/global-value.h"
+#include "ns3/simulator.h"
 
 namespace ns3
 {
@@ -34,30 +34,42 @@ NS_OBJECT_ENSURE_REGISTERED(RoCEv2Hpcc);
 TypeId
 RoCEv2Hpcc::GetTypeId()
 {
-    static TypeId tid = TypeId("ns3::RoCEv2Hpcc")
-                            .SetParent<RoCEv2CongestionOps>()
-                            .AddConstructor<RoCEv2Hpcc>()
-                            .SetGroupName("Dcb")
-                            .AddAttribute("TargetUtil",
-                                          "HPCC's target utilization",
-                                          DoubleValue(0.95),
-                                          MakeDoubleAccessor(&RoCEv2Hpcc::m_targetUtil),
-                                          MakeDoubleChecker<double>())
-                            .AddAttribute("MaxStage",
-                                          "HPCC's maximum stage",
-                                          UintegerValue(5),
-                                          MakeUintegerAccessor(&RoCEv2Hpcc::m_maxStage),
-                                          MakeUintegerChecker<uint32_t>())
-                            .AddAttribute("RateAIRatio",
-                                          "HPCC's RateAI ratio",
-                                          DoubleValue(0.0005),
-                                          MakeDoubleAccessor(&RoCEv2Hpcc::m_raiRatio),
-                                          MakeDoubleChecker<double>());
+    static TypeId tid =
+        TypeId("ns3::RoCEv2Hpcc")
+            .SetParent<RoCEv2CongestionOps>()
+            .AddConstructor<RoCEv2Hpcc>()
+            .SetGroupName("Dcb")
+            .AddAttribute("TargetUtil",
+                          "HPCC's target utilization",
+                          DoubleValue(0.95),
+                          MakeDoubleAccessor(&RoCEv2Hpcc::m_targetUtil),
+                          MakeDoubleChecker<double>())
+            .AddAttribute("TargetUtilString",
+                          "HPCC's target utilization",
+                          StringValue("0.95u"),
+                          MakeStringAccessor(&RoCEv2Hpcc::SetUString),
+                          MakeStringChecker())
+            .AddAttribute("MaxStage",
+                          "HPCC's maximum stage",
+                          UintegerValue(5),
+                          MakeUintegerAccessor(&RoCEv2Hpcc::m_maxStage),
+                          MakeUintegerChecker<uint32_t>())
+            .AddAttribute("RateAIRatio",
+                          "HPCC's RateAI ratio",
+                          DoubleValue(0.0005),
+                          MakeDoubleAccessor(&RoCEv2Hpcc::m_raiRatio),
+                          MakeDoubleChecker<double>())
+            .AddAttribute("StartRefRateRatio",
+                          "HPCC's start reference rate ratio",
+                          DoubleValue(1),
+                          MakeDoubleAccessor(&RoCEv2Hpcc::m_cRateRatio),
+                          MakeDoubleChecker<double>());
     return tid;
 }
 
 RoCEv2Hpcc::RoCEv2Hpcc()
-    : RoCEv2CongestionOps()
+    : RoCEv2CongestionOps(std::make_shared<Stats>()),
+      m_stats(std::dynamic_pointer_cast<Stats>(RoCEv2CongestionOps::m_stats))
 //   m_alphaTimer(Timer::CANCEL_ON_DESTROY)
 {
     NS_LOG_FUNCTION(this);
@@ -65,7 +77,8 @@ RoCEv2Hpcc::RoCEv2Hpcc()
 }
 
 RoCEv2Hpcc::RoCEv2Hpcc(Ptr<RoCEv2SocketState> sockState)
-    : RoCEv2CongestionOps(sockState)
+    : RoCEv2CongestionOps(sockState, std::make_shared<Stats>()),
+      m_stats(std::dynamic_pointer_cast<Stats>(RoCEv2CongestionOps::m_stats))
 //   m_alphaTimer(Timer::CANCEL_ON_DESTROY)
 {
     NS_LOG_FUNCTION(this);
@@ -183,7 +196,7 @@ RoCEv2Hpcc::MeasureInflight(const HpccHeader& hpccHeader)
     double frab = tau.GetSeconds() / baseRtt.GetSeconds();
     m_u = m_u * (1.0 - frab) + u * frab; // Algorithm Line 9
 
-    m_stats->RecordU(m_u);
+    m_stats->RecordU(u);
 }
 
 void
@@ -222,6 +235,19 @@ RoCEv2Hpcc::CopyIntHop(const IntHop* src, uint32_t nhop)
     }
 }
 
+void
+RoCEv2Hpcc::SetUString(std::string uStr)
+{
+    if (uStr.back() == 'u')
+    {
+        m_targetUtil = std::stod(uStr.substr(0, uStr.size() - 1));
+    }
+    else
+    {
+        m_targetUtil = std::stod(uStr);
+    }
+}
+
 std::string
 RoCEv2Hpcc::GetName() const
 {
@@ -239,8 +265,6 @@ RoCEv2Hpcc::Init()
     m_incStage = 0;
     m_cRateRatio = 1.;
     m_u = 1.;
-
-    m_stats = std::make_shared<Stats>();
 
     RegisterCongestionType(GetTypeId());
 }
@@ -261,7 +285,7 @@ RoCEv2Hpcc::Stats::Stats()
         bDetailedSenderStats = false;
 }
 
-void 
+void
 RoCEv2Hpcc::Stats::RecordPacketSend(uint32_t seq, Time sendTs)
 {
     if (bDetailedSenderStats)
@@ -286,7 +310,7 @@ RoCEv2Hpcc::Stats::RecordPacketDelay(uint32_t seq)
     }
 }
 
-void 
+void
 RoCEv2Hpcc::Stats::RecordU(double u)
 {
     if (bDetailedSenderStats)

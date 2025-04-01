@@ -66,12 +66,6 @@ class RoCEv2Dcqcn : public RoCEv2CongestionOps
 
     std::string GetName() const override;
 
-    inline std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const override
-    {
-        // This has no Stats now
-        return nullptr;
-    }
-
   private:
     void UpdateAlpha();
 
@@ -82,6 +76,8 @@ class RoCEv2Dcqcn : public RoCEv2CongestionOps
     void Init();
 
     // const Ptr<RoCEv2SocketState> m_sockState;
+    std::shared_ptr<Stats> m_stats; //!< Statistics
+
     double m_alpha;
     double m_g;
     double m_raiRatio;  //!< RateAI / link rate for additive increase

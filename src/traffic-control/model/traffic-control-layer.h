@@ -217,7 +217,6 @@ class TrafficControlLayer : public Object
     void DoInitialize() override;
     void NotifyNewAggregate() override;
 
-  private:
     /**
      * \brief Protocol handler entry.
      * This structure is used to demultiplex all the protocols.
@@ -230,6 +229,12 @@ class TrafficControlLayer : public Object
         bool promiscuous;              //!< true if it is a promiscuous handler
     };
 
+    /// Typedef for protocol handlers container
+    typedef std::vector<ProtocolHandlerEntry> ProtocolHandlerList;
+
+    ProtocolHandlerList m_handlers; //!< List of upper-layer handlers
+
+  private:
     /**
      * \brief Information to store for each device
      */
@@ -239,9 +244,6 @@ class TrafficControlLayer : public Object
         Ptr<NetDeviceQueueInterface> m_ndqi; //!< the netdevice queue interface
         QueueDiscVector m_queueDiscsToWake;  //!< the vector of queue discs to wake
     };
-
-    /// Typedef for protocol handlers container
-    typedef std::vector<ProtocolHandlerEntry> ProtocolHandlerList;
 
     /**
      * \brief Required by the object map accessor
@@ -259,7 +261,6 @@ class TrafficControlLayer : public Object
     Ptr<Node> m_node;
     /// Map storing the required information for each device with a queue disc installed
     std::map<Ptr<NetDevice>, NetDeviceInfo> m_netDevices;
-    ProtocolHandlerList m_handlers; //!< List of upper-layer handlers
 
     /**
      * The trace source fired when the Traffic Control layer drops a packet because

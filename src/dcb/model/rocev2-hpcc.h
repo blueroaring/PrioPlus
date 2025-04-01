@@ -128,6 +128,8 @@ class RoCEv2Hpcc : public RoCEv2CongestionOps
      */
     void Init();
 
+    void SetUString(std::string uStr);
+
     std::shared_ptr<Stats> m_stats; //!< Statistics
 
     uint32_t m_lastUpdateSeq; //!< lastUpdateSeq in paper.

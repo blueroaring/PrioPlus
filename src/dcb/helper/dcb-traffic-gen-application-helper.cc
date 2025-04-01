@@ -72,7 +72,8 @@ DcbTrafficGenApplicationHelper::SetRealTimeApp(bool realTimeApp)
     m_realTimeApp = realTimeApp;
 }
 
-void DcbTrafficGenApplicationHelper::SetApplicationTypeId(TypeId typeId)
+void
+DcbTrafficGenApplicationHelper::SetApplicationTypeId(TypeId typeId)
 {
     m_applicationTypeId = typeId;
 }
@@ -96,6 +97,21 @@ DcbTrafficGenApplicationHelper::SetCcAttribute(ConfigEntry_t ccAttribute)
         }
     }
     m_ccAttributes.push_back(ccAttribute);
+}
+
+void
+DcbTrafficGenApplicationHelper::SetAppAttribute(ConfigEntry_t entry)
+{
+    // If the attribute already exists, replace it. If not, add it.
+    for (auto& [name, value] : m_appAttributes)
+    {
+        if (name == entry.first)
+        {
+            value = entry.second;
+            return;
+        }
+    }
+    m_appAttributes.push_back(entry);
 }
 
 void
@@ -197,7 +213,8 @@ DcbTrafficGenApplicationHelper::CreateApplication(Ptr<Node> node)
 
 // static
 double
-DcbTrafficGenApplicationHelper::CalculateCdfMeanSize(const DcbTrafficGenApplication::TraceCdf* const cdf)
+DcbTrafficGenApplicationHelper::CalculateCdfMeanSize(
+    const DcbTrafficGenApplication::TraceCdf* const cdf)
 {
     double res = 0.;
     auto [ls, lp] = (*cdf)[0];

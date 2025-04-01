@@ -42,7 +42,7 @@ ReadConfig(std::string config_file)
     configf.open(config_file.c_str());
     std::stringstream buf;
     buf << configf.rdbuf();
-    boost::json::error_code ec;
+    boost::system::error_code ec;
     boost::json::object configJsonObj = boost::json::parse(buf.str()).as_object();
     if (ec.failed())
     {

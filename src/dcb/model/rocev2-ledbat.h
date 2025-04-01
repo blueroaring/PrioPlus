@@ -90,19 +90,6 @@ class RoCEv2Ledbat : public RoCEv2CongestionOps
 
     std::string GetName() const override;
 
-    class Stats : public RoCEv2CongestionOps::Stats
-    {
-      public:
-        // constructor
-        Stats();
-        // Collect the statistics and check if the statistics is correct
-        void CollectAndCheck();
-
-        // No getter for simplicity
-    };
-
-    std::shared_ptr<RoCEv2CongestionOps::Stats> GetStats() const override;
-
   private:
     /**
      * Initialize the state.

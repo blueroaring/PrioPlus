@@ -141,25 +141,29 @@ DcbTrafficControl::Receive(Ptr<NetDevice> device,
     uint32_t index = device->GetIfIndex();
     DeviceIndexTag tag(index);
     packet->AddPacketTag(tag); // egress will read the index from tag to decrement counter
-    // update ingress queue length
-    // Ipv4Header ipv4Header;
-    // packet->PeekHeader(ipv4Header);
-    // bool success = m_buffer.InPacketProcess(index,
-    //                                         priority,
-    //                                         packet->GetSize() - ipv4Header.GetSerializedSize());
-    // if (!success)
-    // {
-    //     m_bufferOverflowTrace(packet);
-    //     return;
-    // }
 
-    // const PortInfo& port = m_buffer.GetPort(index);
-    // if (port.FcEnabled())
-    // {
-    //     // run flow control ingress process
-    //     port.GetFC()->IngressProcess(packet, protocol, from, to, packetType);
-    // }
-    TrafficControlLayer::Receive(device, packet, protocol, from, to, packetType);
+    bool found = false;
+
+    for (auto i = m_handlers.rbegin(); i != m_handlers.rend(); i++)
+    {
+        if (!i->device || (i->device == device))
+        {
+            if (i->protocol == 0 || i->protocol == protocol)
+            {
+                NS_LOG_DEBUG("Found handler for packet " << packet << ", protocol " << protocol
+                                                         << " and NetDevice " << device
+                                                         << ". Send packet up");
+                i->handler(device, packet, protocol, from, to, packetType);
+                found = true;
+                break; // XXX only using routing-accelerate handler. This may cause problem like not
+                       // forwarding ARP packets.
+            }
+        }
+    }
+
+    NS_ABORT_MSG_IF(!found,
+                    "Handler for protocol " << packet << " and device " << device
+                                            << " not found. It isn't forwarded up; it dies here.");
 }
 
 void
@@ -210,7 +214,7 @@ DcbTrafficControl::EgressProcess(uint32_t outPort, uint32_t priority, Ptr<Packet
 
     CoSTag cosTag;
     packet->RemovePacketTag(cosTag);
-    uint32_t inQueuePriority = cosTag.GetCoS() & 0x0f;
+    uint32_t inQueuePriority = cosTag.GetCoS();
 
     m_buffer.OutPacketProcess(inPortIndex, inQueuePriority, outPort, priority, packet->GetSize());
 
@@ -324,7 +328,8 @@ DcbTrafficControl::Buffer::InPacketProcess(uint32_t inPortIndex,
         outQueue->EgressIncrement(packetSize);
         return true;
     }
-    NS_LOG_DEBUG("Buffer overflow, packet drop.");
+    // std::cout << Simulator::Now().GetPicoSeconds() << " Buffer overflow, packet drop." << std::endl;
+    NS_LOG_DEBUG (Simulator::Now().GetPicoSeconds() << " Buffer overflow, packet drop.");
     return false; // buffer overflow
 }
 
@@ -361,8 +366,7 @@ DcbTrafficControl::Buffer::GetSharedSize()
         uint32_t size = m_totalSize;
         for (uint32_t i = 1; i < m_ports.size(); i++) // 0 is LoopbackNetDev
         {
-            uint32_t prirority = PRIORITY_NUMBER;
-            for (uint32_t j = 0; j < prirority; j++)
+            for (uint32_t j = 0; j < m_ports[i].GetFCMmuQueueSize(); j++)
             {
                 uint32_t exclusiveSize = m_ports[i].GetFCMmuQueue(j)->GetExclusiveBufferSize();
                 NS_ASSERT_MSG(exclusiveSize <= size,
@@ -382,8 +386,7 @@ DcbTrafficControl::Buffer::GetSharedUsed()
     uint32_t sum = 0;
     for (uint32_t i = 1; i < m_ports.size(); i++) // 0 is LoopbackNetDev
     {
-        uint32_t prirority = PRIORITY_NUMBER;
-        for (uint32_t j = 0; j < prirority; j++)
+        for (uint32_t j = 0; j < m_ports[i].GetFCMmuQueueSize(); j++)
         {
             sum += m_ports[i].GetFCMmuQueue(j)->GetExclusiveSharedBufferUsed();
         }
@@ -395,8 +398,7 @@ void
 DcbTrafficControl::Buffer::SetPortFcMmuBufferCallback(uint32_t portIndex)
 {
     const auto& port = m_ports[portIndex];
-    uint32_t prirority = PRIORITY_NUMBER;
-    for (uint32_t i = 0; i < prirority; i++)
+    for (uint32_t i = 0; i < port.GetFCMmuQueueSize(); i++)
     {
         Ptr<DcbFlowControlMmuQueue> queue = port.GetFCMmuQueue(i);
         queue->SetBufferCallback(MakeCallback(&DcbTrafficControl::Buffer::GetSharedSize, this),

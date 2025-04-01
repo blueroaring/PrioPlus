@@ -50,6 +50,10 @@ ConstructFcHelper(const boost::json::object& fcConfig)
         fcConfig,
         "numQueuePerPort",
         [fcHelper](uint32_t numQueuePerPort) { fcHelper->SetNumQueuePerPort(numQueuePerPort); });
+    JsonCallIfExistsFloat<double>(
+        fcConfig,
+        "bufferBandwidthRatio",
+        [fcHelper](double bufferBandwidthRatio) { fcHelper->SetBufferBandwidthRatio(bufferBandwidthRatio); });
     JsonCallIfExistsInt<uint32_t>(
         fcConfig,
         "numLosslessQueue",
@@ -106,6 +110,17 @@ ConstructFcHelper(const boost::json::object& fcConfig)
     fcHelper->SetInnerQueueDiscTypeId(iqdType);
     fcHelper->SetInnerQueueDiscAttributes(std::move(*iqdConfigVector));
 
+    JsonCallIfExistsString(fcConfig, "priorityVec", [fcHelper](std::string priorityVec) {
+        fcHelper->SetPriorities(ConvertRangeToVector(priorityVec.c_str(), fcHelper->GetNumQueuePerPort()));
+    });
+    JsonCallIfExistsString(fcConfig, "quantumVec", [fcHelper](std::string quantumVec) {
+        fcHelper->SetQuantum(ConvertRangeToVector(quantumVec.c_str(), fcHelper->GetNumQueuePerPort()));
+    });
+    JsonCallIfExistsInt<uint32_t>(
+        fcConfig,
+        "maxCredit",
+        [fcHelper](uint32_t maxCredit) { fcHelper->SetMaxCredit(maxCredit); });
+
     return fcHelper;
 }
 
@@ -142,6 +157,21 @@ InstallFlowControl(const boost::json::object& fcConfig, Ptr<DcTopology> topology
             }
             Ptr<Node> node = swIter->nodePtr;
             fcHelper->Install(node);
+
+            // Switch node special config
+            Ptr<TrafficControlLayer> tc = node->GetObject<TrafficControlLayer>();
+            for (uint32_t i = 0; i < node->GetNDevices(); i++)
+            {
+                Ptr<SwitchNode> sw;
+                if ((sw = DynamicCast<SwitchNode>(node)) == nullptr)
+                {
+                    NS_FATAL_ERROR("Node " << topology->GetNodeIndex(swIter->nodePtr)
+                                           << " is not a switchNode.");
+                }
+                tc->RegisterProtocolHandler(MakeCallback(&SwitchNode::ReceivePacketAfterTc, sw),
+                                            Ipv4L3Protocol::PROT_NUMBER,
+                                            node->GetDevice(i));
+            }
         }
     }
     else
@@ -175,7 +205,7 @@ CreateOneHost()
 static DcTopology::TopoNode
 CreateOneSwitch()
 {
-    const Ptr<Node> sw = CreateObject<Node>();
+    const Ptr<SwitchNode> sw = CreateObject<SwitchNode>();
 
     // Add protocol to switch
     DcbStackHelper hostStack;
@@ -388,6 +418,13 @@ BuildTopology(boost::json::object& configObj)
         }
     }
 
+    // Set the number of hosts in the GlobalValue
+    // New a GlobalValue and set it, it will never be freeed
+    new ns3::GlobalValue("NHosts",
+                         "Number of hosts in the topology",
+                         UintegerValue(topology->GetNHosts()),
+                         MakeUintegerChecker<uint32_t>());
+
     Ipv4GlobalRoutingHelper globalRouting;
     // Ipv4ListRoutingHelper list;
     // list.Add (globalRouting, 1);
@@ -452,6 +489,10 @@ BuildTopology(boost::json::object& configObj)
     LogAllRoutes(topology);
 
     topof.close();
+
+    // Calculate the propagation delay between each pair of hosts, and store it in the topology
+    topology->CreateDelayMap();
+    topology->LogDelayMap();
 
     // Calculate the propagation delay between each pair of hosts, and store it in the topology
     topology->CreateDelayMap();

@@ -97,6 +97,18 @@ PfcFrame::GetQuanta(uint8_t cls) const
     return m_quantaVec[cls];
 }
 
+void
+PfcFrame::SetOpcode(uint16_t opcode)
+{
+    m_opcode = opcode;
+}
+
+uint16_t
+PfcFrame::GetOpcode() const
+{
+    return m_opcode;
+}
+
 TypeId
 PfcFrame::GetTypeId()
 {

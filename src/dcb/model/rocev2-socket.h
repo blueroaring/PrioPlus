@@ -21,6 +21,8 @@
 #define ROCEV2_SOCKET_H
 
 #include "rocev2-congestion-ops.h"
+#include "rocev2-prioplus-ledbat.h"
+#include "rocev2-prioplus-swift.h"
 #include "udp-based-socket.h"
 
 #include "ns3/ipv4-address.h"
@@ -62,9 +64,9 @@ class DcbTxBuffer : public Object
     enum TxPacketState : uint8_t
     {
         UNACK, // already been sent but not been acked
-        NACK, // already been retransmitted
-        ACK, // acked
-        UNDEF // out of range
+        NACK,  // already been retransmitted
+        ACK,   // acked
+        UNDEF  // out of range
     };
 
     /**
@@ -123,6 +125,11 @@ class DcbTxBuffer : public Object
      */
     inline bool CouldSend(uint32_t psn, uint64_t cwnd);
     /**
+     * \brief Return the number of inflight packets.
+     * \param reorder whether assuming the packets can be reordered.
+     */
+    uint32_t InflightPkts(bool reorder = false);
+    /**
      * \brief Return the number of packets in the buffer.
      */
     uint32_t Size() const;
@@ -152,16 +159,16 @@ class DcbTxBuffer : public Object
     uint32_t GetOnTheFly();
     /**
      * @brief Get the Max Acked Psn.
-     * 
-     * @return uint32_t 
+     *
+     * @return uint32_t
      */
     uint32_t GetMaxAckedPsn();
     /**
      * @brief Set the Pkt State of all pkt in range of [from, to)
-     * 
-     * @param from 
-     * @param to 
-     * @param state 
+     *
+     * @param from
+     * @param to
+     * @param state
      */
     void SetPktState(uint32_t from, uint32_t to, uint8_t state);
     /**
@@ -187,6 +194,10 @@ class DcbTxBuffer : public Object
      * \brief Get the remain size to be sent. Unit: packet
      */
     uint32_t RemainSizeInPacket() const;
+    /**
+     * \brief Get the remain size to be sent. Unit: byte
+     */
+    uint32_t RemainSizeInBytes() const;
 
     /**
      * \brief Create a packet and push it into the buffer.
@@ -202,6 +213,15 @@ class DcbTxBuffer : public Object
 
     DcbTxBufferItemI FindPSN(uint32_t psn) const;
     DcbTxBufferItemI End() const;
+
+    /**
+     * \brief Clear the payload. No matter whether the payload has been sent.
+     */
+    void ClearPayload();
+    /**
+     * \brief Clear all psn >= given psn in the txQueue. Used to terminate the socket.
+     */
+    void ClearTxQueue(uint32_t psn);
 
   protected:
     /**
@@ -231,16 +251,16 @@ class DcbTxBuffer : public Object
     std::vector<bool> m_acked; // Whether the packet with the PSN is acked, serve as a bitmap in
                                // retx mode IRN. The index is the PSN.
     std::vector<uint8_t> m_pktState; // the state of a packet(ack, unack, lost, undef)
-    uint32_t m_maxAckedPsn;    // The max PSN which has been acknowledged, used to detect gap.
+    uint32_t m_maxAckedPsn;          // The max PSN which has been acknowledged, used to detect gap.
 
     uint32_t m_remainSize;  // The size of data to be sent
     uint32_t m_maxSentPsn;  // The max PSN has been sent
     Ipv4Address m_daddr;    // The destination address to send the packet
     Ptr<Ipv4Route> m_route; // The route to send the packet
     uint32_t m_mss;
-    
+
     Ptr<Packet> m_payload; // The payload to be sent
-};                                // class DcbTxBuffer
+}; // class DcbTxBuffer
 
 class DcbRxBuffer : public Object
 {
@@ -362,9 +382,12 @@ class RoCEv2SocketState : public Object
      */
     inline uint64_t GetBaseBdp() const
     {
-        if (m_deviceRate != nullptr) {
+        if (m_deviceRate != nullptr)
+        {
             return static_cast<uint64_t>(m_deviceRate->GetBitRate() / 8 * m_baseRtt.GetSeconds());
-        } else {
+        }
+        else
+        {
             return 0;
         }
     }
@@ -399,6 +422,16 @@ class RoCEv2SocketState : public Object
         return m_mss;
     }
 
+    inline void SetFlowTotalSize(uint64_t flowTotalSize)
+    {
+        m_flowTotalSize = flowTotalSize;
+    }
+
+    inline uint64_t GetFlowTotalSize() const
+    {
+        return m_flowTotalSize;
+    }
+
     /**
      * \brief Check if rateRatio is less than 1.0 and greater than m_minRateRatio.
      * if not, return the corrected rateRatio.
@@ -409,6 +442,13 @@ class RoCEv2SocketState : public Object
         return std::min(std::max(rateRatio, m_minRateRatio), 1.);
     }
 
+    inline double GetInflightRatio() const
+    {
+        // Get the inflight pkts
+        return (double)m_txBuffer->InflightPkts() / ((double)m_cwnd / m_packetSize);
+    }
+
+    bool m_receivedEcn; //!< Marking whether the last packet received is ECN marked
   private:
     /**
      * Instead of directly store sending rate here, we store a rate ratio.
@@ -422,10 +462,11 @@ class RoCEv2SocketState : public Object
     DataRate* m_deviceRate;
     Time m_baseRtt; //!< Base RTT. Note that this is auto set by DcbDcbTrafficGenApplication. If
                     //!< not, it should be set manually.
-    Time m_baseOneWayDelay; //!< Base one way delay. Note that this is auto set by
-                            //!< DcbDcbTrafficGenApplication. If not, it should be set manually.
-    uint32_t m_packetSize;  //!< MSS + headersize
-    uint32_t m_mss;         //!< MSS
+    Time m_baseOneWayDelay;   //!< Base one way delay. Note that this is auto set by
+                              //!< DcbDcbTrafficGenApplication. If not, it should be set manually.
+    uint32_t m_packetSize;    //!< MSS + headersize
+    uint32_t m_mss;           //!< MSS
+    uint64_t m_flowTotalSize; //!< The total size of the flow
 
 }; // class RoCEv2SocketState
 
@@ -481,6 +522,11 @@ class RoCEv2Socket : public UdpBasedSocket
      */
     Ptr<RoCEv2SocketState> GetSocketState() const;
 
+    /**
+     * \brief Terminate the socket sending. That is, stop the socket from sending new packet.
+     */
+    void Terminate();
+
     // \brief Structure that keeps the RoCEv2Socket statistics
     class Stats
     {
@@ -520,6 +566,8 @@ class RoCEv2Socket : public UdpBasedSocket
         std::vector<std::pair<Time, uint32_t>> vAckedPsn; //<! Record the ack recv time and PSN
         std::vector<std::pair<Time, uint32_t>> vExpectedPsn; //<! Record the ack recv time and PSN
 
+        std::string flowTag; //<! The tag of the flow to identify it, configured by the application
+
         // The pointer to the RoCEv2Harvest::Stats
         std::shared_ptr<RoCEv2CongestionOps::Stats> ccStats;
 
@@ -543,7 +591,7 @@ class RoCEv2Socket : public UdpBasedSocket
     /**
      * \param ipTos the TOS value (in the range 0..255)
      * \return The priority value corresponding to the given TOS value
-    */
+     */
     static uint8_t IpTos2Priority(uint8_t ipTos);
 
   protected:
@@ -575,6 +623,11 @@ class RoCEv2Socket : public UdpBasedSocket
      * \brief Called by flow scheduler at RoCEv2L4Proto to notify the socket to send a packet down.
      */
     void NotifyCouldSend();
+
+    /**
+     * \brief Called when the flow is finished, do some clean and record work.
+     */
+    void Finish();
 
   private:
     struct FlowInfo // for receiver
@@ -688,6 +741,36 @@ class RoCEv2Socket : public UdpBasedSocket
 
     DataRate m_rateCap; //!< Rate cap, used to run some experiments
 
+    /***** Utility for Probe (Like DOCA's RTT Req) *****/
+    /**
+     * \brief Send a probe packet, now only used in PrioPlus.
+     *
+     * \return If the packet is sent, return true, otherwise return false.
+     */
+    bool SendProbePacket(uint32_t psn);
+    /**
+     * \brief Handle the probe packet, now only used in PrioPlus.
+     *
+     * Handle the income probe packet and return a probe ACK packet.
+     */
+    void HandleProbePacket(Ptr<Packet> packet,
+                           Ipv4Header header,
+                           uint32_t port,
+                           Ptr<Ipv4Interface> incomingInterface,
+                           const RoCEv2Header& roce);
+    /**
+     * \brief Send a probe ACK packet, called when a probe packet is received.
+     */
+    void SendProbeAckPacket(Ptr<Packet> packet,
+                            Ipv4Header header,
+                            uint32_t port,
+                            Ptr<Ipv4Interface> incomingInterface,
+                            const RoCEv2Header& roce);
+    /**
+     * \brief Handle the probe packet, now only used in PrioPlus.
+     */
+    Callback<void, Ptr<Packet>> m_probeRecvCb;
+
     /***** Utility for FlowScheduling *****/
     bool m_waitingForSchedule; //!< Whether the socket is waiting for the flow scheduler to notify
                                //!< it to send a packet down.
@@ -710,7 +793,7 @@ class RoCEv2Socket : public UdpBasedSocket
     Time GetRTOTime();
     Time m_rto;         //!< Retransmission timeout (RTOhigh when IRN is used)
     EventId m_rtoEvent; //!< Event id of the next RTO event
-    Time m_lastRto; //!< The time of schedule a rto event
+    Time m_lastRto;     //!< The time of schedule a rto event
 
     Time m_irnRtoLow;        //!< Low retransmission timeout for IRN
     uint32_t m_irnPktThresh; //!< The threshold of the number of packets to trigger low RTO for IRN
@@ -724,6 +807,11 @@ class RoCEv2Socket : public UdpBasedSocket
 
     FlowState m_flowState;
 
+    /***** Utility for Ack-driven pacing when cwnd < 1pkt *****/
+    bool m_ackDrivenPacing; //!< Whether the socket is in ack-driven pacing mode
+    // XXX record m_lastAckTime when ack recved not txbuffer moved, may have problem in lossy
+    // environment
+    Time m_lastAckTime; //!< The time of the last ack
 }; // class RoCEv2Socket
 
 /**
@@ -747,6 +835,28 @@ class IrnHeader : public Header
   private:
     uint32_t m_ackedPsn;
 }; // class IrnHeader
+
+class ProbePacketTag : public Tag
+{
+  public:
+    /**
+     * \brief Get the type ID.
+     * \return the object TypeId
+     */
+    static TypeId GetTypeId();
+    TypeId GetInstanceTypeId() const override;
+    uint32_t GetSerializedSize() const override;
+    void Serialize(TagBuffer buf) const override;
+    void Deserialize(TagBuffer buf) override;
+    void Print(std::ostream& os) const override;
+    ProbePacketTag();
+    ProbePacketTag(bool isProbe);
+
+  private:
+    bool m_isProbe; //!< if true, the packet is a probe packet, otherwise, it is a ACK of probe
+                    //!< packet
+};
+
 
 } // namespace ns3
 

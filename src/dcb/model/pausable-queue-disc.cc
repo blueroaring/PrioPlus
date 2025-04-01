@@ -229,7 +229,7 @@ PausableQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
     if (item->GetPacket()->PeekPacketTag(
             cosTag)) // costag should be removed in DcbTrafficControl::EgressProcess
     {
-        priority = cosTag.GetCoS() & 0x3f;
+        priority = cosTag.GetCoS();
     }
     else
     {
@@ -243,7 +243,9 @@ PausableQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
         }
         priority = RoCEv2Socket::IpTos2Priority(ipv4Qdi->GetHeader().GetTos());
     }
-    NS_ASSERT_MSG(priority < 8, "Priority should be 0~7 but here we have " << priority);
+    NS_ASSERT_MSG(priority < DcbTrafficControl::PRIORITY_NUMBER,
+                  "Priority should be 0~" << DcbTrafficControl::PRIORITY_NUMBER - 1
+                                          << " but here we have " << priority);
 
     Ptr<PausableQueueDiscClass> qdiscClass = GetQueueDiscClass(priority);
     bool retval = qdiscClass->GetQueueDisc()->Enqueue(item);
@@ -265,14 +267,102 @@ PausableQueueDisc::DoDequeue()
 
     // The strict priority is implemented
     // The order is from high to low priority
-    for (uint32_t i = GetNQueueDiscClasses(); i-- > 0;)
+    // for (uint32_t i = GetNQueueDiscClasses(); i-- > 0;)
+    // {
+    //     Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(i);
+    //     if ((!m_fcEnabled || !qdclass->IsPaused()) &&
+    //         (item = qdclass->GetQueueDisc()->Dequeue()) != nullptr)
+    //     {
+    //         // FC is not enabled or the queue is not paused
+    //         NS_LOG_LOGIC("Popoed from priority " << i << ": " << item);
+
+    //         // If the qdice is empty after dequeue, try to call the m_sendDataCb
+    //         if (qdclass->GetQueueDisc()->GetNBytes() == 0)
+    //         {
+    //             // If we are at switch, the m_sendData Callback is null
+    //             if (!m_sendDataCallback.IsNull())
+    //                 // Note that the first device is LoopbackNetDevice, but this is not safe
+    //                 m_sendDataCallback(m_portIndex, i);
+    //         }
+
+    //         if (!m_tcEgress.IsNull())
+    //             m_tcEgress(m_portIndex, i, item->GetPacket());
+    //         return item;
+    //     }
+    // }
+
+    // Strict priority & WDRR
+    // 1. Select the highest priority queue that is not paused and not empty
+    uint32_t selectedPriority = 0;
+    bool isSelected = false;
+    std::vector<uint32_t> selectedQueueIdx;
+    // iter the m_priorityToInnerQueue by key from high to low
+    // for (uint32_t i = m_priorityToInnerQueue.size() - 1; i-- > 0;)
+    for (auto it = m_priorityToInnerQueue.rbegin(); it != m_priorityToInnerQueue.rend(); ++it)
     {
-        Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(i);
-        if ((!m_fcEnabled || !qdclass->IsPaused()) &&
+        // std::cout << "Try priority: " << it->first << std::endl;
+        for (uint32_t j = 0; j < it->second.size(); j++)
+        {
+            uint32_t innerQueueIndex = it->second[j];
+            Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(innerQueueIndex);
+            if ((!m_fcEnabled || !qdclass->IsPaused()) &&
+                qdclass->GetQueueDisc()->GetCurrentSize().GetValue() != 0)
+            {
+                // FC is not enabled or the queue is not paused
+                NS_LOG_LOGIC("Select the priority " << it->first);
+                selectedPriority = it->first;
+                // if (Simulator::GetContext() == 16)
+                //     std::cout << Simulator::Now().GetNanoSeconds() << " Selected priority: " << selectedPriority << std::endl;
+                isSelected = true;
+                selectedQueueIdx.push_back(j);
+            }
+        }
+        if (isSelected)
+            break;
+    }
+    if (!isSelected)
+    {
+        NS_LOG_LOGIC("Queue empty");
+        return item;
+    }
+
+    // 2. Check if the all queues in the selected priority do not have enough credit
+    // If so, increment the credit for all queues in the selected priority
+    bool allQueuesNoCredit = true;
+    for (uint32_t i : selectedQueueIdx)
+    {
+        uint32_t innerQueueIndex = m_priorityToInnerQueue[selectedPriority][i];
+        Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(innerQueueIndex);
+        if (qdclass->HasCredit())
+        {
+            allQueuesNoCredit = false;
+            break;
+        }
+    }
+    if (allQueuesNoCredit)
+    {
+        // Increment the credit for all queues in the selected priority
+        for (uint32_t i = 0; i < m_priorityToInnerQueue[selectedPriority].size(); i++)
+        {
+            uint32_t innerQueueIndex = m_priorityToInnerQueue[selectedPriority][i];
+            Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(innerQueueIndex);
+            qdclass->IncrementCredit();
+        }
+    }
+
+    // 3. Find a queue that has enough credit and is not paused. Dequeue from the queue. Decrement
+    // the credit.
+    for (uint32_t i = 0; i < m_priorityToInnerQueue[selectedPriority].size(); i++)
+    {
+        uint32_t innerQueueIndex = m_priorityToInnerQueue[selectedPriority][i];
+        Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(innerQueueIndex);
+        if ((!m_fcEnabled || !qdclass->IsPaused()) && qdclass->HasCredit() &&
             (item = qdclass->GetQueueDisc()->Dequeue()) != nullptr)
         {
             // FC is not enabled or the queue is not paused
-            NS_LOG_LOGIC("Popoed from priority " << i << ": " << item);
+            NS_LOG_LOGIC("Dequeued from queue " << innerQueueIndex << ": " << item);
+            // if (Simulator::GetContext() == 16)
+            //     std::cout << "Dequeued from queue: " << innerQueueIndex << std::endl;
 
             // If the qdice is empty after dequeue, try to call the m_sendDataCb
             if (qdclass->GetQueueDisc()->GetNBytes() == 0)
@@ -280,15 +370,19 @@ PausableQueueDisc::DoDequeue()
                 // If we are at switch, the m_sendData Callback is null
                 if (!m_sendDataCallback.IsNull())
                     // Note that the first device is LoopbackNetDevice, but this is not safe
-                    m_sendDataCallback(m_portIndex, i);
+                    m_sendDataCallback(m_portIndex, innerQueueIndex);
             }
 
+            qdclass->DecrementCredit(item->GetPacket()->GetSize());
             if (!m_tcEgress.IsNull())
-                m_tcEgress(m_portIndex, i, item->GetPacket());
+                m_tcEgress(m_portIndex, selectedPriority, item->GetPacket());
             return item;
         }
     }
+
     NS_LOG_LOGIC("Queue empty");
+    NS_ABORT_MSG("PausableQueueDisc: no queue can be dequeued");
+    
     return item;
 }
 
@@ -331,12 +425,12 @@ PausableQueueDisc::CheckConfig(void)
     // If no queue disc class is set
     if (GetNQueueDiscClasses() == 0)
     {
-        // create 8 fifo queue discs
+        // create DcbTrafficControl::PRIORITY_NUMBER fifo queue discs
         ObjectFactory factory;
         factory.SetTypeId("ns3::FifoQueueDiscEcn");
         // Each inner fifo queue's size is equal to the total queue size
         factory.Set("MaxSize", QueueSizeValue(m_queueSize));
-        for (uint8_t i = 0; i < 8; i++)
+        for (uint8_t i = 0; i < DcbTrafficControl::PRIORITY_NUMBER; i++)
         {
             Ptr<QueueDisc> qd = factory.Create<QueueDisc>();
             qd->Initialize();
@@ -367,6 +461,68 @@ PausableQueueDisc::RegisterSendDataCallback(Callback<void, uint32_t, uint32_t> c
     m_sendDataCallback = cb;
 }
 
+void
+PausableQueueDisc::SetEcnThres(std::string kmin, std::string kmax)
+{
+    for (uint8_t i = 0; i < GetNQueueDiscClasses(); i++)
+    {
+        Ptr<FifoQueueDiscEcn> qd =
+            DynamicCast<FifoQueueDiscEcn>(GetQueueDiscClass(i)->GetQueueDisc());
+        if (qd == nullptr)
+        {
+            // Here we assume the inner queue is FifoQueueDiscEcn
+            NS_LOG_ERROR("PausableQueueDisc: cannot cast inner queue to FifoQueueDiscEcn");
+            return;
+        }
+        qd->SetAttribute("EcnKMin", StringValue(kmin));
+        qd->SetAttribute("EcnKMax", StringValue(kmax));
+    }
+}
+
+void
+PausableQueueDisc::SetWdrrParameters(std::vector<uint32_t> priorities,
+                                     std::vector<uint32_t> quantum,
+                                     uint32_t maxCredit)
+{
+    NS_ASSERT_MSG(
+        priorities.size() == quantum.size() && priorities.size() == GetNQueueDiscClasses(),
+        "The size of priorities and quantum should be equal to the number of inner queues");
+
+    // Constuct the m_priorityToInnerQueue
+    for (uint32_t i = 0; i < priorities.size(); i++)
+    {
+        m_priorityToInnerQueue[priorities[i]].push_back(i);
+        Ptr<PausableQueueDiscClass> qdclass = GetQueueDiscClass(i);
+        qdclass->SetWdrrParameters(quantum[i] * 1000, maxCredit * 1000);
+    }
+
+    // cout the priorities and quantum
+    // for (uint32_t i = 0; i < GetNQueueDiscClasses(); i++)
+    // {
+    //     std::cout << "Priority: " << priorities[i] << ", Quantum: " << quantum[i] << std::endl;
+    // }
+    // cout the m_priorityToInnerQueue
+    // for (auto it = m_priorityToInnerQueue.begin(); it != m_priorityToInnerQueue.end(); ++it)
+    // {
+    //     std::cout << "Priority: " << it->first << ", Inner queues: ";
+    //     for (uint32_t i = 0; i < it->second.size(); i++)
+    //     {
+    //         std::cout << it->second[i] << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
+}
+
+void
+PausableQueueDisc::SetDefaultStrictPriority()
+{
+    // Constuct the default m_priorityToInnerQueue
+    for (uint32_t i = 0; i < GetNQueueDiscClasses(); i++)
+    {
+        m_priorityToInnerQueue[i].push_back(i);
+    }
+}
+
 std::shared_ptr<PausableQueueDisc::Stats>
 PausableQueueDisc::GetStats() const
 {
@@ -378,7 +534,7 @@ void
 PausableQueueDisc::SetDetailedSwitchStats(bool bDetailedQlengthStats)
 {
     m_stats->bDetailedQlengthStats = bDetailedQlengthStats;
-    for (uint8_t i = 0; i < 8; i++)
+    for (uint8_t i = 0; i < GetNQueueDiscClasses(); i++)
     {
         Ptr<FifoQueueDiscEcn> qd =
             DynamicCast<FifoQueueDiscEcn>(GetQueueDiscClass(i)->GetQueueDisc());
@@ -416,7 +572,7 @@ void
 PausableQueueDisc::Stats::CollectAndCheck()
 {
     // Collect the statistics from each inner queue
-    for (uint8_t i = 0; i < 8; i++)
+    for (uint8_t i = 0; i < m_qdisc->GetNQueueDiscClasses(); i++)
     {
         Ptr<FifoQueueDiscEcn> qd =
             DynamicCast<FifoQueueDiscEcn>(m_qdisc->GetQueueDiscClass(i)->GetQueueDisc());
@@ -441,7 +597,10 @@ PausableQueueDiscClass::GetTypeId()
 }
 
 PausableQueueDiscClass::PausableQueueDiscClass()
-    : m_isPaused(false)
+    : m_isPaused(false),
+      m_quantum(5000),
+      m_credit(0),
+      m_maxCredit(10000)
 {
     NS_LOG_FUNCTION(this);
 }
@@ -461,6 +620,32 @@ void
 PausableQueueDiscClass::SetPaused(bool paused)
 {
     m_isPaused = paused;
+}
+
+void
+PausableQueueDiscClass::SetWdrrParameters(uint32_t quantum, uint32_t maxCredit)
+{
+    NS_ASSERT_MSG(quantum > 0, "Quantum should be positive");
+    m_quantum = quantum;
+    m_maxCredit = maxCredit;
+}
+
+void
+PausableQueueDiscClass::IncrementCredit()
+{
+    m_credit = std::max(m_credit + m_quantum, m_maxCredit);
+}
+
+void
+PausableQueueDiscClass::DecrementCredit(uint32_t size)
+{
+    m_credit -= size;
+}
+
+bool
+PausableQueueDiscClass::HasCredit() const
+{
+    return m_credit >= 0;
 }
 
 } // namespace ns3

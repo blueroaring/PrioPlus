@@ -20,6 +20,7 @@
 
 #include "rocev2-socket.h"
 
+#include "ns3/global-value.h"
 #include "ns3/rocev2-header.h"
 #include "ns3/simulator.h"
 
@@ -67,8 +68,9 @@ RoCEv2CongestionOps::GetTypeId(void)
     return tid;
 }
 
-RoCEv2CongestionOps::RoCEv2CongestionOps()
-    : m_extraHeaderSize(0),
+RoCEv2CongestionOps::RoCEv2CongestionOps(std::shared_ptr<Stats> stats)
+    : m_stats(stats),
+      m_extraHeaderSize(0),
       m_extraAckSize(0),
       m_isPacing(false),
       m_isLimiting(false)
@@ -77,12 +79,15 @@ RoCEv2CongestionOps::RoCEv2CongestionOps()
     NS_LOG_FUNCTION(this);
 }
 
-RoCEv2CongestionOps::RoCEv2CongestionOps(Ptr<RoCEv2SocketState> sockState)
-    : m_sockState(sockState),
+RoCEv2CongestionOps::RoCEv2CongestionOps(Ptr<RoCEv2SocketState> sockState,
+                                         std::shared_ptr<Stats> stats)
+    : m_stats(stats),
+      m_sockState(sockState),
       m_extraHeaderSize(0),
       m_extraAckSize(0),
       m_isPacing(false),
       m_isLimiting(false)
+
 {
     NS_LOG_FUNCTION(this);
 }
@@ -139,15 +144,17 @@ RoCEv2CongestionOps::SetRateRatio(double rateRatio)
             m_sockState->SetCwnd(cwnd);
         }
     }
+    m_stats->RecordCcRate(*(m_sockState->GetDeviceRate()) * m_sockState->GetRateRatioPercent());
 }
 
 void
 RoCEv2CongestionOps::SetCwnd(uint64_t cwnd)
 {
+    cwnd = std::max(cwnd, uint64_t(m_sockState->GetMinRateRatio() * m_sockState->GetBaseBdp()));
+    uint64_t baseBdp = m_sockState->GetBaseBdp();
     // if pacing, set rateRatio
     if (m_isPacing)
     {
-        uint64_t baseBdp = m_sockState->GetBaseBdp();
         if (baseBdp == 0)
         {
             return;
@@ -159,8 +166,51 @@ RoCEv2CongestionOps::SetCwnd(uint64_t cwnd)
         }
         double curRateRatio = static_cast<double>(cwnd) / baseBdp;
         m_sockState->SetRateRatioPercent(curRateRatio);
+        m_stats->RecordCcRate(*(m_sockState->GetDeviceRate()) * m_sockState->GetRateRatioPercent());
     }
+    
+    if (cwnd / m_sockState->GetPacketSize() < 1)
+    {
+        // pacing
+        double curRateRatio = static_cast<double>(cwnd) / baseBdp;
+        m_sockState->SetRateRatioPercent(curRateRatio);
+    }
+    else
+    {
+        // recover the rate to line rate
+        m_sockState->SetRateRatioPercent(m_maxRateRatio);
+    }
+
     m_sockState->SetCwnd(cwnd);
+}
+
+std::shared_ptr<RoCEv2CongestionOps::Stats>
+RoCEv2CongestionOps::GetStats() const
+{
+    return m_stats;
+}
+
+RoCEv2CongestionOps::Stats::Stats()
+{
+    NS_LOG_FUNCTION(this);
+    BooleanValue bv;
+    if (GlobalValue::GetValueByNameFailSafe("detailedSenderStats", bv))
+        bDetailedSenderStats = bv.Get();
+    else
+        bDetailedSenderStats = false;
+}
+
+void
+RoCEv2CongestionOps::Stats::RecordCcRate(DataRate rate)
+{
+    if (bDetailedSenderStats)
+    {
+        if (vCcRate.size() > 0 && vCcRate.back().second == rate)
+        {
+            return;
+        }
+        vCcRate.push_back(std::make_pair(Simulator::Now(), rate));
+    }
 }
 
 NS_OBJECT_ENSURE_REGISTERED(CongestionTypeTag);

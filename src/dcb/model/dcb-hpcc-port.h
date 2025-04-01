@@ -41,6 +41,12 @@ class DcbHpccPort : public DcbPfcPort
     virtual void DoEgressProcess(Ptr<Packet> packet) override;
 
   protected:
+    enum IntStyle
+    {
+        HPCC,
+        POSEIDON
+    };
+
   private:
     uint64_t m_txBytes;
     uint32_t

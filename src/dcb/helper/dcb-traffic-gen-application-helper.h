@@ -68,7 +68,7 @@ class DcbTrafficGenApplicationHelper
      * \param name the name of the attribute to set
      * \param value the value of the attribute to set
      */
-    // void SetAttribute (std::string name, const AttributeValue &value);
+    void SetAppAttribute (ConfigEntry_t entry);
 
     /**
      * \brief Read the CDF from a file.

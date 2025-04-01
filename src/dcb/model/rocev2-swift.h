@@ -84,9 +84,11 @@ class RoCEv2Swift : public RoCEv2CongestionOps
         std::vector<std::pair<Time, bool>>
             vCcRateChange; //!< Record the time when the rate changes, true for increase, false for
                             //!< decrease
+        std::vector<std::pair<Time, Time>> vTargetDelay; //!< Record the target delay
 
         // Recorder function of the detailed statistics
         void RecordCcRateChange(bool increase);
+        void RecordTargetDelay(Time delay);
         // Collect the statistics and check if the statistics is correct
         void CollectAndCheck();
 
@@ -106,9 +108,12 @@ class RoCEv2Swift : public RoCEv2CongestionOps
 
     Time GetTargetDelay();
 
+    void SetFsMin(double fsMin); // Convert fsMin from pkts to percentage of base BDP
+
     std::shared_ptr<Stats> m_stats; //!< Statistics
 
     Time m_baseTarget; //!< Base target delay. Default to 25us.
+    bool m_targetScaling; //!< Whether to scale the target delay.
 
     double m_mdFactor;    //!< β in paper. Multiplicative Decrement factor
     double m_maxMdFactor; //!< max_mdf in paper. Maximum Multiplicative Decrement factor
@@ -116,6 +121,7 @@ class RoCEv2Swift : public RoCEv2CongestionOps
     double m_raiRatio; //!< Rate additive increase ratio.
 
     double m_range; //!< fs_range in paper. Default to 4.0.
+    double m_fsMin; //!< fs_range in paper. Default to 4.0.
     double m_gamma; //!< Used in GetTargetDelay() in order to simplify the formula.
 
     bool m_canDecrease; //!< Whether the sender can decrease the rate.

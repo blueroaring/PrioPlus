@@ -42,8 +42,30 @@ class RoCEv2CongestionOps : public Object
      * \return the object TypeId
      */
     static TypeId GetTypeId();
-    RoCEv2CongestionOps();
-    RoCEv2CongestionOps(Ptr<RoCEv2SocketState> sockState);
+
+    class Stats
+    {
+      public:
+        // constructor
+        Stats();
+
+        // Detailed statistics, only enabled if needed
+        bool bDetailedSenderStats;
+        std::vector<std::pair<Time, DataRate>> vCcRate; //!< Record the time when the rate changes,
+                                                        //!< true for increase, false for decrease
+
+        // Recorder function of the detailed statistics
+        void RecordCcRate(DataRate rate);
+        // Collect the statistics and check if the statistics is correct
+        void CollectAndCheck();
+
+        virtual ~Stats()
+        {
+        }
+    };
+
+    RoCEv2CongestionOps(std::shared_ptr<Stats> stats);
+    RoCEv2CongestionOps(Ptr<RoCEv2SocketState> sockState, std::shared_ptr<Stats> stats);
     ~RoCEv2CongestionOps() override;
 
     void SetStopTime(Time stopTime);
@@ -117,6 +139,15 @@ class RoCEv2CongestionOps : public Object
     }
 
     /**
+     * \brief When RTO timer expires, update the state if needed.
+     *
+     * Do nothing in this class. And implementions in subclasses is not necessary.
+     */
+    virtual void UpdateStateWithRto()
+    {
+    }
+
+    /**
      * \brief When RoCEv2Socket is binded to netdevice and has configured everything about
      * sockState, start some initialization if needed.
      *
@@ -156,22 +187,11 @@ class RoCEv2CongestionOps : public Object
 
     typedef std::pair<std::string, Ptr<AttributeValue>> CcOpsConfigPair_t;
 
-    class Stats
-    {
-      public:
-        // constructor
-        Stats()
-        {
-        }
-
-        virtual ~Stats()
-        {
-        }
-    };
-
-    virtual std::shared_ptr<Stats> GetStats() const = 0;
+    virtual std::shared_ptr<Stats> GetStats() const;
 
   protected:
+    std::shared_ptr<Stats> m_stats; //!< Statistics
+
     /**
      * \return true if current time is not over stopTime.
      */
