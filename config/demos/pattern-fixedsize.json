@@ -114,7 +114,7 @@
                 "CongestionType": "ns3::RoCEv2Dcqcn",
                 "SendEnabled": true,
                 "TrafficPattern": "FixedSize",
-                "TrafficLoad": 0.5,
+                "TrafficSizeBytes": 100000,
                 "FixedFlowArrive": true,
                 "DestFixed": true,
                 "DestinationNode": 4
@@ -128,7 +128,7 @@
                 "InnerPriority": 0
             },
             "startTime": "0.100s",
-            "stopTime": "0.12s",
+            "stopTime": "0.11s",
             "flowInterval": "0.0000s"
         },
         {
