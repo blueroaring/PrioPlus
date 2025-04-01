@@ -1,6 +1,6 @@
 # PrioPlus
 
-This repository is the open-source implementation of the PrioPlus paper for EuroSys'25 with scripts for reproducing figures presented in the paper. Additionally, supplementary materials for the paper can be found here.
+This repository is the open-source implementation of the PrioPlus paper for EuroSys'25 with scripts for reproducing figures presented in the paper. Additionally, supplementary materials for the paper can be found [here](./PrioPlus-supplementary-materials.pdf).
 
 This repository is based on the ns-3 codebase internally maintained by NASA-NJU, which is built on ns-3.40 and developed collaboratively by several NASA-NJU members.
 
