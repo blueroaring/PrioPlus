@@ -139,7 +139,8 @@ DcTopology::GetInterfaceOfNode(const uint32_t nodei, uint32_t intfi) const
         NS_FATAL_ERROR("interface index " << intfi << " is out of bound, since there are " << nintf
                                           << " devices installed");
     }
-    return std::move(ipv4->GetAddress(intfi, 0)); // TODO: just return the first address for now
+    //return std::move(ipv4->GetAddress(intfi, 0)); // TODO: just return the first address for now
+    return ipv4->GetAddress(intfi, 0); // TODO: just return the first address for now
 }
 
 uint32_t
